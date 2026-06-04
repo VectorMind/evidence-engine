@@ -1,0 +1,24 @@
+# Agent Guidance
+
+## Spec And Planning Workflow
+
+Use `specifications/` for stable, spec-driven requirements and `plans/` for
+time-bounded planning packets.
+
+- Store durable specifications under `specifications/<slug>/spec.md` when the
+  work needs requirements that should outlive one implementation pass.
+- Store planning work under `plans/YYYY-MM-DD-<slug>/`. Use the ISO date for
+  the day the plan packet starts, followed by a short lowercase slug.
+- Every dated plan folder must contain `plan.md`, `implementation.md`, and
+  `test.md`.
+- Add `survey.md` before `plan.md` when the work needs a landscape review,
+  local inventory, upstream research, or a decision record before planning.
+- Keep `plan.md` focused on approved scope, milestones, dependencies, and exit
+  criteria. Do not turn unreviewed survey notes into committed scope.
+- Keep `implementation.md` as a running log of changes made, important
+  decisions, deviations from the plan, and follow-up risks.
+- Keep `test.md` as proof of working behavior: commands run, fixtures used,
+  expected and actual results, and any gaps that remain untested.
+
+When a plan changes during implementation, update the dated plan folder so the
+spec, plan, implementation notes, and test proof remain consistent.
