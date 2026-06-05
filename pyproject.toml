@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agents-cli"
+version = "0.1.0"
+description = "Reusable local document corpus-cache CLI for agent workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "VectorMind" },
+]
+dependencies = [
+  "orjson",
+  "pydantic",
+  "PyYAML",
+  "rich",
+  "typer",
+  "zstandard",
+]
+
+[project.scripts]
+agents-docs = "agents_cli.cli:main"
+
+[project.optional-dependencies]
+docling = [
+  "docling",
+]
+fts = [
+  "tantivy",
+]
+semantic = [
+  "lancedb",
+  "numpy",
+  "pyarrow",
+]
+embeddings = [
+  "fastembed",
+]
+heavy-embeddings = [
+  "sentence-transformers",
+]
+all = [
+  "docling",
+  "fastembed",
+  "lancedb",
+  "numpy",
+  "pyarrow",
+  "sentence-transformers",
+  "tantivy",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agents_cli"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"catalog.yaml" = "agents_cli/contracts/catalog.yaml"
+"config/embeddings.yaml" = "agents_cli/contracts/config/embeddings.yaml"
+"config/exposures.yaml" = "agents_cli/contracts/config/exposures.yaml"
+"config/parser.yaml" = "agents_cli/contracts/config/parser.yaml"
+"store_templates.yaml" = "agents_cli/contracts/store_templates.yaml"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

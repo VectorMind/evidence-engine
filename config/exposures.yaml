@@ -5,6 +5,13 @@ description: >
   Backend exposure and storage settings for generated corpus-cache outputs.
   These settings are configuration, not SQLite catalog tables.
 
+fixed_cache_root:
+  path_template: "$HOME/.cache/agents-docs"
+  configurable: false
+  description: >
+    The corpus-cache root is fixed. Commands must not accept a cache-root
+    argument. Every producer uses this central location.
+
 exposure_kinds:
   - name: sqlite
     description: Primary local metadata and control database.

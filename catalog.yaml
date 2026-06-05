@@ -167,20 +167,15 @@ datasets:
             columns: [doc_id, item_type]
 
       - name: index_scopes
-        description: Current pointers from catalog scope to lower FTS and semantic islands.
-        exposures: [sqlite, file, tantivy, lancedb]
+        description: Current indexing scopes used to group lower FTS and semantic islands.
+        exposures: [sqlite]
         columns:
           - {name: scope_id, type: text, description: "Stable scope ID."}
           - {name: root_id, type: text, description: "Source root for the scope.", ref: corpus_cache.source_roots.root_id}
           - {name: source_item_id, type: text, description: "Folder or source item owning this scope, if applicable.", ref: corpus_cache.source_items.source_item_id}
           - {name: scope_kind, type: enum, description: "Scope type.", values: [root, folder, archive, specialist]}
           - {name: relative_path, type: text, description: "Root-relative folder or scope path."}
-          - {name: fts_profile, type: text, description: "Configured FTS profile name."}
-          - {name: fts_uri, type: text, description: "Cache-root-relative Tantivy directory, if built."}
-          - {name: semantic_profile, type: text, description: "Configured embedding profile name."}
-          - {name: semantic_uri, type: text, description: "Cache-root-relative LanceDB directory, if built."}
-          - {name: source_high_watermark, type: text, description: "Source hash or generation watermark last indexed."}
-          - {name: status, type: enum, description: "Current lower-index state.", values: [planned, current, stale, rebuilding, deferred, failed, deleted]}
+          - {name: status, type: enum, description: "Current scope state.", values: [active, stale, deferred, deleted]}
           - {name: updated_at, type: timestamp, description: "UTC timestamp when this scope state last changed."}
         indexes:
           - name: pk_index_scopes
@@ -188,3 +183,47 @@ datasets:
             unique: true
           - name: idx_index_scopes_root_path
             columns: [root_id, relative_path]
+
+      - name: tantivy_indexes
+        description: Current registry of physical Tantivy FTS index islands.
+        exposures: [sqlite, tantivy]
+        columns:
+          - {name: fts_index_id, type: text, description: "Stable FTS index registry ID."}
+          - {name: scope_id, type: text, description: "Catalog scope indexed by this island.", ref: corpus_cache.index_scopes.scope_id}
+          - {name: fts_profile, type: text, description: "Configured FTS schema/tokenizer profile name."}
+          - {name: chunk_profile, type: text, description: "Chunking profile used to generate Tantivy documents."}
+          - {name: template_name, type: text, description: "Store template used for generated Tantivy rows."}
+          - {name: index_uri, type: text, description: "Cache-root-relative Tantivy directory."}
+          - {name: indexed_chunk_count, type: integer, description: "Number of generated chunk rows indexed."}
+          - {name: source_high_watermark, type: text, description: "Source hash or generation watermark last indexed."}
+          - {name: status, type: enum, description: "Current FTS island state.", values: [planned, current, stale, rebuilding, deferred, failed, deleted]}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when this FTS index state last changed."}
+        indexes:
+          - name: pk_tantivy_indexes
+            columns: [fts_index_id]
+            unique: true
+          - name: idx_tantivy_indexes_scope
+            columns: [scope_id]
+
+      - name: lancedb_stores
+        description: Current registry of physical LanceDB semantic store islands.
+        exposures: [sqlite, lancedb]
+        columns:
+          - {name: semantic_store_id, type: text, description: "Stable semantic store registry ID."}
+          - {name: scope_id, type: text, description: "Catalog scope indexed by this island.", ref: corpus_cache.index_scopes.scope_id}
+          - {name: embedding_profile, type: text, description: "Embedding profile used for generated LanceDB rows."}
+          - {name: chunk_profile, type: text, description: "Chunking profile used to generate LanceDB rows."}
+          - {name: template_name, type: text, description: "Store template used for generated LanceDB rows."}
+          - {name: store_uri, type: text, description: "Cache-root-relative LanceDB directory."}
+          - {name: table_name, type: text, description: "LanceDB table name containing generated chunk rows."}
+          - {name: vector_dimension, type: integer, description: "Expected vector dimension."}
+          - {name: indexed_chunk_count, type: integer, description: "Number of generated chunk rows embedded."}
+          - {name: source_high_watermark, type: text, description: "Source hash or generation watermark last indexed."}
+          - {name: status, type: enum, description: "Current semantic island state.", values: [planned, current, stale, rebuilding, deferred, failed, deleted]}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when this semantic store state last changed."}
+        indexes:
+          - name: pk_lancedb_stores
+            columns: [semantic_store_id]
+            unique: true
+          - name: idx_lancedb_stores_scope
+            columns: [scope_id]

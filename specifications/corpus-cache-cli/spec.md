@@ -13,6 +13,25 @@ Manager repositories own private source selection, policy, retention, and output
 locations. Consumers may read generated SQLite databases directly. The CLI does
 not provide a data-access SQL wrapper.
 
+## Fixed Cache Contract
+
+The corpus-cache root is fixed at:
+
+```text
+$HOME/.cache/agents-docs/
+```
+
+Commands must not accept a cache-root argument. The catalog path is always:
+
+```text
+$HOME/.cache/agents-docs/catalog/catalog.sqlite
+```
+
+Every producer command calls the central catalog table-creation/migration
+function before it writes catalog state. There is no `init` command. A missing
+catalog is created by `catalog migrate` or by the first producer command that
+needs it, using the schema in `catalog.yaml`.
+
 ## Catalog Contract
 
 The repository root contains `catalog.yaml`. It is the public SQLite schema
@@ -26,11 +45,14 @@ The catalog defines:
 - artifact blob records;
 - normalized document object records;
 - valuable item records;
-- index scopes that point to lower FTS and semantic islands.
+- index scopes;
+- Tantivy FTS island registry rows;
+- LanceDB semantic island registry rows.
 
 The catalog does not define migration-history tables, command-run tables,
 command-message tables, embedding-profile tables, database-exposure registry
-tables, chunk tables, Tantivy row tables, or LanceDB row tables.
+tables, chunk tables, Tantivy row-template tables, or LanceDB row-template
+tables.
 
 ## Configuration Contracts
 
@@ -38,6 +60,7 @@ The repository root contains configuration and template contracts:
 
 - `config/exposures.yaml`: backend exposure kinds, cache-root layout, and blob
   storage profiles;
+- `config/parser.yaml`: parser, traversal, indexing, and safeguard defaults;
 - `config/embeddings.yaml`: embedding profile configuration;
 - `store_templates.yaml`: generated lower-index row templates for Tantivy and
   LanceDB chunk rows.
@@ -54,20 +77,22 @@ The implementation uses these layers:
 - document objects: normalized pages, sections, paragraphs, tables, figures,
   diagrams, images, charts, formulas, code blocks, lists, and captions;
 - valuable items: high-value objects surfaced for manager repositories;
-- Tantivy indexes: full-text lower islands generated from catalog objects;
-- LanceDB stores: semantic lower islands generated from catalog objects;
+- Tantivy index registry: current locations and lifecycle state for full-text
+  lower islands generated from catalog objects;
+- LanceDB store registry: current locations and lifecycle state for semantic
+  lower islands generated from catalog objects;
 - `.results/`: command reports, messages, and logs.
 
-SQLite is the source of truth for source/document/object state and pointers to
+SQLite is the source of truth for source/document/object state and for finding
 lower-index islands. Tantivy and LanceDB own their internal generated chunk
 rows.
 
 ## Storage Contract
 
-A caller-provided cache root contains generated state:
+The fixed cache root contains generated state:
 
 ```text
-<cache_root>/
+$HOME/.cache/agents-docs/
   catalog/
     catalog.sqlite
   blobs/
@@ -83,7 +108,7 @@ A caller-provided cache root contains generated state:
 
 The repository root YAML files are schema, config, and template contracts only.
 Generated SQLite databases, Docling artifacts, FTS indexes, LanceDB stores, and
-command results belong under caller-provided cache roots.
+command results belong under the fixed home cache root.
 
 ## Migration Contract
 
@@ -119,6 +144,8 @@ The CLI exposes stable identities:
 - `object_id`: normalized document object identity;
 - `item_id`: valuable item identity;
 - `scope_id`: folder/root/specialist indexing scope identity;
+- `fts_index_id`: Tantivy island registry identity;
+- `semantic_store_id`: LanceDB island registry identity;
 - `chunk_id`: generated lower-index chunk/search-unit identity;
 - `run_id`: command execution identity for `.results/` output.
 
@@ -137,7 +164,11 @@ SQLite owns:
 - blob payload records;
 - normalized document objects;
 - valuable items;
-- index scopes with FTS and semantic island URIs and status.
+- index scopes;
+- Tantivy index registry rows with profile, URI, template, row count,
+  freshness, and lifecycle status;
+- LanceDB store registry rows with embedding profile, URI, table name,
+  template, row count, freshness, and lifecycle status.
 
 SQLite does not own:
 
@@ -149,7 +180,7 @@ SQLite does not own:
 - LanceDB internal rows;
 - command logs or messages.
 
-The CLI provides control commands for initialization, migration, status, health,
+The CLI provides control commands for table creation, migration, status, health,
 and lifecycle operations. It does not provide arbitrary SQL query or export
 wrappers for data access.
 
@@ -189,9 +220,10 @@ The CLI owns Tantivy index creation, refresh, status, rebuild, and deletion.
 Each Tantivy document represents one generated indexing chunk. The row shape is
 defined in `store_templates.yaml`, not in `catalog.yaml`.
 
-The SQLite catalog stores only current scope-level pointers and status for FTS:
-profile name, cache-root-relative Tantivy URI, source high watermark, and
-current lifecycle state.
+The SQLite catalog stores current Tantivy index registry rows: profile name,
+chunk profile, template name, cache-root-relative Tantivy URI, indexed chunk
+count, source high watermark, and lifecycle state. The catalog does not store
+Tantivy documents.
 
 ## Semantic Contract
 
@@ -201,9 +233,10 @@ Each LanceDB row represents one generated indexing chunk. The row shape is
 defined in `store_templates.yaml`, not in `catalog.yaml`.
 
 Scoped LanceDB stores may be created per folder, root, or specialist scope. The
-SQLite catalog stores only current scope-level pointers and status for semantic
-stores: embedding profile, cache-root-relative LanceDB URI, source high
-watermark, and current lifecycle state.
+SQLite catalog stores current LanceDB store registry rows: embedding profile,
+chunk profile, template name, cache-root-relative LanceDB URI, table name,
+vector dimension, indexed chunk count, source high watermark, and lifecycle
+state. The catalog does not store LanceDB rows.
 
 ## Embedding Contract
 
@@ -216,14 +249,28 @@ Remote embedding providers are not hard-coded defaults.
 
 The public CLI exposes:
 
-- `agents-docs catalog init|migrate|status`;
+- `agents-docs catalog migrate|status`;
 - `agents-docs health`;
-- `agents-docs inventory scan-folder`;
-- `agents-docs parse docling-folder`;
-- `agents-docs index fts build-folder|refresh-folder|status|rebuild|delete`;
-- `agents-docs index semantic build-folder|refresh-folder|status|rebuild|delete`;
-- `agents-docs index folder` as an early convenience command;
+- `agents-docs scan folder`;
+- `agents-docs parse folder`;
+- `agents-docs index folder`;
+- `agents-docs search text`;
 - search commands only after build/refresh/status behavior is stable.
+
+The CLI is two levels at most: first command plus optional subcommand. Profiles,
+cache paths, traversal defaults, parser defaults, index defaults, and safeguard
+limits come from config files. Commands use positional arguments for the source
+path or query text when those cannot be defaulted.
+
+| First command | Subcommand | Mandatory args | Explanation | Defaults |
+| --- | --- | --- | --- | --- |
+| `catalog` | `migrate` | none | Creates or upgrades the fixed home catalog to the current schema. | Fixed cache root and `catalog.yaml`. |
+| `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
+| `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree and records current source items. | Traversal and safeguard defaults from `config/parser.yaml`. |
+| `parse` | `folder <path>` | `path` | Parses inventoried or directly supplied folder-tree sources through Docling and records artifacts/objects. | Parser and artifact defaults from `config/parser.yaml`. |
+| `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the given folder root. | FTS, embedding, chunk, store, and safeguard defaults from config. |
+| `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates results through SQLite. | Search/index defaults from config; exact scope rules are deferred. |
 
 Every non-interactive command supports structured `--json` or `--jsonl` output.
 Commands that modify cache state support dry-run when the operation can be
@@ -237,9 +284,12 @@ root. Results include:
 - tool versions;
 - config hash;
 - run ID;
-- cache root;
+- fixed cache root;
 - created, changed, unchanged, skipped, deferred, stale, and failed counts;
 - fatal errors separately from retryable or deferred work.
+
+`catalog migrate`, `catalog status`, and `health` accept no additional
+arguments.
 
 ## Refresh Contract
 
@@ -256,10 +306,17 @@ Refresh behavior:
 - record current stale/rebuilt/deleted/deferred/failed state in SQLite;
 - record command details in `.results/`.
 
+Folder commands treat `folder` as a folder tree by default. The given folder is
+the default indexing scope root. Limits such as maximum file count, maximum byte
+budget, maximum parse time, traversal depth, symlink behavior, include globs,
+and exclude globs come from `config/parser.yaml`. Large jobs require explicit
+override flags before they exceed configured safeguards.
+
 ## Redaction And Privacy Contract
 
-The CLI has no personal defaults. It never assumes private source roots, output
-locations, taxonomies, or embedding providers.
+The CLI has no personal source defaults. It never assumes private source roots,
+taxonomies, or embedding providers. The only fixed path default is the required
+home cache root `$HOME/.cache/agents-docs/`.
 
 Diagnostics are redacted by default. Full paths and raw private text require an
 explicit caller option.

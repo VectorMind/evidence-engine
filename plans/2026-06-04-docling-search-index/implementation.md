@@ -1,7 +1,7 @@
 # Implementation: Docling Search Index
 
 Date: 2026-06-04
-Status: Planning revised. No runtime implementation started.
+Status: Phase 2 scaffold started.
 
 ## Notes
 
@@ -58,7 +58,33 @@ Status: Planning revised. No runtime implementation started.
 - Rewrote `specifications/corpus-cache-cli/spec.md` and `plan.md` around the
   reviewed split: current-state catalog, config files, lower-index templates,
   and `.results/` command output.
-- No runtime CLI/package implementation has been started.
+- Reintroduced lean catalog registry tables `tantivy_indexes` and
+  `lancedb_stores` after clarifying that the catalog must know which physical
+  lower-index islands exist and where to find them. The internal row schemas
+  remain only in `store_templates.yaml`.
+- Updated the CLI contract so the cache root is fixed at
+  `$HOME/.cache/agents-docs/`, commands never accept a cache-root argument, and
+  there is no `init` command.
+- Added `config/parser.yaml` for parser profiles, traversal defaults, indexing
+  defaults, and safeguard defaults.
+- Reworked the CLI surface to two levels at most: `catalog migrate`,
+  `catalog status`, `health`, `scan folder`, `parse folder`, `index folder`,
+  and later `search text`.
+- Added `pyproject.toml` with package metadata, `agents-docs` console script,
+  base dependencies, optional dependency extras, and dev dependency group.
+- Added `src/agents_cli/` package skeleton with `__init__.py`, fixed path
+  helpers, and a minimal stdlib-backed `agents-docs` command router.
+- Implemented read-only scaffold behavior for `agents-docs --help`,
+  `agents-docs catalog status`, and `agents-docs health`.
+- Reserved `scan folder`, `parse folder`, `index folder`, and `search text`
+  command surfaces; they currently emit structured `not_implemented` JSON until
+  later phases land.
+- Rewrote `README.md` to document the fixed cache root, binding CLI surface,
+  data surface, catalog/store-template/config links, and CLI/data flow diagrams.
+- Added `docs/dependencies.md` with a table of all declared Python dependencies,
+  one-sentence descriptions, selection rationale, and closest alternatives.
+- Linked `docs/dependencies.md` from the top of `README.md`.
+- No heavy runtime dependency installation has been run.
 
 ## Pending Decisions
 
@@ -72,3 +98,6 @@ Status: Planning revised. No runtime implementation started.
 - Decide when search commands enter scope after build/refresh/status commands.
 - Pin dependency versions in `pyproject.toml`.
 - Define the synthetic fixture set for first proofs.
+- Finalize folder-tree safeguards and override flags for large jobs.
+- Decide whether the initial stdlib command router remains or gets replaced by
+  Typer after dependency installation.

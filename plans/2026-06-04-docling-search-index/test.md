@@ -62,8 +62,12 @@ Status: Planning proof only. No implementation to test yet.
 - Removed catalog tables for migration history, database exposure registry,
   document versions, catalog chunks, chunk/object links, embedding profiles,
   lower-index row internals, index jobs, command runs, and command messages.
-- Ran `rg` against `catalog.yaml` for the removed table names and stale catalog
-  fields; no matches were found.
+- Reintroduced lean catalog registry tables for `tantivy_indexes` and
+  `lancedb_stores`; lower-index row templates remain in `store_templates.yaml`.
+- Ran `rg` against `catalog.yaml` for removed table names and stale catalog
+  fields. After the registry clarification, `tantivy_indexes` and
+  `lancedb_stores` are expected matches; removed migration, command, chunk,
+  document-version, embedding-profile, and row-template tables remain absent.
 - Ran a read-only Python structural scanner confirming
   `old_style_column_entries=0` for both `catalog.yaml` and
   `store_templates.yaml`.
@@ -72,9 +76,46 @@ Status: Planning proof only. No implementation to test yet.
   `specifications/corpus-cache-cli/spec.md`, and
   `plans/2026-06-04-docling-search-index/plan.md`; all are ASCII-only and have
   no tab characters.
+- Added `config/parser.yaml` and updated the spec/plan so the cache root is
+  fixed at `$HOME/.cache/agents-docs/`, no CLI command accepts a cache-root
+  argument, and no `init` command exists.
+- Ran `rg` for stale CLI surface wording including `catalog init`,
+  `--cache-root`, `<cache_root>`, `inventory scan-folder`,
+  `parse docling-folder`, `index fts`, `index semantic`, and
+  `initialization`; no matches were found in the active spec/plan/config files.
+- Ran ASCII/no-tab checks on the updated schema, config, spec, plan,
+  implementation, and test files; all checked files are ASCII-only and have no
+  tab characters.
+- Ran the column-format scanner again; `catalog.yaml` and
+  `store_templates.yaml` both report `old_style_column_entries=0`.
+- Parsed `pyproject.toml` with Python `tomllib`; result: `pyproject parsed`.
+- Ran `python -m py_compile` on `src/agents_cli/__init__.py`,
+  `src/agents_cli/paths.py`, and `src/agents_cli/cli.py`; result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli --help`; result:
+  top-level help lists `catalog`, `health`, `scan`, `parse`, `index`, and
+  `search`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status`;
+  result: JSON reports fixed cache root
+  `C:\Users\wassi\.cache\agents-docs`, fixed catalog path, and
+  `status: missing`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli health`; result: JSON
+  reports fixed paths and stdlib SQLite check as `ok`.
+- Removed generated `src/agents_cli/__pycache__` after syntax checks.
+- Rechecked for `__pycache__` directories; none remain.
+- Ran `rg` over README, spec, plan, and CLI code for stale command surface
+  strings such as `--cache-root`, `catalog init`, `inventory scan-folder`,
+  `parse docling-folder`, `index fts`, `index semantic`, and `<cache_root>`;
+  no matches were found.
+- Added `docs/dependencies.md` and linked it from `README.md`.
+- Ran a dependency-doc coverage check against `pyproject.toml`; every declared
+  Python dependency appears in `docs/dependencies.md`.
+- Ran ASCII/no-tab checks on `README.md`, `docs/dependencies.md`,
+  `implementation.md`, and `test.md`; all checked files are ASCII-only and have
+  no tab characters.
 
-No runtime proof is expected before the revised schema plan is accepted and an
-implementation starts.
+Runtime proof is currently limited to Phase 2 scaffold commands. Docling,
+Tantivy, LanceDB, embedding, migration, and indexing behavior is not implemented
+yet.
 
 ## Future Proof Targets
 
@@ -92,3 +133,5 @@ implementation starts.
 - Record index health, rebuild, refresh, and deletion commands.
 - Prove the manager-repository contract with a synthetic source manifest and
   structured JSON/JSONL outputs under `.results/`.
+- Prove no command exposes `--cache-root` and that producer commands create
+  missing catalog tables through the centralized table-creation path.

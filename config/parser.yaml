@@ -1,0 +1,49 @@
+spec_version: "0.1"
+name: corpus_cache_parser_defaults
+status: draft
+description: >
+  Default parsing, indexing, traversal, and safeguard settings used by
+  agents-docs commands. CLI flags should override only the few values that
+  legitimately vary per call, such as a source path or query text.
+
+defaults:
+  parser_profile: docling_default
+  artifact_storage_profile: default_artifact_blobs
+  artifact_outputs: [docling_json, markdown]
+  fts_profile: tantivy_default_en
+  embedding_profile: fastembed_bge_small_en_v1_5
+  chunk_profile: docling_hybrid_v1
+  store_policy: one_per_folder
+  scan_mode: folder_tree
+  create_index_for_folder_root: true
+  results_format: jsonl
+
+folder_safeguards:
+  max_files_default: 5000
+  max_files_requires_override: true
+  max_bytes_default: 10737418240
+  max_parse_seconds_default: 3600
+  max_depth_default: null
+  follow_symlinks_default: false
+  include_globs_default: ["**/*.pdf", "**/*.docx", "**/*.md", "**/*.txt", "**/*.html"]
+  exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"]
+
+parser_profiles:
+  - name: docling_default
+    description: Default balanced Docling parse profile.
+    ocr: auto
+    table_structure: true
+    picture_classification: true
+    picture_description: false
+  - name: docling_ocr
+    description: OCR-enabled Docling profile for scanned or low-text documents.
+    ocr: true
+    table_structure: true
+    picture_classification: true
+    picture_description: false
+  - name: docling_fast_text
+    description: Faster text-first profile for simple markup or text-heavy sources.
+    ocr: false
+    table_structure: false
+    picture_classification: false
+    picture_description: false

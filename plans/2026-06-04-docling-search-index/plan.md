@@ -1,7 +1,7 @@
 # Plan: Docling Corpus Cache CLI
 
 Date: 2026-06-04
-Status: Draft reworked after catalog review on 2026-06-05.
+Status: Draft reworked after CLI-surface review on 2026-06-05.
 
 ## Problem Summary
 
@@ -13,6 +13,9 @@ lifecycle, and machine-readable command reports.
 
 The catalog must stay focused. It should not become a second copy of every
 backend, every run log, every migration step, or every generated indexing row.
+
+The CLI must also stay simple. The cache root is fixed in the user's home cache
+directory, and commands should have as few arguments as possible.
 
 ## Catalog Review Decisions From 2026-06-05
 
@@ -26,8 +29,8 @@ backend, every run log, every migration step, or every generated indexing row.
 | CR-006 | `chunk_object_links` is unnecessary. | Removed it. Generated lower-index chunks reference master catalog objects directly by `object_id`. |
 | CR-007 | `embedding_profiles` is config material. | Moved embedding profiles to `config/embeddings.yaml`. |
 | CR-008 | Tantivy/LanceDB internal row schemas should not be catalog tables. | Removed `tantivy_documents` and `lancedb_chunks` from `catalog.yaml`; added `store_templates.yaml`. |
-| CR-009 | Tantivy/LanceDB store registries duplicate island responsibility. | Removed dedicated registry tables; `index_scopes` stores only current pointers and status for lower islands. |
-| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `<cache_root>/.results/<date>/<time-run_id>/`. |
+| CR-009 | Tantivy/LanceDB store registries are still needed, but not their internal rows. | Keep lean `tantivy_indexes` and `lancedb_stores` registry tables for locating and managing physical islands. Keep generated row templates in `store_templates.yaml`. |
+| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `$HOME/.cache/agents-docs/.results/<date>/<time-run_id>/`. |
 
 ## Resolution Summary
 
@@ -35,13 +38,17 @@ Use a current-state catalog plus separate config/template files:
 
 - root `catalog.yaml` defines only SQLite current-state catalog tables;
 - `config/exposures.yaml` defines exposure kinds, cache-root layout, and blob
-  storage profiles;
+  storage profiles, including the fixed `$HOME/.cache/agents-docs/` cache root;
+- `config/parser.yaml` defines parser, traversal, indexing, and safeguard
+  defaults;
 - `config/embeddings.yaml` defines embedding profiles;
 - `store_templates.yaml` defines generated Tantivy and LanceDB chunk row shapes;
 - SQLite stores source inventory, current documents, artifacts, blobs, document
-  objects, valuable items, and lower-index scope pointers;
+  objects, valuable items, index scopes, and lower-index registry rows;
 - generated chunks live inside lower index islands, not as catalog tables;
 - command reports and logs live under `.results/` folders, not SQLite.
+- there is no `init` command; producers call centralized table creation before
+  writing, and `catalog migrate` can create or upgrade the fixed catalog.
 
 ## Goal
 
@@ -54,15 +61,16 @@ folders or manifests.
 | Path | Owner | Exposure | Scope In V1 |
 | --- | --- | --- | --- |
 | `catalog.yaml` | repo | YAML schema | Reviewable public schema for current-state SQLite catalog tables. |
-| `config/exposures.yaml` | repo | YAML config | Exposure kinds, cache-root path templates, and blob storage profile defaults. |
+| `config/exposures.yaml` | repo | YAML config | Exposure kinds, fixed home cache root, path templates, and blob storage profile defaults. |
+| `config/parser.yaml` | repo | YAML config | Parser profiles, traversal defaults, index defaults, and safety limits. |
 | `config/embeddings.yaml` | repo | YAML config | Local embedding profiles accepted by semantic indexing commands. |
 | `store_templates.yaml` | repo | YAML template | Lower-index generated row templates for Tantivy and LanceDB chunks. |
-| `<cache_root>/catalog/catalog.sqlite` | CLI | SQLite | Authoritative current source, document, object, valuable-item, blob, and scope state. |
-| `<cache_root>/blobs/<yyyy>/<mm>/<prefix>/<sha256>` | CLI | file | External payloads above the blob threshold. Referenced by SQLite. |
-| `<cache_root>/docling/` | CLI | SQLite/file | Optional exported Docling JSON/Markdown/text artifacts. Small payloads may be inline SQLite blobs. |
-| `<cache_root>/fts/<fts_profile>/<scope_id>/` | CLI | Tantivy directory | Chunk-level full-text island generated from catalog objects. |
-| `<cache_root>/semantic/<embedding_profile>/<scope_id>.lancedb/` | CLI | LanceDB directory | Chunk-level semantic island generated from catalog objects. |
-| `<cache_root>/.results/<date>/<time-run_id>/` | CLI | file | Structured command reports, messages, and logs. |
+| `$HOME/.cache/agents-docs/catalog/catalog.sqlite` | CLI | SQLite | Authoritative current source, document, object, valuable-item, blob, and scope state. |
+| `$HOME/.cache/agents-docs/blobs/<yyyy>/<mm>/<prefix>/<sha256>` | CLI | file | External payloads above the blob threshold. Referenced by SQLite. |
+| `$HOME/.cache/agents-docs/docling/` | CLI | SQLite/file | Optional exported Docling JSON/Markdown/text artifacts. Small payloads may be inline SQLite blobs. |
+| `$HOME/.cache/agents-docs/fts/<fts_profile>/<scope_id>/` | CLI | Tantivy directory | Chunk-level full-text island generated from catalog objects. |
+| `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | CLI | LanceDB directory | Chunk-level semantic island generated from catalog objects. |
+| `$HOME/.cache/agents-docs/.results/<date>/<time-run_id>/` | CLI | file | Structured command reports, messages, and logs. |
 
 ## Catalog Contract
 
@@ -77,74 +85,58 @@ The root `catalog.yaml` defines:
 - `document_objects`: normalized Docling object layer before indexing;
 - `valuable_items`: high-value tables, diagrams, charts, signatures, clauses,
   receipts, and similar items;
-- `index_scopes`: current pointers and status for lower FTS and semantic
+- `index_scopes`: logical root/folder/archive/specialist indexing scopes;
+- `tantivy_indexes`: current registry rows for physical Tantivy FTS islands;
+- `lancedb_stores`: current registry rows for physical LanceDB semantic
   islands.
 
 The catalog does not define chunk tables, command logs, embedding config, or
 backend-internal Tantivy/LanceDB rows.
 
+## Fixed Cache And Catalog Creation
+
+There is no `init` command and no configurable cache root. All commands use:
+
+```text
+$HOME/.cache/agents-docs/
+```
+
+The generated catalog is always:
+
+```text
+$HOME/.cache/agents-docs/catalog/catalog.sqlite
+```
+
+Every producer command calls the same centralized table creation/migration
+function before writing. `catalog migrate` and the first write command both
+create missing tables according to `catalog.yaml`.
+
 ## CLI Surface
 
 The first public command is `agents-docs`.
 
-Control commands:
+Use two levels at most: first command plus subcommand. Prefer positional args
+for the only values that cannot sensibly default.
+
+| First command | Subcommand | Mandatory args | Explanation | Defaults |
+| --- | --- | --- | --- | --- |
+| `catalog` | `migrate` | none | Creates or upgrades `$HOME/.cache/agents-docs/catalog/catalog.sqlite`. | `catalog.yaml`; no args. |
+| `catalog` | `status` | none | Reports catalog version, table presence, key counts, and stale state. | Fixed home cache; no args. |
+| `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree and records source items. | Includes/excludes and safety limits from `config/parser.yaml`. |
+| `parse` | `folder <path>` | `path` | Parses folder-tree sources through Docling and records artifacts/objects. | Parser profile and artifact outputs from `config/parser.yaml`. |
+| `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the folder root. | FTS, embedding, chunk, and store defaults from config. |
+| `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates via SQLite. | Search scope defaults are deferred until search enters scope. |
+
+Example minimal calls:
 
 ```powershell
-agents-docs catalog init --cache-root .corpus-cache --catalog catalog.yaml --json
-agents-docs catalog migrate --cache-root .corpus-cache --json
-agents-docs catalog status --cache-root .corpus-cache --json
-agents-docs health --cache-root .corpus-cache --json
-```
-
-Folder inventory:
-
-```powershell
-agents-docs inventory scan-folder `
-  --source-root "C:\docs\example-folder" `
-  --root-label example_folder `
-  --cache-root .corpus-cache `
-  --include "**/*.pdf" `
-  --include "**/*.docx" `
-  --include "**/*.md" `
-  --jsonl
-```
-
-Docling parse and artifact registration:
-
-```powershell
-agents-docs parse docling-folder `
-  --source-root "C:\docs\example-folder" `
-  --cache-root .corpus-cache `
-  --parser-profile docling_default `
-  --to docling_json `
-  --to markdown `
-  --artifact-storage default_artifact_blobs `
-  --jsonl
-```
-
-Tantivy FTS build for a folder scope:
-
-```powershell
-agents-docs index fts build-folder `
-  --source-root "C:\docs\example-folder" `
-  --scope-path "." `
-  --cache-root .corpus-cache `
-  --fts-profile tantivy_default_en `
-  --chunk-profile docling_hybrid_v1 `
-  --json
-```
-
-LanceDB semantic build for a folder scope:
-
-```powershell
-agents-docs index semantic build-folder `
-  --source-root "C:\docs\example-folder" `
-  --scope-path "." `
-  --cache-root .corpus-cache `
-  --embedding-profile fastembed_bge_small_en_v1_5 `
-  --chunk-profile docling_hybrid_v1 `
-  --store-policy one_per_folder `
-  --json
+agents-docs catalog migrate
+agents-docs catalog status
+agents-docs health
+agents-docs scan folder "C:\docs\example-folder"
+agents-docs parse folder "C:\docs\example-folder"
+agents-docs index folder "C:\docs\example-folder"
 ```
 
 ## Design Answers
@@ -157,8 +149,15 @@ agents-docs index semantic build-folder `
   master objects; lower index chunks reference those objects.
 - Tantivy/LanceDB row shapes are still useful to specify, but they are templates
   for generated island rows, not catalog tables.
+- Tantivy/LanceDB registry rows are catalog state because the CLI must know
+  which islands exist and where to find them.
 - Command results are operational proof and belong in `.results/`, not the
   current-state catalog.
+- `folder` means folder tree by default. The given folder is the default
+  indexing scope root.
+- Safeguards such as max file count, max byte budget, max parse time, traversal
+  depth, symlink behavior, include globs, and exclude globs live in
+  `config/parser.yaml`.
 
 ## Scope
 
@@ -191,6 +190,8 @@ This work covers:
 - No catalog history table for every migration.
 - No catalog tables for generated chunks or lower-index rows.
 - No command log tables in SQLite.
+- No cache-root command argument.
+- No `init` command.
 - No remote embedding default.
 - No MCP server before CLI and JSON contracts are stable.
 
@@ -237,7 +238,7 @@ Deliverables:
 Proof:
 
 - `agents-docs --help` runs;
-- `agents-docs catalog status --json` reports an uninitialized cache cleanly.
+- `agents-docs catalog status` reports a missing fixed catalog cleanly.
 
 ### Phase 3: SQLite Catalog
 
@@ -245,12 +246,15 @@ Deliverables:
 
 - stdlib `sqlite3` migration runner using `PRAGMA user_version`;
 - tables from `catalog.yaml`;
-- source root/item/document/object/valuable-item/blob/scope state;
+- source root/item/document/object/valuable-item/blob/scope/index registry
+  state;
 - control-only catalog commands.
 
 Proof:
 
-- synthetic folder inventory initializes a catalog;
+- `agents-docs catalog migrate` creates or updates the fixed catalog;
+- synthetic folder inventory can also create missing tables through the central
+  table-creation path;
 - consumers can open the `.db` read-only and inspect rows.
 
 ### Phase 4: Docling Artifact Import
@@ -274,7 +278,7 @@ Deliverables:
 - generated chunking for FTS;
 - Tantivy row generation from `store_templates.yaml`;
 - build, refresh, status, rebuild, and delete commands;
-- scope pointer updates in SQLite.
+- `tantivy_indexes` registry updates in SQLite.
 
 Proof:
 
@@ -290,7 +294,7 @@ Deliverables:
 - generated chunking for semantic indexing;
 - scoped LanceDB store creation;
 - build, refresh, status, rebuild, and delete commands;
-- scope pointer updates in SQLite.
+- `lancedb_stores` registry updates in SQLite.
 
 Proof:
 
@@ -322,13 +326,16 @@ Proof:
 | NOP-005 | Choose the first embedding default. | `fastembed_bge_small_en_v1_5` is the likely default; static model2vec remains optional. |
 | NOP-006 | Decide when search commands enter scope. | Build/refresh/status come first; search can follow once indexes are populated. |
 | NOP-007 | Pin dependency versions. | Defer until `pyproject.toml` and install proof. |
+| NOP-008 | Folder versus folder tree behavior and safeguards. | `folder` means folder tree by default; keep safeguard defaults in `config/parser.yaml` and require overrides for big jobs. |
 
 ## Exit Criteria
 
 - Root `catalog.yaml` is accepted as the SQLite catalog baseline.
 - Config and lower-index template YAML files are accepted.
 - `agents-docs` package and console script exist.
-- SQLite catalog can be initialized and migrated with stdlib `sqlite3`.
+- SQLite catalog can be created and migrated with stdlib `sqlite3`.
+- No command accepts a cache-root argument.
+- No `init` command exists.
 - Folder inventory tracks SHA-256 and freshness.
 - Docling artifacts can be stored inline or externally by threshold.
 - Catalog objects feed generated Tantivy and LanceDB chunks only at indexing
