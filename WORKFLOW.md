@@ -1,0 +1,110 @@
+# Workflow
+
+This repository is spec-driven. It uses durable specifications for binding
+contracts and dated plans for time-bounded implementation work.
+
+This repository does not use repo-level `memory/`, `knowledge_base/`, or
+`.cache/` workflow areas. Generated runtime data belongs under caller-provided
+output paths or implementation-specific test fixtures, not in persistent
+workflow folders.
+
+## Areas
+
+### `specifications/`
+
+Use `specifications/` for durable requirements that constrain implementation
+across more than one pass.
+
+Create a specification under:
+
+```text
+specifications/<slug>/spec.md
+```
+
+Specifications contain timeless binding rules and contracts:
+
+- CLI capabilities, command behavior, inputs, outputs, and exit semantics;
+- JSON, JSONL, manifest, and schema contracts;
+- identity, provenance, freshness, redaction, and error rules;
+- storage layout rules that callers and implementations may rely on;
+- accepted non-goals and unsupported behavior.
+
+Specifications must not read like plans or history. Avoid wording such as
+"planned", "future", "previously", or "we decided". Put implementation history
+in `implementation.md` instead.
+
+### `plans/`
+
+Use `plans/` for dated planning packets tied to active work.
+
+Each plan folder uses:
+
+```text
+plans/YYYY-MM-DD-<slug>/
+  survey.md            # optional, for discovery-heavy work
+  plan.md
+  implementation.md
+  test.md
+```
+
+Add `survey.md` before `plan.md` when the work needs local inventory, upstream
+research, tradeoff review, or a decision record before scope is shaped.
+
+## Plan Shape
+
+`plan.md` must stay focused on the work package. It should contain:
+
+- problem summary;
+- resolution summary;
+- goal and objectives;
+- scope and non-goals;
+- open points with resolution status;
+- implementation phases;
+- dependencies and risks;
+- exit criteria.
+
+Open points should be tracked across the discussion. Use stable IDs such as
+`OP-001`, keep the current status visible, and record the resolution only when
+the answer is accepted.
+
+`plan.md` does not need detailed rewrites for every implementation deviation.
+Once implementation starts, facts about what actually landed belong in
+`implementation.md`.
+
+## Implementation Log
+
+Use `implementation.md` as the running trace of work:
+
+- files changed;
+- implementation facts;
+- decisions made during development;
+- deviations from the plan;
+- follow-up risks;
+- important commands or migrations.
+
+The implementation log should describe what happened, not restate the whole
+plan.
+
+## Test Proof
+
+Use `test.md` as proof of behavior:
+
+- commands run;
+- fixtures used;
+- expected results;
+- actual results;
+- known gaps;
+- environment or dependency notes that affect reproducibility.
+
+For planning-only changes, `test.md` may record document review and consistency
+checks instead of runtime proof.
+
+## Scope Ownership
+
+`agents-cli` owns reusable CLI implementation for manager repositories and
+central skills. Central skills may wrap these commands and manage dependency
+installation, but they do not own the SQL catalog, FTS indexing, semantic
+indexing, search routing, schema migrations, or lower-index health behavior.
+
+Manager repositories are customers. They pass source manifests, policy, and
+output locations into this CLI and consume structured results.

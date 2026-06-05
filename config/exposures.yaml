@@ -1,0 +1,47 @@
+spec_version: "0.1"
+name: corpus_cache_exposures
+status: draft
+description: >
+  Backend exposure and storage settings for generated corpus-cache outputs.
+  These settings are configuration, not SQLite catalog tables.
+
+exposure_kinds:
+  - name: sqlite
+    description: Primary local metadata and control database.
+  - name: file
+    description: Filesystem artifact addressed from SQLite by relative URI.
+  - name: tantivy
+    description: Tantivy full-text index directory managed by this CLI.
+  - name: lancedb
+    description: LanceDB vector store directory managed by this CLI.
+
+cache_root_layout:
+  - name: catalog
+    exposure: sqlite
+    path_template: "catalog/catalog.sqlite"
+    description: Current-state SQLite catalog.
+  - name: blobs
+    exposure: file
+    path_template: "blobs/{yyyy}/{mm}/{sha256_prefix}/{sha256}"
+    description: External artifact payloads above the blob threshold.
+  - name: fts
+    exposure: tantivy
+    path_template: "fts/{fts_profile}/{scope_id}/"
+    description: Tantivy index island for one scope/profile.
+  - name: semantic
+    exposure: lancedb
+    path_template: "semantic/{embedding_profile}/{scope_id}.lancedb/"
+    description: LanceDB store island for one scope/profile.
+  - name: results
+    exposure: file
+    path_template: ".results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
+    description: Command reports, messages, and logs.
+
+storage_profiles:
+  - name: default_artifact_blobs
+    description: Small payloads are inline SQLite blobs; large payloads spill to hash-addressed files.
+    hash_algorithm: sha256
+    external_threshold_bytes: 524288
+    inline_compression_min_bytes: 32768
+    inline_compression: zstd
+    compressible_extensions: [txt, md, json, csv, tsv, yaml, yml, html, xml]

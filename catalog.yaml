@@ -1,0 +1,190 @@
+spec_version: "0.2"
+name: corpus_cache_catalog
+status: draft
+description: >
+  Public SQLite catalog schema for current corpus-cache metadata. The catalog
+  stores source inventory, current document parse state, Docling artifacts,
+  normalized document objects, valuable items, and pointers to lower FTS and
+  semantic index islands.
+
+schema_rules:
+  - Catalog tables store current state only; historical migration records and
+    command logs are not catalog tables.
+  - Schema migration code is hardcoded in Python and tracks a mono catalog
+    version with SQLite PRAGMA user_version.
+  - Backend exposure settings live in config/exposures.yaml.
+  - Embedding profile settings live in config/embeddings.yaml.
+  - Tantivy and LanceDB row shapes live in store_templates.yaml.
+  - Command results, messages, and logs live under the caller cache root in
+    .results/ date folders.
+  - Tables declare direct metadata entries and one-line physical columns.
+
+datasets:
+  - name: corpus_cache
+    description: Current-state SQLite catalog for a regenerable document corpus cache.
+    dataset_role: regenerable_cache
+    durability: current_control
+
+    tables:
+      - name: source_roots
+        description: Caller-approved root scope. Usually one row for single-root CLI calls.
+        exposures: [sqlite]
+        columns:
+          - {name: root_id, type: text, description: "Stable source-root ID derived from caller manifest data."}
+          - {name: root_label, type: text, description: "Caller-supplied non-secret label."}
+          - {name: source_kind, type: enum, description: "Source root kind.", values: [folder, archive, file, connector, synthetic_fixture]}
+          - {name: source_uri, type: text, description: "Caller-provided path or URI, redacted in diagnostics by default."}
+          - {name: policy_profile, type: text, description: "Caller policy profile used for this root."}
+          - {name: first_seen_at, type: timestamp, description: "UTC timestamp when this root was first seen."}
+          - {name: last_seen_at, type: timestamp, description: "UTC timestamp when this root was last seen."}
+        indexes:
+          - name: pk_source_roots
+            columns: [root_id]
+            unique: true
+
+      - name: source_items
+        description: Current files, archive members, or connector objects discovered under roots.
+        exposures: [sqlite]
+        columns:
+          - {name: source_item_id, type: text, description: "Stable source item ID."}
+          - {name: root_id, type: text, description: "Parent source root.", ref: corpus_cache.source_roots.root_id}
+          - {name: parent_source_item_id, type: text, description: "Parent item for archive members or derived items.", ref: corpus_cache.source_items.source_item_id}
+          - {name: relative_path, type: text, description: "Root-relative path when available."}
+          - {name: source_uri, type: text, description: "Original path or URI."}
+          - {name: item_kind, type: enum, description: "Source item kind.", values: [file, folder, archive_member, connector_object]}
+          - {name: media_type, type: text, description: "MIME type or inferred media type."}
+          - {name: size_bytes, type: integer, description: "Source item size in bytes."}
+          - {name: source_mtime, type: timestamp, description: "Source modification timestamp, if known."}
+          - {name: source_sha256, type: text, description: "SHA-256 hash of source bytes when available."}
+          - {name: inventory_status, type: enum, description: "Current inventory state.", values: [current, unchanged, changed, missing, deleted, deferred, failed]}
+        indexes:
+          - name: pk_source_items
+            columns: [source_item_id]
+            unique: true
+          - name: idx_source_items_root_path
+            columns: [root_id, relative_path]
+
+      - name: documents
+        description: Current document parse state for source items.
+        exposures: [sqlite]
+        columns:
+          - {name: doc_id, type: text, description: "Stable document ID for the source item lineage."}
+          - {name: source_item_id, type: text, description: "Current source item for this document.", ref: corpus_cache.source_items.source_item_id}
+          - {name: source_sha256, type: text, description: "Current source content SHA-256 used for freshness."}
+          - {name: parser_profile, type: text, description: "Parser profile used for the current parse."}
+          - {name: parse_status, type: enum, description: "Current parser state.", values: [planned, parsed, unchanged, stale, deferred, failed]}
+          - {name: parsed_at, type: timestamp, description: "UTC timestamp when the current parse completed."}
+          - {name: title, type: text, description: "Best available document title."}
+          - {name: language, type: text, description: "Best available document language code."}
+          - {name: object_count, type: integer, description: "Current normalized object count."}
+          - {name: valuable_item_count, type: integer, description: "Current valuable item count."}
+        indexes:
+          - name: pk_documents
+            columns: [doc_id]
+            unique: true
+          - name: idx_documents_source
+            columns: [source_item_id]
+
+      - name: docling_artifacts
+        description: Current Docling and derived artifacts for documents.
+        exposures: [sqlite, file]
+        columns:
+          - {name: artifact_id, type: text, description: "Stable artifact ID."}
+          - {name: doc_id, type: text, description: "Owning document.", ref: corpus_cache.documents.doc_id}
+          - {name: artifact_kind, type: enum, description: "Artifact kind.", values: [docling_json, docling_yaml, markdown, text, html, doctags, page_image, extracted_asset]}
+          - {name: artifact_uri, type: text, description: "Cache-root-relative artifact path, if file-backed."}
+          - {name: blob_id, type: text, description: "Blob row containing payload or external pointer.", ref: corpus_cache.artifact_blobs.blob_id}
+          - {name: content_sha256, type: text, description: "SHA-256 hash of artifact bytes."}
+          - {name: storage_mode, type: enum, description: "How artifact bytes are stored.", values: [inline_blob, external_file, external_uri]}
+          - {name: artifact_status, type: enum, description: "Current artifact state.", values: [current, stale, deleted, failed]}
+        indexes:
+          - name: pk_docling_artifacts
+            columns: [artifact_id]
+            unique: true
+          - name: idx_docling_artifacts_doc_kind
+            columns: [doc_id, artifact_kind]
+
+      - name: artifact_blobs
+        description: Inline or external artifact payloads with content hashes.
+        exposures: [sqlite, file]
+        columns:
+          - {name: blob_id, type: text, description: "Stable blob ID."}
+          - {name: sha256, type: text, description: "SHA-256 hash identifying the payload."}
+          - {name: size_bytes, type: integer, description: "Payload size in bytes before compression."}
+          - {name: storage_mode, type: enum, description: "Payload storage mode.", values: [inline_blob, external_file]}
+          - {name: compression, type: enum, description: "Compression applied to stored payload.", values: [none, gzip, zstd]}
+          - {name: relative_uri, type: text, description: "External file path relative to cache root."}
+          - {name: payload, type: blob, description: "Inline payload for small artifacts."}
+          - {name: first_seen_at, type: timestamp, description: "UTC timestamp when first observed."}
+          - {name: last_seen_at, type: timestamp, description: "UTC timestamp when last observed."}
+        indexes:
+          - name: pk_artifact_blobs
+            columns: [blob_id]
+            unique: true
+          - name: idx_artifact_blobs_sha256
+            columns: [sha256]
+            unique: true
+
+      - name: document_objects
+        description: Current normalized Docling objects before indexing chunk generation.
+        exposures: [sqlite]
+        columns:
+          - {name: object_id, type: text, description: "Stable object ID."}
+          - {name: doc_id, type: text, description: "Owning document.", ref: corpus_cache.documents.doc_id}
+          - {name: parent_object_id, type: text, description: "Parent object in the document hierarchy.", ref: corpus_cache.document_objects.object_id}
+          - {name: object_type, type: enum, description: "First approved normalized object set.", values: [page, section, paragraph, table, figure, diagram, image, chart, formula, codeblock, list, caption]}
+          - {name: order_index, type: integer, description: "Reading-order position inside the document or parent."}
+          - {name: page_start, type: integer, description: "First page number, one-based when known."}
+          - {name: page_end, type: integer, description: "Last page number, one-based when known."}
+          - {name: heading_path, type: text, description: "JSON list or delimiter-joined heading path."}
+          - {name: text_preview, type: text, description: "Short normalized preview for diagnostics."}
+          - {name: attrs_json, type: json, description: "Object metadata such as bbox, confidence, language, row counts, or code language."}
+        indexes:
+          - name: pk_document_objects
+            columns: [object_id]
+            unique: true
+          - name: idx_document_objects_doc_type
+            columns: [doc_id, object_type]
+
+      - name: valuable_items
+        description: Current high-value document items surfaced from normalized objects.
+        exposures: [sqlite]
+        columns:
+          - {name: item_id, type: text, description: "Stable valuable item ID."}
+          - {name: doc_id, type: text, description: "Owning document.", ref: corpus_cache.documents.doc_id}
+          - {name: object_id, type: text, description: "Primary source object.", ref: corpus_cache.document_objects.object_id}
+          - {name: item_type, type: enum, description: "Valuable item type.", values: [table, figure, diagram, image, chart, signature, form, receipt, clause, code, formula, other]}
+          - {name: item_name, type: text, description: "Short item name or label."}
+          - {name: item_description, type: text, description: "Redaction-safe item description."}
+          - {name: confidence, type: real, description: "Extraction or classification confidence when available."}
+          - {name: review_status, type: enum, description: "Current review state.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: attrs_json, type: json, description: "Additional item metadata."}
+        indexes:
+          - name: pk_valuable_items
+            columns: [item_id]
+            unique: true
+          - name: idx_valuable_items_doc_type
+            columns: [doc_id, item_type]
+
+      - name: index_scopes
+        description: Current pointers from catalog scope to lower FTS and semantic islands.
+        exposures: [sqlite, file, tantivy, lancedb]
+        columns:
+          - {name: scope_id, type: text, description: "Stable scope ID."}
+          - {name: root_id, type: text, description: "Source root for the scope.", ref: corpus_cache.source_roots.root_id}
+          - {name: source_item_id, type: text, description: "Folder or source item owning this scope, if applicable.", ref: corpus_cache.source_items.source_item_id}
+          - {name: scope_kind, type: enum, description: "Scope type.", values: [root, folder, archive, specialist]}
+          - {name: relative_path, type: text, description: "Root-relative folder or scope path."}
+          - {name: fts_profile, type: text, description: "Configured FTS profile name."}
+          - {name: fts_uri, type: text, description: "Cache-root-relative Tantivy directory, if built."}
+          - {name: semantic_profile, type: text, description: "Configured embedding profile name."}
+          - {name: semantic_uri, type: text, description: "Cache-root-relative LanceDB directory, if built."}
+          - {name: source_high_watermark, type: text, description: "Source hash or generation watermark last indexed."}
+          - {name: status, type: enum, description: "Current lower-index state.", values: [planned, current, stale, rebuilding, deferred, failed, deleted]}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when this scope state last changed."}
+        indexes:
+          - name: pk_index_scopes
+            columns: [scope_id]
+            unique: true
+          - name: idx_index_scopes_root_path
+            columns: [root_id, relative_path]

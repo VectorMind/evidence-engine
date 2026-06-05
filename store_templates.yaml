@@ -1,0 +1,42 @@
+spec_version: "0.1"
+name: corpus_cache_store_templates
+status: draft
+description: >
+  Lower-index row templates for generated search islands. These templates are
+  not SQLite catalog tables. Catalog objects are the master records; chunks
+  reference master objects only inside FTS and semantic stores.
+
+templates:
+  - name: tantivy_chunk_document
+    backend: tantivy
+    description: One generated FTS document per indexing chunk.
+    columns:
+      - {name: chunk_id, type: text, description: "Generated chunk/search-unit ID."}
+      - {name: doc_id, type: text, description: "Owning catalog document ID."}
+      - {name: object_id, type: text, description: "Primary catalog object represented by the chunk."}
+      - {name: scope_id, type: text, description: "Catalog index scope."}
+      - {name: chunk_profile, type: text, description: "Chunking profile used to generate the row."}
+      - {name: content_type, type: enum, description: "Index content type.", values: [plain_text, paragraph, section, table, codeblock, formula, figure_caption, image_caption, chart_summary, mixed]}
+      - {name: page_start, type: integer, description: "First page covered by the chunk."}
+      - {name: page_end, type: integer, description: "Last page covered by the chunk."}
+      - {name: title, type: text, description: "Title field for BM25."}
+      - {name: heading_path, type: text, description: "Heading path field for BM25 and display."}
+      - {name: body, type: text, description: "Main searchable text."}
+      - {name: metadata_json, type: json, description: "Compact filter and provenance metadata."}
+
+  - name: lancedb_chunk_row
+    backend: lancedb
+    description: One generated semantic row per indexing chunk.
+    columns:
+      - {name: chunk_id, type: text, description: "Generated chunk/search-unit ID."}
+      - {name: doc_id, type: text, description: "Owning catalog document ID."}
+      - {name: object_id, type: text, description: "Primary catalog object represented by the chunk."}
+      - {name: scope_id, type: text, description: "Catalog index scope."}
+      - {name: embedding_profile, type: text, description: "Embedding profile used for this row."}
+      - {name: chunk_profile, type: text, description: "Chunking profile used to generate the row."}
+      - {name: vector, type: vector, description: "Dense embedding vector."}
+      - {name: text, type: text, description: "Text embedded for semantic search."}
+      - {name: content_type, type: enum, description: "Index content type.", values: [plain_text, paragraph, section, table, codeblock, formula, figure_caption, image_caption, chart_summary, mixed]}
+      - {name: page_start, type: integer, description: "First page covered by the chunk."}
+      - {name: page_end, type: integer, description: "Last page covered by the chunk."}
+      - {name: metadata_json, type: json, description: "Compact filter and provenance metadata."}
