@@ -105,6 +105,27 @@ Status: Phase 3 SQLite catalog started.
   and migrates stale or incomplete catalog state before writes.
 - Updated README, durable spec, and plan wording so the binding surface is
   `catalog create|migrate|status` with no `init` and no cache-root argument.
+- Accepted `one_per_root` as the LanceDB V1 store policy. The user CLI folder
+  root is the V1 index unit; automatic splitting into many roots is out of
+  scope.
+- Updated `config/parser.yaml` so `defaults.store_policy` is `one_per_root`.
+- Added `src/agents_cli/config.py` for stdlib-first access to
+  `config/parser.yaml`, with PyYAML support when installed and a fallback
+  parser for the current simple config shape.
+- Added `src/agents_cli/results.py` for fixed-cache command result folders with
+  `result.json` and `events.jsonl`.
+- Added `src/agents_cli/inventory.py` implementing `scan folder` source
+  inventory over folder trees.
+- `scan folder` now calls `ensure_catalog()`, records `source_roots`,
+  `source_items`, and a root `index_scopes` row, hashes matching source files,
+  detects created/changed/unchanged/deleted inventory rows, and returns
+  redaction-safe JSON.
+- `scan folder` supports only the accepted safeguard override flags:
+  `--max-files`, `--max-bytes`, and `--max-depth`.
+- Added a public synthetic fixture under `tests/fixtures/scan-basic/`.
+- Verified the user-provided root labeled `scalable capital`; the first scan
+  recorded 107 matching files, four folders, and about 34 MB of source bytes,
+  and the second scan classified all 111 rows as unchanged.
 - No heavy runtime dependency installation has been run.
 
 ## Pending Decisions

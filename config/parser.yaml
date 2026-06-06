@@ -13,7 +13,7 @@ defaults:
   fts_profile: tantivy_default_en
   embedding_profile: fastembed_bge_small_en_v1_5
   chunk_profile: docling_hybrid_v1
-  store_policy: one_per_folder
+  store_policy: one_per_root
   scan_mode: folder_tree
   create_index_for_folder_root: true
   results_format: jsonl

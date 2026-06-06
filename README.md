@@ -14,9 +14,9 @@ Dependency rationale is documented in [docs/dependencies.md](./docs/dependencies
 ## Current Status
 
 This repository is moving from specification into implementation. The package
-skeleton, fixed-cache catalog creation/migration, catalog status, and health
-commands are implemented. Heavy runtime behavior such as Docling parsing and
-index building lands in later phases.
+skeleton, fixed-cache catalog creation/migration, catalog status, health
+commands, and folder inventory are implemented. Heavy runtime behavior such as
+Docling parsing and index building lands in later phases.
 
 ## Install Shape
 
@@ -63,7 +63,7 @@ from config files rather than command arguments.
 | `catalog` | `migrate` | none | JSON | Upgrade an existing stale or incomplete fixed home catalog. |
 | `catalog` | `status` | none | JSON | Report catalog presence, version, expected tables, missing tables, and row counts. |
 | `health` | none | none | JSON | Check fixed paths and available runtime dependencies. |
-| `scan` | `folder <path>` | `path` | JSONL planned | Inventory a folder tree and record source items. |
+| `scan` | `folder <path>` | `path` | JSON | Inventory a folder tree and record source items. |
 | `parse` | `folder <path>` | `path` | JSONL planned | Parse folder-tree sources through Docling and record artifacts/objects. |
 | `index` | `folder <path>` | `path` | JSON/JSONL planned | Build or refresh FTS and semantic islands for a folder root. |
 | `search` | `text <query>` | `query` | JSONL planned | Search built lower-index islands and hydrate through SQLite. |
@@ -80,6 +80,11 @@ agents-docs parse folder "C:\docs\example-folder"
 agents-docs index folder "C:\docs\example-folder"
 agents-docs search text "contract renewal clause"
 ```
+
+`scan folder` accepts optional safeguard overrides only when a caller needs to
+exceed configured defaults: `--max-files`, `--max-bytes`, and `--max-depth`.
+It writes `source_roots`, `source_items`, and a root `index_scopes` row, then
+writes `result.json` and `events.jsonl` under `.results/`.
 
 ## CLI And Data Surfaces
 

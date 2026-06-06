@@ -233,7 +233,9 @@ The CLI owns LanceDB store creation, refresh, status, rebuild, and deletion.
 Each LanceDB row represents one generated indexing chunk. The row shape is
 defined in `store_templates.yaml`, not in `catalog.yaml`.
 
-Scoped LanceDB stores may be created per folder, root, or specialist scope. The
+The V1 LanceDB store unit is one store per explicit folder root. A folder root
+is the source root supplied by a user CLI request. Future automatic splitting
+into multiple roots may exist, but it is out of scope for this contract. The
 SQLite catalog stores current LanceDB store registry rows: embedding profile,
 chunk profile, template name, cache-root-relative LanceDB URI, table name,
 vector dimension, indexed chunk count, source high watermark, and lifecycle
@@ -269,7 +271,7 @@ path or query text when those cannot be defaulted.
 | `catalog` | `migrate` | none | Upgrades a stale or incomplete existing fixed home catalog to the current schema. | Fixed cache root and `catalog.yaml`. |
 | `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
 | `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
-| `scan` | `folder <path>` | `path` | Inventories a folder tree and records current source items. | Traversal and safeguard defaults from `config/parser.yaml`. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional safeguard override flags are `--max-files`, `--max-bytes`, and `--max-depth`. |
 | `parse` | `folder <path>` | `path` | Parses inventoried or directly supplied folder-tree sources through Docling and records artifacts/objects. | Parser and artifact defaults from `config/parser.yaml`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the given folder root. | FTS, embedding, chunk, store, and safeguard defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates results through SQLite. | Search/index defaults from config; exact scope rules are deferred. |
@@ -309,10 +311,10 @@ Refresh behavior:
 - record command details in `.results/`.
 
 Folder commands treat `folder` as a folder tree by default. The given folder is
-the default indexing scope root. Limits such as maximum file count, maximum byte
-budget, maximum parse time, traversal depth, symlink behavior, include globs,
-and exclude globs come from `config/parser.yaml`. Large jobs require explicit
-override flags before they exceed configured safeguards.
+the explicit root scope and V1 index unit. Limits such as maximum file count,
+maximum byte budget, maximum parse time, traversal depth, symlink behavior,
+include globs, and exclude globs come from `config/parser.yaml`. Large jobs
+require explicit override flags before they exceed configured safeguards.
 
 ## Redaction And Privacy Contract
 

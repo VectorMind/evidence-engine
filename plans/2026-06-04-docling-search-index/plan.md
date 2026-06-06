@@ -126,7 +126,7 @@ for the only values that cannot sensibly default.
 | `catalog` | `migrate` | none | Upgrades an existing stale or incomplete fixed home catalog. | `catalog.yaml`; no args. |
 | `catalog` | `status` | none | Reports catalog version, table presence, key counts, and stale state. | Fixed home cache; no args. |
 | `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
-| `scan` | `folder <path>` | `path` | Inventories a folder tree and records source items. | Includes/excludes and safety limits from `config/parser.yaml`. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional safeguard overrides are `--max-files`, `--max-bytes`, and `--max-depth`. |
 | `parse` | `folder <path>` | `path` | Parses folder-tree sources through Docling and records artifacts/objects. | Parser profile and artifact outputs from `config/parser.yaml`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the folder root. | FTS, embedding, chunk, and store defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates via SQLite. | Search scope defaults are deferred until search enters scope. |
@@ -157,8 +157,10 @@ agents-docs index folder "C:\docs\example-folder"
   which islands exist and where to find them.
 - Command results are operational proof and belong in `.results/`, not the
   current-state catalog.
-- `folder` means folder tree by default. The given folder is the default
-  indexing scope root.
+- `folder` means folder tree by default. The given folder is the explicit root
+  scope and V1 index unit.
+- LanceDB defaults to one store per explicit folder root. Strategic splitting
+  into many roots is out of scope for V1.
 - Safeguards such as max file count, max byte budget, max parse time, traversal
   depth, symlink behavior, include globs, and exclude globs live in
   `config/parser.yaml`.
@@ -320,18 +322,18 @@ Proof:
 - manager-style synthetic run can consume SQLite plus `.results/` reports
   without knowing lower-index internals.
 
-## New Open Points
+## Design Decisions
 
-| ID | Open Point | Current Leaning |
+| ID | Decision | Resolution |
 | --- | --- | --- |
-| NOP-001 | Confirm blob thresholds and compression. | Start with 512 KiB external threshold, 32 KiB inline compression threshold, zstd for our Python stack. |
-| NOP-002 | Confirm first Docling parser profiles. | `docling_default`, `docling_ocr`, and `docling_fast_text` are likely enough for first fixtures. |
-| NOP-003 | Define the exact chunking profile. | Generate chunks only while building lower indexes; reference primary catalog `object_id`. |
-| NOP-004 | Confirm LanceDB store policy default. | Expose `one_per_folder`; allow `one_per_root` as a simpler first test if folder fanout is noisy. |
-| NOP-005 | Choose the first embedding default. | `fastembed_bge_small_en_v1_5` is the likely default; static model2vec remains optional. |
-| NOP-006 | Decide when search commands enter scope. | Build/refresh/status come first; search can follow once indexes are populated. |
-| NOP-007 | Pin dependency versions. | Defer until `pyproject.toml` and install proof. |
-| NOP-008 | Folder versus folder tree behavior and safeguards. | `folder` means folder tree by default; keep safeguard defaults in `config/parser.yaml` and require overrides for big jobs. |
+| DD-001 | Blob thresholds and compression. | Use 512 KiB external threshold, 32 KiB inline compression threshold, and zstd for our Python stack. |
+| DD-002 | First Docling parser profiles. | Use `docling_default`, `docling_ocr`, and `docling_fast_text`. |
+| DD-003 | Chunking profile. | Use `docling_hybrid_v1`; generate chunks only while building lower indexes and reference primary catalog `object_id`. |
+| DD-004 | LanceDB store policy default. | Use `one_per_root`; the user CLI folder root is the V1 index unit. |
+| DD-005 | First embedding default. | Use `fastembed_bge_small_en_v1_5`; keep static model2vec optional. |
+| DD-006 | Search timing. | Build/refresh/status come first; search follows once indexes are populated. |
+| DD-007 | Dependency version pinning. | Keep current dependency bounds until full-stack install proof, then pin compatible versions. |
+| DD-008 | Folder versus folder tree behavior and safeguards. | `folder` means folder tree by default; keep safeguard defaults in `config/parser.yaml` and require explicit overrides for big jobs. |
 
 ## Exit Criteria
 

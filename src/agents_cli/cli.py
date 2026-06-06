@@ -16,7 +16,9 @@ from typing import Any
 
 from agents_cli import __version__
 from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
+from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
 from agents_cli.paths import catalog_path, fixed_cache_root, results_root
+from agents_cli.results import CommandRun
 
 
 SCHEMA_VERSION = "0.2"
@@ -93,7 +95,31 @@ def health(_: argparse.Namespace) -> int:
 
 
 def scan_folder(args: argparse.Namespace) -> int:
-    return _not_implemented("scan folder", source_path=str(Path(args.path)))
+    run = CommandRun.start("scan folder")
+    payload = _base_payload("scan folder")
+    try:
+        result = scan_folder_to_catalog(
+            Path(args.path),
+            ScanOptions(
+                max_files=args.max_files,
+                max_bytes=args.max_bytes,
+                max_depth=args.max_depth,
+            ),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    run.finish(payload)
+    payload["run_id"] = run.run_id
+    payload["result_uri"] = run.result_uri
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
 
 
 def parse_folder(args: argparse.Namespace) -> int:
@@ -141,6 +167,24 @@ def build_parser() -> argparse.ArgumentParser:
     scan_sub = scan.add_subparsers(dest="scan_command")
     scan_folder_parser = scan_sub.add_parser("folder", help="Inventory a folder tree.")
     scan_folder_parser.add_argument("path", help="Folder path to scan.")
+    scan_folder_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        help="Override the configured file-count safeguard.",
+    )
+    scan_folder_parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=None,
+        help="Override the configured byte-budget safeguard.",
+    )
+    scan_folder_parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=None,
+        help="Override the configured folder-depth safeguard.",
+    )
     scan_folder_parser.set_defaults(handler=scan_folder)
 
     parse = subparsers.add_parser("parse", help="Parse source inputs.")

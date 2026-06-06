@@ -166,10 +166,46 @@ Status: Planning proof only. No implementation to test yet.
   path was already created in the prior migration proof, and the new
   non-destructive proof covers idempotent `catalog create` on an existing
   current catalog.
+- Updated `config/parser.yaml` from `one_per_folder` to `one_per_root`.
+- Added public fixture files under `tests/fixtures/scan-basic/`.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files;
+  result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic`;
+  result: `status: ok`, `store_policy: one_per_root`, two folders seen, two
+  files matched, four catalog items created, and a `.results/` run folder
+  written.
+- Reran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic`;
+  result: `status: ok`, zero items created, zero items changed, and four items
+  unchanged.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder --help`;
+  result: scan help lists `path`, `--max-files`, `--max-bytes`, and
+  `--max-depth`; it does not expose cache-root configuration.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status` after
+  the synthetic scan; result: `source_roots: 1`, `source_items: 4`, and
+  `index_scopes: 1`.
+- Checked fixed-cache `.results/` output with PowerShell; result: `result.json`
+  files exist under `$HOME/.cache/agents-docs/.results/<date>/<run>/`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder <user-provided scalable-capital root>`;
+  result: `status: ok`, `store_policy: one_per_root`, four folders seen, 107
+  files matched, 20 files skipped as unmatched, 34,139,128 bytes matched, 111
+  catalog items created, and zero failures.
+- Reran the same user-provided root scan; result: `status: ok`, zero items
+  created, zero items changed, and 111 items unchanged.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status` after
+  the user-provided root scan; result: `source_roots: 2`,
+  `source_items: 115`, and `index_scopes: 2`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic --max-files 1`;
+  result: exit code 1 with `status: deferred`, safeguard kind `max_files`,
+  limit `1`, and `needed_at_least: 2`.
+- Reran `python -m py_compile` on all current `src/agents_cli/*.py` files;
+  result: success.
+- Ran `rg` over active README, spec, config, source, plan, and implementation
+  files for `one_per_folder`, `--cache-root`, `catalog init`, and old command
+  names; result: no matches.
 
 Runtime proof currently covers Phase 2 CLI scaffold commands and Phase 3
-SQLite catalog migration/status. Docling, Tantivy, LanceDB, embedding, and
-indexing behavior is not implemented yet.
+SQLite catalog migration/status plus source inventory. Docling, Tantivy,
+LanceDB, embedding, and indexing behavior is not implemented yet.
 
 ## Future Proof Targets
 
