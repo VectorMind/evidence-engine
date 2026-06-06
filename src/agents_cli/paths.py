@@ -23,4 +23,10 @@ def catalog_path() -> Path:
 def results_root() -> Path:
     """Return the fixed command results directory root."""
 
-    return fixed_cache_root() / ".results"
+    return fixed_cache_root() / "results"
+
+
+def reports_root() -> Path:
+    """Return the fixed optional HTML reports directory root."""
+
+    return fixed_cache_root() / "reports"

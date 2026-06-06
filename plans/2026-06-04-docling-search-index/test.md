@@ -202,6 +202,64 @@ Status: Planning proof only. No implementation to test yet.
 - Ran `rg` over active README, spec, config, source, plan, and implementation
   files for `one_per_folder`, `--cache-root`, `catalog init`, and old command
   names; result: no matches.
+- Added mandatory Markdown summaries and optional HTML reports.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files;
+  result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic`;
+  result: `status: ok` and payload includes
+  `summary_uri: .results/<date>/<run>/summary.md`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic --report`;
+  result: `status: ok`, payload includes `summary_uri`, and payload includes
+  `report_uri: reports/<date>/<run>/report.html`.
+- Read the generated `summary.md`; result: it contains a one-screen scan
+  summary with two Markdown tables: overview and inventory changes.
+- Checked the generated `report.html`; result: it contains a generic scan
+  folder report with overview text, a table, and inventory signal bars.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli health`; result:
+  `paths.results_root_exists: true` and `paths.reports_root_exists: true`.
+- Added a plan-only inventory-statistics proposal. No runtime command was run
+  for this proposal and no catalog migration was applied.
+- Implemented the inventory-statistics patch.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files;
+  result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog migrate`;
+  result: `status: migrated`, `sqlite_user_version_before: 2`,
+  `sqlite_user_version: 3`, and `table_count: 12`.
+- Reran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status`;
+  result: `status: current`, `missing_tables: []`, `extra_tables: []`,
+  expected user version `3`, and expected tables now include
+  `source_root_stats` and `source_extension_stats`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic --report`;
+  result: `status: ok`, `schema_version: 0.3`, `result_uri` under `results/`,
+  `summary_uri` under `results/`, `report_uri` under `reports/`, and
+  `statistics.file_count: 2`, `statistics.total_size_bytes: 144`, with `.md`
+  and `.txt` extension stats.
+- Read the generated fixture `summary.md`; result: it includes total size,
+  average file size, min/max file size, and top extension rows.
+- Checked the generated fixture `report.html`; result: it includes
+  "Extension Mix", "By File Count", "By Total Size", SVG chart markup, and
+  `.md`/`.txt` extension labels.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder <user-provided scalable-capital root> --report`;
+  result: `status: ok`, `statistics.file_count: 107`,
+  `statistics.folder_count: 4`, `statistics.total_size_bytes: 34139128`,
+  `statistics.min_file_size_bytes: 10`, and
+  `statistics.max_file_size_bytes: 3164811`.
+- The scalable-capital extension stats were `.pdf: 105 files / 34123402 bytes`,
+  `.docx: 1 file / 15716 bytes`, and `.txt: 1 file / 10 bytes`.
+- Read the scalable-capital `summary.md`; result: compact overview table plus
+  top extension table.
+- Checked the scalable-capital `report.html`; result: it includes extension
+  pie charts by file count and by total size.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status` after
+  both scans; result: `source_root_stats: 2`, `source_extension_stats: 5`,
+  `source_items: 115`, and `table_count: 12`.
+- Ran a read-only SQLite query against `source_root_stats` and
+  `source_extension_stats`; result: both roots have materialized current stats,
+  and scalable-capital stats match the scan output.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic --max-files 1`;
+  result: exit code 1 with `status: deferred`, a partial `statistics` object,
+  and `result_uri` under `results/`. A later read-only stats query confirmed
+  the fixture's current catalog stats still reflect the prior complete scan.
 
 Runtime proof currently covers Phase 2 CLI scaffold commands and Phase 3
 SQLite catalog migration/status plus source inventory. Docling, Tantivy,

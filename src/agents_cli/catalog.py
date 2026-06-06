@@ -11,8 +11,8 @@ from agents_cli.contracts import read_contract_text
 from agents_cli.paths import catalog_path, fixed_cache_root
 
 
-CATALOG_SCHEMA_VERSION = "0.2"
-CATALOG_USER_VERSION = 2
+CATALOG_SCHEMA_VERSION = "0.3"
+CATALOG_USER_VERSION = 3
 
 
 @dataclass(frozen=True)

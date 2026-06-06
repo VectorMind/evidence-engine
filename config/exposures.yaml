@@ -41,8 +41,12 @@ cache_root_layout:
     description: LanceDB store island for one scope/profile.
   - name: results
     exposure: file
-    path_template: ".results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
-    description: Command reports, messages, and logs.
+    path_template: "results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
+    description: Mandatory command result JSON, events, logs, and Markdown summaries.
+  - name: reports
+    exposure: file
+    path_template: "reports/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
+    description: Optional on-demand HTML analytics reports generated from command results.
 
 storage_profiles:
   - name: default_artifact_blobs

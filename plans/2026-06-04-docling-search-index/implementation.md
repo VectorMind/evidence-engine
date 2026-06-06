@@ -126,6 +126,37 @@ Status: Phase 3 SQLite catalog started.
 - Verified the user-provided root labeled `scalable capital`; the first scan
   recorded 107 matching files, four folders, and about 34 MB of source bytes,
   and the second scan classified all 111 rows as unchanged.
+- Added `reports_root()` for optional HTML analytics reports under
+  `$HOME/.cache/agents-docs/reports/`.
+- Updated `config/exposures.yaml` so `results/` is the mandatory result
+  surface and `reports/` is the optional on-demand report surface.
+- Updated `CommandRun.finish()` so every command result folder includes
+  `result.json`, `events.jsonl`, and a user-facing `summary.md`.
+- Added generic HTML report generation for commands that request it. `scan
+  folder --report` writes `reports/<date>/<run>/report.html` and returns
+  `report_uri`.
+- Updated health output so it reports both `results_root_exists` and
+  `reports_root_exists`.
+- Recorded the report responsibility split: the CLI owns stable result inputs
+  and generic HTML reports; skill wrappers can customize richer reports from
+  `result.json`, `summary.md`, and the catalog.
+- Implemented the inventory-statistics patch before moving to parsing/indexing.
+- Bumped `catalog.yaml` to spec version `0.3` and the runtime SQLite
+  `PRAGMA user_version` target to `3`.
+- Added `source_root_stats` and `source_extension_stats` to `catalog.yaml`.
+- Renamed new mandatory command output from `.results/` to `results/`; existing
+  `.results/` folders are legacy local output and were not migrated.
+- Updated `results_root()` and `config/exposures.yaml` to use
+  `$HOME/.cache/agents-docs/results/`.
+- `scan folder` now emits `statistics` in `result.json`, including folder
+  count, file count, total/average/min/max file size, and per-extension count
+  and byte aggregates.
+- Successful scans upsert `source_root_stats` and replace current
+  `source_extension_stats` for the root. Deferred scans return run-level
+  statistics but do not replace current catalog stats.
+- `summary.md` now includes file-size statistics and a top-extension table.
+- `scan folder --report` now includes generic SVG pie charts for extension mix
+  by file count and by total size, plus an extension summary table.
 - No heavy runtime dependency installation has been run.
 
 ## Pending Decisions

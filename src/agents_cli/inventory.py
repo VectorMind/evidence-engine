@@ -102,6 +102,7 @@ def scan_folder_to_catalog(path: Path, options: ScanOptions) -> dict[str, Any]:
             "source_uri_redacted": True,
             "safeguard": inventory["safeguard"],
             "counts": inventory["counts"],
+            "statistics": inventory["statistics"],
             "catalog_ensure": ensure_report["status"],
         }
 
@@ -112,6 +113,7 @@ def scan_folder_to_catalog(path: Path, options: ScanOptions) -> dict[str, Any]:
         scope_id=scope_id,
         now=now,
         items=inventory["items"],
+        statistics=inventory["statistics"],
     )
 
     return {
@@ -128,6 +130,7 @@ def scan_folder_to_catalog(path: Path, options: ScanOptions) -> dict[str, Any]:
             **inventory["counts"],
             **write_counts,
         },
+        "statistics": inventory["statistics"],
     }
 
 
@@ -215,6 +218,7 @@ def _collect_items(
                         "needed_at_least": next_file_count,
                     },
                     "counts": counts,
+                    "statistics": _build_statistics(items, counts),
                 }
             if max_bytes is not None and next_byte_count > max_bytes:
                 return {
@@ -225,6 +229,7 @@ def _collect_items(
                         "needed_at_least": next_byte_count,
                     },
                     "counts": counts,
+                    "statistics": _build_statistics(items, counts),
                 }
 
             try:
@@ -249,7 +254,12 @@ def _collect_items(
                 )
             )
 
-    return {"status": "ok", "items": items, "counts": counts}
+    return {
+        "status": "ok",
+        "items": items,
+        "counts": counts,
+        "statistics": _build_statistics(items, counts),
+    }
 
 
 def _write_inventory(
@@ -260,6 +270,7 @@ def _write_inventory(
     scope_id: str,
     now: str,
     items: list[ScanItem],
+    statistics: dict[str, Any],
 ) -> dict[str, int]:
     seen_ids = {item.source_item_id for item in items}
     counts = {
@@ -406,6 +417,69 @@ def _write_inventory(
             """,
             (scope_id, root_id, root_folder_id, "root", ".", "active", now),
         )
+        conn.execute(
+            """
+            INSERT INTO "source_root_stats"
+            (root_id, scope_id, computed_at, folder_count, file_count,
+             skipped_unmatched_count, failed_path_count, total_size_bytes,
+             average_file_size_bytes, min_file_size_bytes, max_file_size_bytes,
+             stats_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(root_id) DO UPDATE SET
+                scope_id = excluded.scope_id,
+                computed_at = excluded.computed_at,
+                folder_count = excluded.folder_count,
+                file_count = excluded.file_count,
+                skipped_unmatched_count = excluded.skipped_unmatched_count,
+                failed_path_count = excluded.failed_path_count,
+                total_size_bytes = excluded.total_size_bytes,
+                average_file_size_bytes = excluded.average_file_size_bytes,
+                min_file_size_bytes = excluded.min_file_size_bytes,
+                max_file_size_bytes = excluded.max_file_size_bytes,
+                stats_status = excluded.stats_status
+            """,
+            (
+                root_id,
+                scope_id,
+                now,
+                statistics["folder_count"],
+                statistics["file_count"],
+                statistics["skipped_unmatched_count"],
+                statistics["failed_path_count"],
+                statistics["total_size_bytes"],
+                statistics["average_file_size_bytes"],
+                statistics["min_file_size_bytes"],
+                statistics["max_file_size_bytes"],
+                "current",
+            ),
+        )
+        conn.execute(
+            'DELETE FROM "source_extension_stats" WHERE root_id = ?',
+            (root_id,),
+        )
+        conn.executemany(
+            """
+            INSERT INTO "source_extension_stats"
+            (root_id, extension, media_type, file_count, total_size_bytes,
+             average_file_size_bytes, min_file_size_bytes, max_file_size_bytes,
+             computed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    root_id,
+                    row["extension"],
+                    row["media_type"],
+                    row["file_count"],
+                    row["total_size_bytes"],
+                    row["average_file_size_bytes"],
+                    row["min_file_size_bytes"],
+                    row["max_file_size_bytes"],
+                    now,
+                )
+                for row in statistics["extension_stats"]
+            ],
+        )
         conn.commit()
 
     return counts
@@ -443,6 +517,95 @@ def _inventory_status(previous: dict[str, Any] | None, item: ScanItem) -> str:
     ):
         return "unchanged"
     return "changed"
+
+
+def _build_statistics(
+    items: list[ScanItem], counts: dict[str, int]
+) -> dict[str, Any]:
+    file_items = [item for item in items if item.item_kind == "file"]
+    sizes = [int(item.size_bytes or 0) for item in file_items]
+    extension_rows = _extension_statistics(file_items)
+    total_size = sum(sizes)
+    file_count = len(file_items)
+    return {
+        "folder_count": counts.get("folders_seen", 0),
+        "file_count": file_count,
+        "skipped_unmatched_count": counts.get("files_skipped_unmatched", 0),
+        "failed_path_count": counts.get("paths_failed", 0),
+        "total_size_bytes": total_size,
+        "average_file_size_bytes": (total_size / file_count) if file_count else 0,
+        "min_file_size_bytes": min(sizes) if sizes else None,
+        "max_file_size_bytes": max(sizes) if sizes else None,
+        "extension_stats": extension_rows,
+    }
+
+
+def _extension_statistics(file_items: list[ScanItem]) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for item in file_items:
+        extension = _extension(item.relative_path)
+        bucket = buckets.setdefault(
+            extension,
+            {
+                "extension": extension,
+                "media_type_counts": {},
+                "file_count": 0,
+                "total_size_bytes": 0,
+                "min_file_size_bytes": None,
+                "max_file_size_bytes": None,
+            },
+        )
+        size = int(item.size_bytes or 0)
+        bucket["file_count"] += 1
+        bucket["total_size_bytes"] += size
+        bucket["min_file_size_bytes"] = (
+            size
+            if bucket["min_file_size_bytes"] is None
+            else min(bucket["min_file_size_bytes"], size)
+        )
+        bucket["max_file_size_bytes"] = (
+            size
+            if bucket["max_file_size_bytes"] is None
+            else max(bucket["max_file_size_bytes"], size)
+        )
+        media_type = item.media_type or "application/octet-stream"
+        bucket["media_type_counts"][media_type] = (
+            bucket["media_type_counts"].get(media_type, 0) + 1
+        )
+
+    rows: list[dict[str, Any]] = []
+    for bucket in buckets.values():
+        file_count = int(bucket["file_count"])
+        media_type = sorted(
+            bucket["media_type_counts"].items(),
+            key=lambda pair: (-pair[1], pair[0]),
+        )[0][0]
+        rows.append(
+            {
+                "extension": bucket["extension"],
+                "media_type": media_type,
+                "file_count": file_count,
+                "total_size_bytes": bucket["total_size_bytes"],
+                "average_file_size_bytes": (
+                    bucket["total_size_bytes"] / file_count if file_count else 0
+                ),
+                "min_file_size_bytes": bucket["min_file_size_bytes"],
+                "max_file_size_bytes": bucket["max_file_size_bytes"],
+            }
+        )
+    return sorted(
+        rows,
+        key=lambda row: (
+            -int(row["file_count"]),
+            -int(row["total_size_bytes"]),
+            str(row["extension"]),
+        ),
+    )
+
+
+def _extension(relative_path: str) -> str:
+    suffix = Path(relative_path).suffix.lower()
+    return suffix if suffix else "[none]"
 
 
 def _matches_any(relative_path: str, patterns: list[str]) -> bool:

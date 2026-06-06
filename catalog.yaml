@@ -1,4 +1,4 @@
-spec_version: "0.2"
+spec_version: "0.3"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -15,8 +15,8 @@ schema_rules:
   - Backend exposure settings live in config/exposures.yaml.
   - Embedding profile settings live in config/embeddings.yaml.
   - Tantivy and LanceDB row shapes live in store_templates.yaml.
-  - Command results, messages, and logs live under the caller cache root in
-    .results/ date folders.
+  - Command results, messages, logs, and summaries live under the caller cache
+    root in results/ date folders.
   - Tables declare direct metadata entries and one-line physical columns.
 
 datasets:
@@ -63,6 +63,49 @@ datasets:
             unique: true
           - name: idx_source_items_root_path
             columns: [root_id, relative_path]
+
+      - name: source_root_stats
+        description: Current aggregate source inventory statistics per root.
+        exposures: [sqlite]
+        columns:
+          - {name: root_id, type: text, description: "Source root being summarized.", ref: corpus_cache.source_roots.root_id}
+          - {name: scope_id, type: text, description: "Root index scope summarized by this row.", ref: corpus_cache.index_scopes.scope_id}
+          - {name: computed_at, type: timestamp, description: "UTC timestamp for the latest scan statistics."}
+          - {name: folder_count, type: integer, description: "Current folders seen for the root."}
+          - {name: file_count, type: integer, description: "Current matched files for the root."}
+          - {name: skipped_unmatched_count, type: integer, description: "Files skipped by include rules in the latest scan."}
+          - {name: failed_path_count, type: integer, description: "Paths that failed stat or hash in the latest scan."}
+          - {name: total_size_bytes, type: integer, description: "Total bytes across current matched files."}
+          - {name: average_file_size_bytes, type: real, description: "Average size across current matched files."}
+          - {name: min_file_size_bytes, type: integer, description: "Smallest matched file size."}
+          - {name: max_file_size_bytes, type: integer, description: "Largest matched file size."}
+          - {name: stats_status, type: enum, description: "Current statistics state.", values: [current, deferred, failed]}
+        indexes:
+          - name: pk_source_root_stats
+            columns: [root_id]
+            unique: true
+
+      - name: source_extension_stats
+        description: Current aggregate source inventory statistics per file extension and root.
+        exposures: [sqlite]
+        columns:
+          - {name: root_id, type: text, description: "Source root being summarized.", ref: corpus_cache.source_roots.root_id}
+          - {name: extension, type: text, description: "Normalized lowercase extension, with [none] for no extension."}
+          - {name: media_type, type: text, description: "Dominant or representative media type for this extension."}
+          - {name: file_count, type: integer, description: "Current matched file count for this extension."}
+          - {name: total_size_bytes, type: integer, description: "Total bytes for this extension."}
+          - {name: average_file_size_bytes, type: real, description: "Average file size for this extension."}
+          - {name: min_file_size_bytes, type: integer, description: "Smallest matched file size for this extension."}
+          - {name: max_file_size_bytes, type: integer, description: "Largest matched file size for this extension."}
+          - {name: computed_at, type: timestamp, description: "UTC timestamp for the latest scan statistics."}
+        indexes:
+          - name: pk_source_extension_stats
+            columns: [root_id, extension]
+            unique: true
+          - name: idx_source_extension_stats_count
+            columns: [root_id, file_count]
+          - name: idx_source_extension_stats_size
+            columns: [root_id, total_size_bytes]
 
       - name: documents
         description: Current document parse state for source items.

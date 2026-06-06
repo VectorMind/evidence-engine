@@ -30,7 +30,7 @@ directory, and commands should have as few arguments as possible.
 | CR-007 | `embedding_profiles` is config material. | Moved embedding profiles to `config/embeddings.yaml`. |
 | CR-008 | Tantivy/LanceDB internal row schemas should not be catalog tables. | Removed `tantivy_documents` and `lancedb_chunks` from `catalog.yaml`; added `store_templates.yaml`. |
 | CR-009 | Tantivy/LanceDB store registries are still needed, but not their internal rows. | Keep lean `tantivy_indexes` and `lancedb_stores` registry tables for locating and managing physical islands. Keep generated row templates in `store_templates.yaml`. |
-| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `$HOME/.cache/agents-docs/.results/<date>/<time-run_id>/`. |
+| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `$HOME/.cache/agents-docs/results/<date>/<time-run_id>/`. |
 
 ## Resolution Summary
 
@@ -46,7 +46,9 @@ Use a current-state catalog plus separate config/template files:
 - SQLite stores source inventory, current documents, artifacts, blobs, document
   objects, valuable items, index scopes, and lower-index registry rows;
 - generated chunks live inside lower index islands, not as catalog tables;
-- command reports and logs live under `.results/` folders, not SQLite.
+- command result JSON, events, logs, and user-facing Markdown summaries live
+  under `results/` folders, not SQLite.
+- optional HTML analytics reports live under `reports/` only when requested.
 - there is no `init` command; producers call centralized table creation before
   writing. `catalog create` creates the fixed catalog when it is missing, and
   `catalog migrate` upgrades an existing stale or incomplete catalog.
@@ -71,7 +73,8 @@ folders or manifests.
 | `$HOME/.cache/agents-docs/docling/` | CLI | SQLite/file | Optional exported Docling JSON/Markdown/text artifacts. Small payloads may be inline SQLite blobs. |
 | `$HOME/.cache/agents-docs/fts/<fts_profile>/<scope_id>/` | CLI | Tantivy directory | Chunk-level full-text island generated from catalog objects. |
 | `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | CLI | LanceDB directory | Chunk-level semantic island generated from catalog objects. |
-| `$HOME/.cache/agents-docs/.results/<date>/<time-run_id>/` | CLI | file | Structured command reports, messages, and logs. |
+| `$HOME/.cache/agents-docs/results/<date>/<time-run_id>/` | CLI | file | Mandatory `result.json`, `events.jsonl`, logs, and user-facing `summary.md`. |
+| `$HOME/.cache/agents-docs/reports/<date>/<time-run_id>/` | CLI | file | Optional on-demand HTML analytics reports. |
 
 ## Catalog Contract
 
@@ -80,6 +83,9 @@ The root `catalog.yaml` defines:
 - `source_roots`: caller-approved root scope, usually one row for single-root
   CLI calls;
 - `source_items`: current file/archive/connector inventory and hashes;
+- `source_root_stats`: current aggregate source inventory statistics per root;
+- `source_extension_stats`: current aggregate source inventory statistics per
+  file extension and root;
 - `documents`: current parse state, not historical versions;
 - `docling_artifacts`: current generated artifacts;
 - `artifact_blobs`: inline or external payload rows;
@@ -92,7 +98,9 @@ The root `catalog.yaml` defines:
   islands.
 
 The catalog does not define chunk tables, command logs, embedding config, or
-backend-internal Tantivy/LanceDB rows.
+backend-internal Tantivy/LanceDB rows. Source inventory statistics are allowed
+because they are current-state metadata derived from `source_items`, not command
+history.
 
 ## Fixed Cache And Catalog Creation
 
@@ -126,7 +134,7 @@ for the only values that cannot sensibly default.
 | `catalog` | `migrate` | none | Upgrades an existing stale or incomplete fixed home catalog. | `catalog.yaml`; no args. |
 | `catalog` | `status` | none | Reports catalog version, table presence, key counts, and stale state. | Fixed home cache; no args. |
 | `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
-| `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional safeguard overrides are `--max-files`, `--max-bytes`, and `--max-depth`. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional overrides are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
 | `parse` | `folder <path>` | `path` | Parses folder-tree sources through Docling and records artifacts/objects. | Parser profile and artifact outputs from `config/parser.yaml`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the folder root. | FTS, embedding, chunk, and store defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates via SQLite. | Search scope defaults are deferred until search enters scope. |
@@ -155,8 +163,11 @@ agents-docs index folder "C:\docs\example-folder"
   for generated island rows, not catalog tables.
 - Tantivy/LanceDB registry rows are catalog state because the CLI must know
   which islands exist and where to find them.
-- Command results are operational proof and belong in `.results/`, not the
-  current-state catalog.
+- Command results are operational proof and belong in `results/`, not the
+  current-state catalog. Every result folder contains a user-facing
+  `summary.md`.
+- HTML analytics reports belong in `reports/` and are generated only when the
+  caller passes a report flag.
 - `folder` means folder tree by default. The given folder is the explicit root
   scope and V1 index unit.
 - LanceDB defaults to one store per explicit folder root. Strategic splitting
@@ -164,6 +175,118 @@ agents-docs index folder "C:\docs\example-folder"
 - Safeguards such as max file count, max byte budget, max parse time, traversal
   depth, symlink behavior, include globs, and exclude globs live in
   `config/parser.yaml`.
+
+## Implemented Patch: Inventory Statistics
+
+This patch was implemented before moving to parsing and indexing.
+
+### Output Path Rename
+
+Rename the mandatory command result directory from `.results/` to `results/`.
+The cache root is already hidden under `$HOME/.cache/agents-docs/`, so an
+additional hidden child directory is unnecessary.
+
+Implementation:
+
+- `config/exposures.yaml` changes the result path template to
+  `results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/`;
+- `results_root()` returns `$HOME/.cache/agents-docs/results`;
+- new runs write `result.json`, `events.jsonl`, and `summary.md` under
+  `results/`;
+- existing `.results/` run folders may be left as legacy local output and do
+  not require migration.
+
+### Scan Statistics
+
+`scan folder` should compute inventory statistics during the existing traversal.
+This does not require another filesystem pass because the scanner already sees
+folders, file sizes, file extensions, media types, and matched/skipped files.
+
+Run-level `result.json` should include:
+
+- `statistics.folder_count`;
+- `statistics.file_count`;
+- `statistics.total_size_bytes`;
+- `statistics.average_file_size_bytes`;
+- `statistics.min_file_size_bytes`;
+- `statistics.max_file_size_bytes`;
+- `statistics.extension_stats[]` with extension, file count, total bytes,
+  average bytes, min bytes, and max bytes.
+
+`summary.md` should remain concise and user-facing:
+
+- overview table with folder count, file count, total size, average size, min
+  size, max size, skipped unmatched files, and failures;
+- top extension table by count or size, capped to a small useful list.
+
+`--report` should add generic HTML analytics content:
+
+- overview text;
+- file extension pie or donut chart by file count;
+- file extension pie or donut chart by total bytes;
+- compact extension table, capped or grouped with `other` when there are many
+  extensions.
+
+### Catalog Patch
+
+The catalog now materializes current root statistics so manager repositories and
+report skills can read stable current-state facts directly without finding the
+latest result folder or repeating SQL aggregation.
+
+Add `source_root_stats`:
+
+| Column | Type | Purpose |
+| --- | --- | --- |
+| `root_id` | text | Source root being summarized. |
+| `scope_id` | text | Root index scope summarized by this row. |
+| `computed_at` | timestamp | UTC timestamp for the latest scan statistics. |
+| `folder_count` | integer | Current folders seen for the root. |
+| `file_count` | integer | Current matched files for the root. |
+| `skipped_unmatched_count` | integer | Files skipped by include rules in the latest scan. |
+| `failed_path_count` | integer | Paths that failed stat/hash in the latest scan. |
+| `total_size_bytes` | integer | Total bytes across current matched files. |
+| `average_file_size_bytes` | real | Average size across current matched files. |
+| `min_file_size_bytes` | integer | Smallest matched file size. |
+| `max_file_size_bytes` | integer | Largest matched file size. |
+| `stats_status` | enum | `current`, `deferred`, or `failed`. |
+
+Add `source_extension_stats`:
+
+| Column | Type | Purpose |
+| --- | --- | --- |
+| `root_id` | text | Source root being summarized. |
+| `extension` | text | Normalized lowercase extension, with `[none]` for no extension. |
+| `media_type` | text | Dominant or representative media type for this extension. |
+| `file_count` | integer | Current matched file count for this extension. |
+| `total_size_bytes` | integer | Total bytes for this extension. |
+| `average_file_size_bytes` | real | Average file size for this extension. |
+| `min_file_size_bytes` | integer | Smallest matched file size for this extension. |
+| `max_file_size_bytes` | integer | Largest matched file size for this extension. |
+| `computed_at` | timestamp | UTC timestamp for the latest scan statistics. |
+
+Recommended indexes:
+
+- `pk_source_root_stats` unique on `root_id`;
+- `pk_source_extension_stats` unique on `root_id, extension`;
+- `idx_source_extension_stats_count` on `root_id, file_count`;
+- `idx_source_extension_stats_size` on `root_id, total_size_bytes`.
+
+Migration:
+
+- bump catalog schema/user version from `0.2`/`2` to `0.3`/`3`;
+- Python migration creates the two new tables and indexes if absent;
+- each successful scan upserts root stats and replaces extension stats for that
+  root;
+- deferred scans may write run-level statistics to `result.json` but should not
+  replace current catalog stats unless the traversal completed.
+
+Higher-layer impact:
+
+- manager repositories can read current inventory stats from SQLite;
+- report skills can use catalog stats for current state or run stats for a
+  specific command execution;
+- no higher layer needs to rescan the filesystem to answer file-count,
+  file-size, or extension-mix questions.
 
 ## Scope
 
@@ -181,7 +304,7 @@ This work covers:
 - normalized object and valuable-item extraction;
 - Tantivy FTS build, refresh, status, rebuild, and delete;
 - LanceDB semantic build, refresh, status, rebuild, and delete;
-- structured JSON/JSONL command reports under `.results/`;
+- structured JSON/JSONL command reports under `results/`;
 - tests with synthetic public fixtures.
 
 ## Non-Goals
@@ -319,7 +442,7 @@ Deliverables:
 
 Proof:
 
-- manager-style synthetic run can consume SQLite plus `.results/` reports
+- manager-style synthetic run can consume SQLite plus `results/` reports
   without knowing lower-index internals.
 
 ## Design Decisions
@@ -334,6 +457,8 @@ Proof:
 | DD-006 | Search timing. | Build/refresh/status come first; search follows once indexes are populated. |
 | DD-007 | Dependency version pinning. | Keep current dependency bounds until full-stack install proof, then pin compatible versions. |
 | DD-008 | Folder versus folder tree behavior and safeguards. | `folder` means folder tree by default; keep safeguard defaults in `config/parser.yaml` and require explicit overrides for big jobs. |
+| DD-009 | Result summaries. | Every `results/` command folder includes a user-focused `summary.md` with concise overview tables and no long raw listings. |
+| DD-010 | HTML reports. | Reports are optional on-demand CLI artifacts under `reports/`; the CLI owns generic reports and stable data inputs, while skill wrappers may create customized reports from the same surfaces. |
 
 ## Exit Criteria
 
@@ -347,5 +472,5 @@ Proof:
 - Docling artifacts can be stored inline or externally by threshold.
 - Catalog objects feed generated Tantivy and LanceDB chunks only at indexing
   time.
-- Synthetic fixtures prove build, refresh, rebuild, status, and `.results/`
+- Synthetic fixtures prove build, refresh, rebuild, status, and `results/`
   behavior.

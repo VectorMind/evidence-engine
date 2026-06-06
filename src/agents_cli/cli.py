@@ -17,11 +17,11 @@ from typing import Any
 from agents_cli import __version__
 from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
 from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
-from agents_cli.paths import catalog_path, fixed_cache_root, results_root
+from agents_cli.paths import catalog_path, fixed_cache_root, reports_root, results_root
 from agents_cli.results import CommandRun
 
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -83,6 +83,7 @@ def health(_: argparse.Namespace) -> int:
                 "cache_root_exists": fixed_cache_root().exists(),
                 "catalog_exists": catalog_path().exists(),
                 "results_root_exists": results_root().exists(),
+                "reports_root_exists": reports_root().exists(),
             },
             "checks": [
                 {"name": "fixed_cache_contract", "status": "ok"},
@@ -115,9 +116,7 @@ def scan_folder(args: argparse.Namespace) -> int:
                 "redacted_detail": exc.__class__.__name__,
             }
         )
-    run.finish(payload)
-    payload["run_id"] = run.run_id
-    payload["result_uri"] = run.result_uri
+    payload = run.finish(payload, write_report=args.report)
     _emit(payload)
     return 0 if payload["status"] == "ok" else 1
 
@@ -184,6 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Override the configured folder-depth safeguard.",
+    )
+    scan_folder_parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Write an optional generic HTML report under the fixed reports directory.",
     )
     scan_folder_parser.set_defaults(handler=scan_folder)
 

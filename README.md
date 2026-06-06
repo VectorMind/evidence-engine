@@ -83,8 +83,10 @@ agents-docs search text "contract renewal clause"
 
 `scan folder` accepts optional safeguard overrides only when a caller needs to
 exceed configured defaults: `--max-files`, `--max-bytes`, and `--max-depth`.
-It writes `source_roots`, `source_items`, and a root `index_scopes` row, then
-writes `result.json` and `events.jsonl` under `.results/`.
+Add `--report` when an on-demand HTML report is needed. It writes
+`source_roots`, `source_items`, current inventory statistics, and a root
+`index_scopes` row, then writes `result.json`, `events.jsonl`, and `summary.md`
+under `results/`.
 
 ## CLI And Data Surfaces
 
@@ -101,15 +103,23 @@ flowchart LR
   C --> D[catalog/catalog.sqlite]
   C --> E[fts/<profile>/<scope_id>/]
   C --> F[semantic/<profile>/<scope_id>.lancedb/]
-  C --> G[.results/<date>/<run>/]
+  C --> G[results/<date>/<run>/]
+  C --> H[reports/<date>/<run>/]
   A -->|read data surface| D
-  A -->|read reports| G
+  A -->|read result summaries| G
+  A -->|read optional reports| H
   D -->|registry pointers| E
   D -->|registry pointers| F
 ```
 
 The CLI is the write/control surface. Consumers may read the generated SQLite
 catalog directly for data access.
+
+`results/` is generated for every command and is operational proof plus a human
+Markdown summary. `reports/` is generated only when requested, for example with
+`scan folder --report`; it contains generic HTML analytics reports. Skill
+wrappers can customize richer reports by reading `result.json`, `summary.md`,
+and the SQLite catalog.
 
 ## Data Contracts
 
@@ -139,7 +149,8 @@ flowchart TB
     BL[blobs/]
     FTS[fts/]
     SEM[semantic/]
-    RES[.results/]
+    RES[results/]
+    REP[reports/]
   end
 
   CY --> DB
@@ -147,6 +158,7 @@ flowchart TB
   CE --> FTS
   CE --> SEM
   CE --> RES
+  CE --> REP
   CP --> FTS
   CP --> SEM
   EM --> SEM

@@ -41,6 +41,7 @@ contract for the current-state corpus-cache catalog.
 The catalog defines:
 
 - source roots and source items;
+- current source root and extension statistics;
 - current documents;
 - Docling artifact records;
 - artifact blob records;
@@ -82,7 +83,9 @@ The implementation uses these layers:
   lower islands generated from catalog objects;
 - LanceDB store registry: current locations and lifecycle state for semantic
   lower islands generated from catalog objects;
-- `.results/`: command reports, messages, and logs.
+- `results/`: mandatory command result JSON, events, logs, and Markdown
+  summaries;
+- `reports/`: optional on-demand HTML analytics reports.
 
 SQLite is the source of truth for source/document/object state and for finding
 lower-index islands. Tantivy and LanceDB own their internal generated chunk
@@ -103,13 +106,15 @@ $HOME/.cache/agents-docs/
     <fts_profile>/<scope_id>/
   semantic/
     <embedding_profile>/<scope_id>.lancedb/
-  .results/
+  results/
+    <yyyy>-<mm>-<dd>/<hhmmss>-<run_id>/
+  reports/
     <yyyy>-<mm>-<dd>/<hhmmss>-<run_id>/
 ```
 
 The repository root YAML files are schema, config, and template contracts only.
 Generated SQLite databases, Docling artifacts, FTS indexes, LanceDB stores, and
-command results belong under the fixed home cache root.
+command results/reports belong under the fixed home cache root.
 
 ## Migration Contract
 
@@ -148,7 +153,7 @@ The CLI exposes stable identities:
 - `fts_index_id`: Tantivy island registry identity;
 - `semantic_store_id`: LanceDB island registry identity;
 - `chunk_id`: generated lower-index chunk/search-unit identity;
-- `run_id`: command execution identity for `.results/` output.
+- `run_id`: command execution identity for `results/` output.
 
 Lower indexes may use backend-native row IDs, but generated chunk rows carry
 `chunk_id`, `doc_id`, `object_id`, and `scope_id`.
@@ -160,6 +165,7 @@ SQLite is implemented first with Python stdlib `sqlite3`.
 SQLite owns:
 
 - source roots and source items;
+- current source root statistics and current source extension statistics;
 - current documents;
 - Docling artifact records;
 - blob payload records;
@@ -180,6 +186,11 @@ SQLite does not own:
 - Tantivy internal document rows;
 - LanceDB internal rows;
 - command logs or messages.
+
+Source statistics are current-state metadata derived from source inventory.
+SQLite stores aggregate root statistics and per-extension statistics so higher
+layers can inspect file count, folder count, file-size distribution, and
+extension mix without rescanning the filesystem.
 
 The CLI provides control commands for table creation, migration, status, health,
 and lifecycle operations. It does not provide arbitrary SQL query or export
@@ -271,7 +282,7 @@ path or query text when those cannot be defaulted.
 | `catalog` | `migrate` | none | Upgrades a stale or incomplete existing fixed home catalog to the current schema. | Fixed cache root and `catalog.yaml`. |
 | `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
 | `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
-| `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional safeguard override flags are `--max-files`, `--max-bytes`, and `--max-depth`. |
+| `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional flags are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
 | `parse` | `folder <path>` | `path` | Parses inventoried or directly supplied folder-tree sources through Docling and records artifacts/objects. | Parser and artifact defaults from `config/parser.yaml`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the given folder root. | FTS, embedding, chunk, store, and safeguard defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates results through SQLite. | Search/index defaults from config; exact scope rules are deferred. |
@@ -280,8 +291,12 @@ Every non-interactive command supports structured `--json` or `--jsonl` output.
 Commands that modify cache state support dry-run when the operation can be
 planned without writes.
 
-Every command writes structured results under `.results/` for the caller cache
-root. Results include:
+Every command writes structured results under `results/` for the fixed cache
+root. The result folder always contains `result.json`, `events.jsonl`, and a
+user-focused `summary.md`. Markdown summaries use overview tables where useful,
+but avoid long raw row listings.
+
+Results include:
 
 - command name;
 - schema version;
@@ -290,7 +305,14 @@ root. Results include:
 - run ID;
 - fixed cache root;
 - created, changed, unchanged, skipped, deferred, stale, and failed counts;
+- inventory statistics such as folder count, file count, total file size,
+  average/min/max file size, and per-extension file count and byte totals;
 - fatal errors separately from retryable or deferred work.
+
+HTML analytics reports are optional and on demand. Commands that support
+reporting expose `--report` and write a generic `report.html` under `reports/`.
+The CLI owns stable report inputs and generic reports; skill wrappers may build
+custom reports by reading `result.json`, `summary.md`, and the SQLite catalog.
 
 `catalog create`, `catalog migrate`, `catalog status`, and `health` accept no additional
 arguments.
@@ -308,7 +330,7 @@ Refresh behavior:
 - for small scoped indexes, allow delete-and-rebuild instead of incremental
   mutation;
 - record current stale/rebuilt/deleted/deferred/failed state in SQLite;
-- record command details in `.results/`.
+- record command details in `results/`.
 
 Folder commands treat `folder` as a folder tree by default. The given folder is
 the explicit root scope and V1 index unit. Limits such as maximum file count,
