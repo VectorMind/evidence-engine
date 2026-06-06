@@ -28,6 +28,15 @@ folder_safeguards:
   include_globs_default: ["**/*.pdf", "**/*.docx", "**/*.md", "**/*.txt", "**/*.html"]
   exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"]
 
+parser_runtime:
+  document_timeout_seconds_default: 300
+  max_num_pages_default: null
+  max_file_size_bytes_default: null
+  docling_threads_default: 2
+  pdf_batch_size_default: 1
+  pdf_queue_max_size_default: 8
+  images_scale_default: 1.0
+
 parser_profiles:
   - name: docling_default
     description: Default balanced Docling parse profile.

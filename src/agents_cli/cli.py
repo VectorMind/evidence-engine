@@ -9,25 +9,102 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
+import logging
 import platform
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from agents_cli import __version__
 from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
+from agents_cli.fts import IndexOptions, SearchOptions, index_folder_to_tantivy, search_text_indexes
 from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
 from agents_cli.parse import ParseOptions, parse_folder_to_catalog
 from agents_cli.paths import catalog_path, fixed_cache_root, reports_root, results_root
-from agents_cli.results import CommandRun
+from agents_cli.results import CommandRun, render_console_summary
+from agents_cli.semantic import (
+    SemanticIndexOptions,
+    SemanticSearchOptions,
+    index_folder_to_lancedb,
+    search_semantic_indexes,
+)
 
 
 SCHEMA_VERSION = "0.3"
 
 
 def _emit(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    print(render_console_summary(payload))
+
+
+class _ParseProgress:
+    def __init__(self, stream: TextIO, *, enabled: bool) -> None:
+        self.stream = stream
+        self.enabled = enabled
+        self.interactive = bool(getattr(stream, "isatty", lambda: False)())
+        self.last_len = 0
+
+    def __call__(self, event: dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        event_type = event.get("event")
+        if event_type == "document_start" and self.interactive:
+            self._write_current(
+                self._line(
+                    event,
+                    status="parsing",
+                )
+            )
+        elif event_type == "document_done":
+            self._write_done(self._line(event, status=self._status_text(event)))
+
+    def _line(self, event: dict[str, Any], *, status: str) -> str:
+        index = event.get("index", "?")
+        total = event.get("total", "?")
+        path = _shorten(str(event.get("relative_path", "")), 88)
+        return f"parse [{index}/{total}] {status}: {path}"
+
+    def _status_text(self, event: dict[str, Any]) -> str:
+        status = str(event.get("status", "unknown"))
+        if status == "failed":
+            return f"failed ({event.get('error_kind', 'unknown')})"
+        if event.get("docling_status") == "partial_success":
+            return "partial"
+        return status
+
+    def _write_current(self, line: str) -> None:
+        padded = line.ljust(self.last_len)
+        self.stream.write("\r" + padded)
+        self.stream.flush()
+        self.last_len = len(line)
+
+    def _write_done(self, line: str) -> None:
+        if self.interactive:
+            padded = line.ljust(self.last_len)
+            self.stream.write("\r" + padded + "\n")
+            self.last_len = 0
+        else:
+            self.stream.write(line + "\n")
+        self.stream.flush()
+
+
+def _shorten(value: str, max_length: int) -> str:
+    if len(value) <= max_length:
+        return value
+    return "..." + value[-(max_length - 3) :]
+
+
+def _configure_parse_logging(*, verbose: bool) -> None:
+    if verbose:
+        return
+    for logger_name in (
+        "docling",
+        "docling_core",
+        "docling_ibm_models",
+        "RapidOCR",
+        "rapidocr",
+    ):
+        logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 
 def _base_payload(command: str) -> dict[str, Any]:
@@ -96,6 +173,24 @@ def health(_: argparse.Namespace) -> int:
                     if importlib.util.find_spec("docling") is not None
                     else "missing",
                 },
+                {
+                    "name": "tantivy",
+                    "status": "ok"
+                    if importlib.util.find_spec("tantivy") is not None
+                    else "missing",
+                },
+                {
+                    "name": "lancedb",
+                    "status": "ok"
+                    if importlib.util.find_spec("lancedb") is not None
+                    else "missing",
+                },
+                {
+                    "name": "fastembed",
+                    "status": "ok"
+                    if importlib.util.find_spec("fastembed") is not None
+                    else "missing",
+                },
             ],
         }
     )
@@ -130,12 +225,27 @@ def scan_folder(args: argparse.Namespace) -> int:
 
 
 def parse_folder(args: argparse.Namespace) -> int:
+    _configure_parse_logging(verbose=args.verbose)
+    progress_enabled = args.progress
+    if progress_enabled is None:
+        progress_enabled = sys.stderr.isatty()
     run = CommandRun.start("parse folder")
     payload = _base_payload("parse folder")
     try:
         result = parse_folder_to_catalog(
             Path(args.path),
-            ParseOptions(profile=args.profile, limit=args.limit),
+            ParseOptions(
+                profile=args.profile,
+                limit=args.limit,
+                progress=_ParseProgress(sys.stderr, enabled=bool(progress_enabled)),
+                document_timeout=args.document_timeout,
+                max_pages=args.max_pages,
+                max_file_size=args.max_file_size,
+                docling_threads=args.docling_threads,
+                queue_size=args.queue_size,
+                batch_size=args.batch_size,
+                suppress_converter_output=not args.verbose,
+            ),
         )
         payload.update(result)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
@@ -152,11 +262,75 @@ def parse_folder(args: argparse.Namespace) -> int:
 
 
 def index_folder(args: argparse.Namespace) -> int:
-    return _not_implemented("index folder", source_path=str(Path(args.path)))
+    run = CommandRun.start("index folder")
+    payload = _base_payload("index folder")
+    try:
+        if args.semantic:
+            result = index_folder_to_lancedb(
+                Path(args.path),
+                SemanticIndexOptions(force=args.force),
+            )
+        else:
+            result = index_folder_to_tantivy(
+                Path(args.path),
+                IndexOptions(force=args.force),
+            )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
 
 
 def search_text(args: argparse.Namespace) -> int:
-    return _not_implemented("search text", query=args.query)
+    run = CommandRun.start("search text")
+    payload = _base_payload("search text")
+    try:
+        result = search_text_indexes(
+            args.query,
+            SearchOptions(limit=args.limit),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
+def search_semantic(args: argparse.Namespace) -> int:
+    run = CommandRun.start("search semantic")
+    payload = _base_payload("search semantic")
+    try:
+        result = search_semantic_indexes(
+            args.query,
+            SemanticSearchOptions(limit=args.limit),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -234,6 +408,60 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parse at most this many current source files.",
     )
     parse_folder_parser.add_argument(
+        "--document-timeout",
+        type=float,
+        default=None,
+        help="Override the per-document Docling timeout in seconds.",
+    )
+    parse_folder_parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Skip documents above this page count.",
+    )
+    parse_folder_parser.add_argument(
+        "--max-file-size",
+        type=int,
+        default=None,
+        help="Skip documents above this byte size.",
+    )
+    parse_folder_parser.add_argument(
+        "--docling-threads",
+        type=int,
+        default=None,
+        help="Override Docling CPU inference threads.",
+    )
+    parse_folder_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Override Docling PDF OCR/layout/table batch size.",
+    )
+    parse_folder_parser.add_argument(
+        "--queue-size",
+        type=int,
+        default=None,
+        help="Override Docling PDF stage queue size.",
+    )
+    parse_folder_parser.add_argument(
+        "--progress",
+        dest="progress",
+        action="store_true",
+        default=None,
+        help="Show document-level parse progress.",
+    )
+    parse_folder_parser.add_argument(
+        "--no-progress",
+        dest="progress",
+        action="store_false",
+        help="Suppress document-level parse progress.",
+    )
+    parse_folder_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Keep verbose third-party parser logs.",
+    )
+    parse_folder_parser.add_argument(
         "--report",
         action="store_true",
         help="Write an optional generic HTML report under the fixed reports directory.",
@@ -244,13 +472,41 @@ def build_parser() -> argparse.ArgumentParser:
     index_sub = index.add_subparsers(dest="index_command")
     index_folder_parser = index_sub.add_parser("folder", help="Index a folder tree.")
     index_folder_parser.add_argument("path", help="Folder path to index.")
+    index_folder_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force a rebuild even when the indexed source watermark is current.",
+    )
+    index_folder_parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="Build the LanceDB semantic store instead of the default FTS index.",
+    )
     index_folder_parser.set_defaults(handler=index_folder)
 
     search = subparsers.add_parser("search", help="Search built indexes.")
     search_sub = search.add_subparsers(dest="search_command")
     search_text_parser = search_sub.add_parser("text", help="Search with a text query.")
     search_text_parser.add_argument("query", help="Search query.")
+    search_text_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of FTS hits to return.",
+    )
     search_text_parser.set_defaults(handler=search_text)
+
+    search_semantic_parser = search_sub.add_parser(
+        "semantic", help="Search semantic LanceDB stores with a text query."
+    )
+    search_semantic_parser.add_argument("query", help="Search query.")
+    search_semantic_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of semantic hits to return.",
+    )
+    search_semantic_parser.set_defaults(handler=search_semantic)
 
     return parser
 

@@ -8,7 +8,7 @@ import sqlite3
 from typing import Any
 
 from agents_cli.contracts import read_contract_text
-from agents_cli.paths import catalog_path, fixed_cache_root
+from agents_cli.paths import catalog_path
 
 
 CATALOG_SCHEMA_VERSION = "0.3"

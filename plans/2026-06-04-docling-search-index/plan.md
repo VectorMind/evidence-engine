@@ -30,7 +30,7 @@ directory, and commands should have as few arguments as possible.
 | CR-007 | `embedding_profiles` is config material. | Moved embedding profiles to `config/embeddings.yaml`. |
 | CR-008 | Tantivy/LanceDB internal row schemas should not be catalog tables. | Removed `tantivy_documents` and `lancedb_chunks` from `catalog.yaml`; added `store_templates.yaml`. |
 | CR-009 | Tantivy/LanceDB store registries are still needed, but not their internal rows. | Keep lean `tantivy_indexes` and `lancedb_stores` registry tables for locating and managing physical islands. Keep generated row templates in `store_templates.yaml`. |
-| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `$HOME/.cache/agents-docs/results/<date>/<time-run_id>/`. |
+| CR-010 | Command runs and messages do not belong in the database. | Removed command-run/message tables; command output goes to `$HOME/.cache/agents-docs/results/<yyyy>.<mm>/<dd>/<hhmmss>-<command>/`. |
 
 ## Resolution Summary
 
@@ -75,8 +75,9 @@ folders or manifests.
 | `$HOME/.cache/agents-docs/docling/` | CLI | SQLite/file | Optional exported Docling JSON/Markdown/text artifacts. Small payloads may be inline SQLite blobs. |
 | `$HOME/.cache/agents-docs/fts/<fts_profile>/<scope_id>/` | CLI | Tantivy directory | Chunk-level full-text island generated from catalog objects. |
 | `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | CLI | LanceDB directory | Chunk-level semantic island generated from catalog objects. |
-| `$HOME/.cache/agents-docs/results/<date>/<time-run_id>/` | CLI | file | Mandatory `result.json`, `events.jsonl`, logs, and user-facing `summary.md`. |
-| `$HOME/.cache/agents-docs/reports/<date>/<time-run_id>/` | CLI | file | Optional on-demand HTML analytics reports. |
+| `$HOME/.cache/agents-docs/models/fastembed/` | CLI | file | Local FastEmbed model cache for semantic indexing commands. |
+| `$HOME/.cache/agents-docs/results/<yyyy>.<mm>/<dd>/<hhmmss>-<command>/` | CLI | file | Mandatory `result.json`, `events.jsonl`, logs, and user-facing `summary.md`. |
+| `$HOME/.cache/agents-docs/reports/<yyyy>.<mm>/<dd>/<hhmmss>-<command>/` | CLI | file | Optional on-demand HTML analytics reports. |
 
 ## Catalog Contract
 
@@ -138,8 +139,9 @@ for the only values that cannot sensibly default.
 | `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional overrides are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
 | `parse` | `folder <path>` | `path` | Auto-scans the folder tree, parses current sources through Docling, and records JSON artifacts/objects. | Parser defaults from `config/parser.yaml`; default profile is `docling_ocr`; optional flags are `--profile`, `--limit`, and `--report`. |
-| `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the folder root. | FTS, embedding, chunk, and store defaults from config. |
-| `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates via SQLite. | Search scope defaults are deferred until search enters scope. |
+| `index` | `folder <path>` | `path` | Builds or refreshes the Tantivy FTS island for the folder root from current parsed document objects. Add `--semantic` to build the LanceDB semantic store instead. | FTS, embedding, and chunk defaults from config; optional `--force` rebuilds even when current. |
+| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Search defaults from config; optional `--limit` caps returned hits. |
+| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Embedding defaults from config; optional `--limit` caps returned hits. |
 
 Example minimal calls:
 
@@ -161,6 +163,12 @@ agents-docs index folder "C:\docs\example-folder"
   are enough because stale state and source hashes drive refresh.
 - Chunking belongs to indexing. SQLite stores paragraph/section/table/etc.
   master objects; lower index chunks reference those objects.
+- FTS V1 indexes only current parsed objects. `index folder` auto-scans, but it
+  does not silently parse or OCR missing documents because that prerequisite can
+  be expensive.
+- Semantic V1 uses the same generated chunks as FTS, writes one LanceDB table
+  named `chunks` per folder-root store, and resolves the default FastEmbed
+  profile from `config/embeddings.yaml`.
 - Tantivy/LanceDB row shapes are still useful to specify, but they are templates
   for generated island rows, not catalog tables.
 - Tantivy/LanceDB registry rows are catalog state because the CLI must know
@@ -168,6 +176,9 @@ agents-docs index folder "C:\docs\example-folder"
 - Command results are operational proof and belong in `results/`, not the
   current-state catalog. Every result folder contains a user-facing
   `summary.md`.
+- Console output is a short human summary with links to `result.json`,
+  `summary.md`, and optional `report.html`; machine consumers read persisted
+  files rather than scraping terminal output.
 - HTML analytics reports belong in `reports/` and are generated only when the
   caller passes a report flag.
 - `folder` means folder tree by default. The given folder is the explicit root
@@ -193,7 +204,7 @@ additional hidden child directory is unnecessary.
 Implementation:
 
 - `config/exposures.yaml` changes the result path template to
-  `results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/`;
+  `results/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/`;
 - `results_root()` returns `$HOME/.cache/agents-docs/results`;
 - new runs write `result.json`, `events.jsonl`, and `summary.md` under
   `results/`;
@@ -466,6 +477,8 @@ Proof:
 | DD-011 | Producer prerequisites. | Producer commands auto-run safe prior steps with defaults; `parse folder` auto-scans before parsing. |
 | DD-012 | Default parser profile. | Omitted `--profile` uses `docling_ocr`; faster non-OCR parsing remains available through `--profile docling_fast_text`. |
 | DD-013 | Parse artifact storage. | Store canonical Docling JSON through the blob storage manager; Markdown is lazy/optional and not stored by default. |
+| DD-014 | FTS V1 scope. | Default `index folder` builds Tantivy FTS from existing parsed objects and auto-runs scan. |
+| DD-015 | Semantic V1 scope. | `index folder --semantic` builds one LanceDB store per folder root from the same generated chunks, using the default FastEmbed profile. |
 
 ## Exit Criteria
 

@@ -10,6 +10,7 @@ health checks, and structured command reports. Manager repositories and central
 skills call the CLI; they do not implement the lower indexing internals.
 
 Dependency rationale is documented in [docs/dependencies.md](./docs/dependencies.md).
+Model/runtime choices are documented in [docs/models.md](./docs/models.md).
 
 ## Current Status
 
@@ -65,8 +66,9 @@ from config files rather than command arguments.
 | `health` | none | none | JSON | Check fixed paths and available runtime dependencies. |
 | `scan` | `folder <path>` | `path` | JSON | Inventory a folder tree and record source items. |
 | `parse` | `folder <path>` | `path` | JSON | Auto-scan, parse sources through Docling, and record JSON artifacts/objects. |
-| `index` | `folder <path>` | `path` | JSON/JSONL planned | Build or refresh FTS and semantic islands for a folder root. |
-| `search` | `text <query>` | `query` | JSONL planned | Search built lower-index islands and hydrate through SQLite. |
+| `index` | `folder <path>` | `path` | result files | Build or refresh the FTS island for a folder root. Add `--semantic` for the LanceDB store. |
+| `search` | `text <query>` | `query` | result files | Search current Tantivy FTS islands and hydrate chunk provenance. |
+| `search` | `semantic <query>` | `query` | result files | Search current LanceDB semantic stores and hydrate chunk provenance. |
 
 Minimal examples:
 
@@ -78,7 +80,9 @@ agents-docs health
 agents-docs scan folder "C:\docs\example-folder"
 agents-docs parse folder "C:\docs\example-folder"
 agents-docs index folder "C:\docs\example-folder"
+agents-docs index folder "C:\docs\example-folder" --semantic
 agents-docs search text "contract renewal clause"
+agents-docs search semantic "contract renewal clause"
 ```
 
 `scan folder` accepts optional safeguard overrides only when a caller needs to
@@ -91,7 +95,36 @@ under `results/`.
 `parse folder` auto-runs the required catalog and scan prerequisites. It
 defaults to `docling_ocr`; use `--profile docling_fast_text` when a faster
 non-OCR run is wanted. The canonical stored artifact is Docling JSON; Markdown
-is treated as a lazy/export concern, not a default stored duplicate.
+is treated as a lazy/export concern, not a default stored duplicate. OCR parses
+use conservative local runtime defaults: two Docling CPU threads, PDF stage
+batch size 1, queue size 8, and a 300 second per-document timeout. Use
+`--docling-threads`, `--batch-size`, `--queue-size`, `--document-timeout`,
+`--max-pages`, or `--max-file-size` for deliberate overrides.
+
+Parse failures are classified in `result.json`, `summary.md`, and optional
+HTML reports. Password-protected PDFs, memory exhaustion, timeouts, and
+configured size/page safeguards are reported as separate failure kinds with
+suggested retry actions. Interactive parse runs show document-level progress on
+stderr; use `--no-progress` to suppress it or `--verbose` to keep third-party
+parser logs.
+
+`index folder` currently builds the Tantivy FTS island for the folder root from
+current parsed document objects. It auto-scans the folder, but it does not
+silently parse/OCR missing documents; run `parse folder` first when no parsed
+objects exist. Use `--force` to rebuild even when the FTS watermark is current.
+Add `--semantic` to build the LanceDB semantic store instead, using the default
+FastEmbed profile from `config/embeddings.yaml`.
+
+`search text` searches current Tantivy FTS islands and returns hydrated
+provenance fields from stored chunk metadata. Use `--limit` to cap returned
+hits.
+
+`search semantic` searches current LanceDB stores and returns the same hydrated
+chunk provenance shape, with vector distances converted to sortable scores.
+
+Commands print a short human summary to the terminal instead of the full JSON
+payload. The summary includes links to the persisted `result.json`,
+`summary.md`, and any generated `report.html`.
 
 ## CLI And Data Surfaces
 
@@ -108,8 +141,8 @@ flowchart LR
   C --> D[catalog/catalog.sqlite]
   C --> E[fts/<profile>/<scope_id>/]
   C --> F[semantic/<profile>/<scope_id>.lancedb/]
-  C --> G[results/<date>/<run>/]
-  C --> H[reports/<date>/<run>/]
+  C --> G[results/2026.06/06/120102-parse-folder/]
+  C --> H[reports/2026.06/06/120102-parse-folder/]
   A -->|read data surface| D
   A -->|read result summaries| G
   A -->|read optional reports| H
@@ -124,7 +157,9 @@ catalog directly for data access.
 Markdown summary. `reports/` is generated only when requested, for example with
 `scan folder --report`; it contains generic HTML analytics reports. Skill
 wrappers can customize richer reports by reading `result.json`, `summary.md`,
-and the SQLite catalog.
+and the SQLite catalog. Result and report folders are grouped as
+`<yyyy>.<mm>/<dd>/<hhmmss>-<command>/`; if the same command starts twice in one
+second, a numeric suffix may be added.
 
 ## Data Contracts
 
@@ -137,6 +172,7 @@ Review these files for the binding data surface:
 | [config/exposures.yaml](./config/exposures.yaml) | Fixed cache root, path templates, exposure kinds, blob storage defaults. |
 | [config/parser.yaml](./config/parser.yaml) | Parser profiles, traversal defaults, index defaults, safeguards. |
 | [config/embeddings.yaml](./config/embeddings.yaml) | Embedding profile config. |
+| [docs/models.md](./docs/models.md) | Model/runtime profile plan for Docling, OCR, embeddings, reranking, and local REST providers. |
 | [specifications/corpus-cache-cli/spec.md](./specifications/corpus-cache-cli/spec.md) | Durable CLI and data contract. |
 
 ```mermaid

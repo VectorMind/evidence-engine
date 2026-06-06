@@ -296,19 +296,124 @@ Status: Phase 4 Docling parse proof started.
   returned one OCR `RuntimeError` while RapidOCR models were being downloaded,
   but the direct sequential OCR diagnostic and the later default OCR parse
   succeeded after models were present.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files after
+  the console/path contract change; result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli scan folder tests\fixtures\scan-basic --report`;
+  result: concise terminal output, not JSON. The output showed status `ok`,
+  file/folder/size counts, change counts, and links to
+  `results/2026.06/06/100602-scan-folder/result.json`,
+  `results/2026.06/06/100602-scan-folder/summary.md`, and
+  `reports/2026.06/06/100602-scan-folder/report.html`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status`; result:
+  concise terminal output with catalog path, version `3`, and table count `12`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli health`; result: concise
+  terminal output with cache path and check statuses. Bare Python reported
+  `docling=missing`; the uv environment remains the verified Docling runtime.
+- Ran `uv pip install -e ".[fts]"`; result: `tantivy==0.26.0` installed in the
+  local uv environment.
+- Ran a throwaway Tantivy API check in the uv environment; result: created a
+  temporary index, inserted one stored document, searched `bank`, and retrieved
+  stored fields successfully.
+- Ran `uv run python -m agents_cli.cli health`; result: concise output with
+  `docling=ok` and `tantivy=ok`.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files after
+  adding FTS; result: success.
+- Ran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic --force`;
+  result: `status: ok`, root `parse-basic`, one planned/indexed chunk, one
+  indexed document, and index URI
+  `fts/tantivy_default_en/scope_e2bf17f2ccde28e25ef84119053e88cd`.
+- Ran `uv run python -m agents_cli.cli search text "dummy pdf" --limit 5`;
+  result: `status: ok`, one hit returned across one FTS index, and the hit
+  resolved to the public dummy PDF fixture.
+- Reran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic`;
+  result: `status: ok`, `index_status: current`, `chunks_indexed: 0`, and
+  `chunks_unchanged: 1`, proving watermark-based unchanged behavior.
+- Ran `uv run python -m agents_cli.cli parse folder "<scalable capital root>" --profile docling_fast_text --limit 1`;
+  result: `status: ok`, one planned document parsed successfully, and auto-scan
+  status `ok`.
+- Ran `uv run python -m agents_cli.cli index folder "<scalable capital root>" --force`;
+  result: `status: ok`, root `scalable capital`, 99 planned/indexed chunks,
+  99 indexed documents, and index URI
+  `fts/tantivy_default_en/scope_c50618d3203d3739e34239c58c6a919d`.
+- Ran `uv run python -m agents_cli.cli search text "scalable capital" --limit 5`;
+  result: `status: ok`, five hits returned across two current FTS indexes,
+  with hits from the scalable-capital FTS island.
+- Ran `uv run python -m agents_cli.cli search text "dummy pdf" --limit 5` after
+  the scalable index was added; result: `status: ok`, one dummy fixture hit
+  returned across two current FTS indexes.
+- Ran a read-only SQLite query against `tantivy_indexes`; result: two current
+  Tantivy registry rows totaling 100 indexed chunks, with 99 chunks for the
+  scalable-capital root and one chunk for the dummy fixture root.
+- Reran `uv run python -m agents_cli.cli parse folder tests\fixtures\parse-basic --profile docling_fast_text --limit 1`
+  after redirecting Docling conversion stdout/stderr; result: concise CLI
+  summary only, with no third-party progress output leaking to the terminal.
+- Ran `uv pip install -e ".[semantic,embeddings]"`; initial attempts timed out
+  on stale uv locks, then succeeded after removing the confirmed stale lock
+  files and retrying with a longer lock timeout.
+- Verified semantic dependency imports in the uv environment: `lancedb 0.33.0`,
+  `fastembed 0.8.0`, `pyarrow 24.0.0`, and `numpy 2.4.6`.
+- Ran a temporary LanceDB smoke test; result: created a local table with one
+  vector row and retrieved it through vector search.
+- Ran a FastEmbed dimension check; result: default
+  `BAAI/bge-small-en-v1.5` profile reports dimension `384`. The first check
+  downloaded model files and showed the usual Windows Hugging Face symlink
+  warning.
+- Ran `uv run python -m agents_cli.cli health`; result: concise output with
+  `docling=ok`, `tantivy=ok`, `lancedb=ok`, and `fastembed=ok`.
+- Ran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic --semantic --force`;
+  result: `status: ok`, root `parse-basic`, one planned/indexed chunk, one
+  indexed document, vector dimension `384`, and store URI
+  `semantic/fastembed_bge_small_en_v1_5/scope_e2bf17f2ccde28e25ef84119053e88cd.lancedb`.
+- Ran `uv run python -m agents_cli.cli search semantic "dummy pdf" --limit 5`;
+  result: `status: ok`, one semantic hit returned, with the dummy PDF fixture as
+  the top hit.
+- Reran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic --semantic`;
+  result: `status: ok`, `index_status: current`, one unchanged chunk, and no
+  third-party console output.
+- Ran `uv run python -m agents_cli.cli parse folder tests\fixtures\scan-basic --profile docling_fast_text --limit 1`;
+  result: `status: ok`, one small public fixture document parsed successfully.
+- Ran `uv run python -m agents_cli.cli index folder tests\fixtures\scan-basic --semantic --force`;
+  result: first-time LanceDB table creation for a new root completed with only
+  the compact CLI summary, proving OS-level suppression of Lance/Rust warnings.
+- Ran `uv run python -m agents_cli.cli index folder "<scalable capital root>" --semantic --force`;
+  result: `status: ok`, root `scalable capital`, 99 planned/indexed chunks, 99
+  indexed documents, vector dimension `384`, and store URI
+  `semantic/fastembed_bge_small_en_v1_5/scope_c50618d3203d3739e34239c58c6a919d.lancedb`.
+- Ran `uv run python -m agents_cli.cli search semantic "scalable capital" --limit 5`;
+  result: `status: ok`, five semantic hits returned across three current
+  LanceDB stores, including hits from the scalable-capital store.
+- Ran a read-only SQLite query against `lancedb_stores`; result: three current
+  LanceDB registry rows totaling 101 indexed chunks, with 99 chunks for the
+  scalable-capital root and one chunk each for the dummy and scan-basic fixture
+  roots.
+- Ran final `python -m py_compile` on all current `src/agents_cli/*.py` files
+  after adding shared chunk helpers and semantic indexing; result: success.
+- Reran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic`;
+  result: `status: ok`, backend `fts`, one planned chunk, one indexed document.
+  The first run after chunk-helper refactoring refreshed the FTS index because
+  the source high-watermark now includes the FTS profile.
+- Reran `uv run python -m agents_cli.cli index folder tests\fixtures\parse-basic --semantic`;
+  result: `status: ok`, backend `semantic`, `index_status: current`, one
+  unchanged chunk.
+- Ran final `uv run python -m agents_cli.cli search text "dummy pdf" --limit 3`;
+  result: `status: ok`, one FTS hit returned across two current FTS indexes.
+- Ran final `uv run python -m agents_cli.cli search semantic "dummy pdf" --limit 3`;
+  result: `status: ok`, three semantic hits returned across three current
+  LanceDB stores, with the dummy PDF fixture as the top hit.
+- Ran final `uv run python -m agents_cli.cli health`; result: concise output
+  with `docling=ok`, `tantivy=ok`, `lancedb=ok`, and `fastembed=ok`.
+- Ran final read-only registry counts; result: `tantivy_indexes` has two
+  current rows totaling 100 chunks, and `lancedb_stores` has three current rows
+  totaling 101 chunks with vector dimension `384`.
 
 Runtime proof currently covers Phase 2 CLI scaffold commands, Phase 3 SQLite
-catalog migration/status plus source inventory, and the first Phase 4 Docling
-parse path. Tantivy, LanceDB, embedding, and indexing behavior is not
-implemented yet.
+catalog migration/status plus source inventory, the first Phase 4 Docling parse
+path, Phase 5 Tantivy FTS build/search, and Phase 6 LanceDB semantic
+build/search. Hybrid search behavior is not implemented yet.
 
 ## Future Proof Targets
 
-- Build or refresh Tantivy FTS indexes over generated chunks derived from
-  catalog objects.
-- Build or refresh scoped LanceDB vector stores over generated chunks derived
-  from catalog objects.
-- Query in FTS, vector, and hybrid modes.
+- Query in hybrid mode.
 - Show expected versus actual search hits for a small fixture corpus.
 - Show that search results hydrate provenance through SQLite instead of relying
   on lower indexes as the catalog.

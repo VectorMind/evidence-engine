@@ -20,6 +20,51 @@ def load_parser_config() -> dict[str, Any]:
     return yaml.safe_load(text)
 
 
+def load_embedding_config() -> dict[str, Any]:
+    """Load embedding profiles from config/embeddings.yaml."""
+
+    text = read_contract_text("config/embeddings.yaml")
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return _load_embedding_config_fallback()
+
+    return yaml.safe_load(text)
+
+
+def embedding_profile(name: str) -> dict[str, Any] | None:
+    config = load_embedding_config()
+    for profile in config.get("profiles", []):
+        if profile.get("name") == name:
+            return profile
+    return None
+
+
+def _load_embedding_config_fallback() -> dict[str, Any]:
+    return {
+        "profiles": [
+            {
+                "name": "model2vec_potion_base_32m",
+                "provider": "model2vec",
+                "model_name": "minishlab/potion-base-32M",
+                "dimension": None,
+            },
+            {
+                "name": "fastembed_bge_small_en_v1_5",
+                "provider": "fastembed",
+                "model_name": "BAAI/bge-small-en-v1.5",
+                "dimension": 384,
+            },
+            {
+                "name": "sentence_transformers_bge_base_en_v1_5",
+                "provider": "sentence_transformers",
+                "model_name": "BAAI/bge-base-en-v1.5",
+                "dimension": 768,
+            },
+        ]
+    }
+
+
 def _load_parser_config_fallback(text: str) -> dict[str, Any]:
     return {
         "defaults": {
@@ -55,6 +100,21 @@ def _load_parser_config_fallback(text: str) -> dict[str, Any]:
             ),
             "include_globs_default": _list(text, "include_globs_default", []),
             "exclude_globs_default": _list(text, "exclude_globs_default", []),
+        },
+        "parser_runtime": {
+            "document_timeout_seconds_default": _scalar(
+                text, "document_timeout_seconds_default", 300
+            ),
+            "max_num_pages_default": _scalar(text, "max_num_pages_default", None),
+            "max_file_size_bytes_default": _scalar(
+                text, "max_file_size_bytes_default", None
+            ),
+            "docling_threads_default": _scalar(text, "docling_threads_default", 2),
+            "pdf_batch_size_default": _scalar(text, "pdf_batch_size_default", 1),
+            "pdf_queue_max_size_default": _scalar(
+                text, "pdf_queue_max_size_default", 8
+            ),
+            "images_scale_default": _scalar(text, "images_scale_default", 1.0),
         },
         "parser_profiles": [
             {

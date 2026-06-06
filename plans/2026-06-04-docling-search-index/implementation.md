@@ -1,7 +1,7 @@
 # Implementation: Docling Search Index
 
 Date: 2026-06-04
-Status: Phase 4 Docling parsing started.
+Status: Phase 6 LanceDB semantic indexing started.
 
 ## Notes
 
@@ -188,6 +188,63 @@ Status: Phase 4 Docling parsing started.
 - Verified a repeated default `docling_ocr` parse returns one unchanged document
   after freshness detection includes source hash, parser profile, and parsed
   status.
+- Reworked console output so commands print a compact human summary instead of
+  the full JSON payload.
+- Reworked command result and report folder naming to
+  `<yyyy>.<mm>/<dd>/<hhmmss>-<command>/`, using command slugs such as
+  `scan-folder` and `parse-folder` instead of hash suffixes. Same-second
+  collisions get a small numeric suffix.
+- Updated `config/exposures.yaml`, README, spec, and plan wording for the new
+  result/report path contract.
+- Installed the FTS extra successfully in the local uv environment with
+  `uv pip install -e ".[fts]"`; this installed `tantivy==0.26.0`.
+- Added `src/agents_cli/fts.py` for Tantivy-backed FTS build and search.
+- `index folder` now auto-runs scan, builds one FTS island per folder root
+  scope under `fts/<fts_profile>/<scope_id>/`, and updates the
+  `tantivy_indexes` registry row.
+- FTS V1 generates one chunk per current parsed `document_objects` text preview.
+  Chunks remain only inside Tantivy and reference catalog objects by
+  `object_id`.
+- `index folder` does not silently parse or OCR missing documents; it returns a
+  deferred result when no parsed objects exist.
+- Added `--force` to `index folder` for explicit rebuilds when the watermark is
+  already current.
+- `search text` now searches current Tantivy indexes, merges hits, and returns
+  stored chunk provenance with compact console output and persisted
+  `result.json`.
+- Added `--limit` to `search text`.
+- Health output now reports Tantivy availability.
+- Redirected Docling stdout/stderr during conversion so third-party progress
+  output does not leak past the CLI's compact console summary.
+- Installed the semantic and embeddings extras in the local uv environment.
+  Verified `lancedb==0.33.0`, `fastembed==0.8.0`, `pyarrow==24.0.0`, and
+  `numpy==2.4.6`.
+- Added `src/agents_cli/chunks.py` so FTS and semantic indexing use the same
+  generated chunk IDs, source high-watermarks, document counts, and content
+  types.
+- Refactored `src/agents_cli/fts.py` to use the shared chunk helper instead of
+  its private chunk loader.
+- Added `src/agents_cli/semantic.py` for LanceDB-backed semantic build and
+  search.
+- `index folder --semantic` now auto-runs scan, embeds current parsed chunks
+  with the configured FastEmbed profile, writes a LanceDB `chunks` table under
+  `semantic/<embedding_profile>/<scope_id>.lancedb/`, and updates
+  `lancedb_stores`.
+- FastEmbed model files are cached under
+  `$HOME/.cache/agents-docs/models/fastembed/`, now declared in
+  `config/exposures.yaml` and the storage contract.
+- `search semantic` now embeds the query, searches current LanceDB stores, and
+  returns hydrated chunk provenance with semantic distance and a normalized
+  score.
+- Added OS-level stdout/stderr suppression around FastEmbed/LanceDB calls so
+  first-time model/table creation does not leak third-party progress or Rust
+  warnings past the compact CLI summary.
+- Health output now reports LanceDB and FastEmbed availability.
+- Added `docs/models.md` to document all model/runtime surfaces: Docling/OCR,
+  embeddings, semantic stores, planned hybrid RRF, planned local-only reranking
+  with FastEmbed or SentenceTransformers, and planned local REST providers
+  limited to OpenAI-compatible local servers and Ollama.
+- Linked `docs/models.md` from README and `docs/dependencies.md`.
 
 ## Pending Decisions
 

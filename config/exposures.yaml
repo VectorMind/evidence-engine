@@ -39,13 +39,17 @@ cache_root_layout:
     exposure: lancedb
     path_template: "semantic/{embedding_profile}/{scope_id}.lancedb/"
     description: LanceDB store island for one scope/profile.
+  - name: embedding_models
+    exposure: file
+    path_template: "models/fastembed/"
+    description: Local FastEmbed model cache used by semantic indexing commands.
   - name: results
     exposure: file
-    path_template: "results/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
+    path_template: "results/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/"
     description: Mandatory command result JSON, events, logs, and Markdown summaries.
   - name: reports
     exposure: file
-    path_template: "reports/{yyyy}-{mm}-{dd}/{hhmmss}-{run_id}/"
+    path_template: "reports/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/"
     description: Optional on-demand HTML analytics reports generated from command results.
 
 storage_profiles:

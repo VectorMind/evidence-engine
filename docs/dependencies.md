@@ -5,6 +5,9 @@ This page documents the Python dependencies declared in
 so lightweight CLI and catalog work can be reviewed before installing Docling,
 Tantivy, LanceDB, or embedding stacks.
 
+Model/runtime choices and weight-cache behavior are documented separately in
+[models.md](./models.md).
+
 ## Runtime And Optional Dependencies
 
 | Dependency | Group | Description | Why selected | Closest alternatives |
@@ -42,6 +45,7 @@ Tantivy, LanceDB, or embedding stacks.
 | `heavy-embeddings` | `sentence-transformers` | Enable heavier local embedding models. |
 | `all` | Docling, FTS, semantic, and embedding packages | Enable the practical full local stack for integration testing. |
 
-The current CLI scaffold intentionally uses only the Python standard library at
-runtime. The dependencies above define the intended package contract for later
-implementation phases.
+Catalog and inventory code keep stdlib fallbacks where practical. Implemented
+Docling parsing requires the `docling` extra, implemented FTS indexing/search
+requires the `fts` extra, and implemented semantic indexing/search requires the
+`semantic` plus `embeddings` extras.

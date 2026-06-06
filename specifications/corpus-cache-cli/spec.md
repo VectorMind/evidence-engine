@@ -110,10 +110,12 @@ $HOME/.cache/agents-docs/
     <fts_profile>/<scope_id>/
   semantic/
     <embedding_profile>/<scope_id>.lancedb/
+  models/
+    fastembed/
   results/
-    <yyyy>-<mm>-<dd>/<hhmmss>-<run_id>/
+    <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
   reports/
-    <yyyy>-<mm>-<dd>/<hhmmss>-<run_id>/
+    <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
 ```
 
 The repository root YAML files are schema, config, and template contracts only.
@@ -276,7 +278,7 @@ The public CLI exposes:
 - `agents-docs parse folder`;
 - `agents-docs index folder`;
 - `agents-docs search text`;
-- search commands only after build/refresh/status behavior is stable.
+- `agents-docs search semantic`.
 
 The CLI is two levels at most: first command plus optional subcommand. Profiles,
 cache paths, traversal defaults, parser defaults, index defaults, and safeguard
@@ -290,18 +292,40 @@ path or query text when those cannot be defaulted.
 | `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
 | `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional flags are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
-| `parse` | `folder <path>` | `path` | Auto-scans the folder tree when needed, parses current sources through Docling, and records JSON artifacts/objects. | Parser profile defaults to `docling_ocr`; canonical artifact output defaults to `docling_json`; optional flags are `--profile`, `--limit`, and `--report`. |
-| `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the given folder root. | FTS, embedding, chunk, store, and safeguard defaults from config. |
-| `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates results through SQLite. | Search/index defaults from config; exact scope rules are deferred. |
+| `parse` | `folder <path>` | `path` | Auto-scans the folder tree when needed, parses current sources through Docling, and records JSON artifacts/objects. | Parser profile defaults to `docling_ocr`; canonical artifact output defaults to `docling_json`; optional flags are `--profile`, `--limit`, `--document-timeout`, `--max-pages`, `--max-file-size`, `--docling-threads`, `--batch-size`, `--queue-size`, `--progress`, `--no-progress`, `--verbose`, and `--report`. |
+| `index` | `folder <path>` | `path` | Builds or refreshes the Tantivy FTS island for the given folder root from current parsed document objects. Add `--semantic` to build the LanceDB semantic store instead. | FTS, embedding, and chunk defaults from config; optional `--force` rebuilds even when current. |
+| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Search/index defaults from config; optional `--limit` caps returned hits. |
+| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Embedding defaults from config; optional `--limit` caps returned hits. |
 
-Every non-interactive command supports structured `--json` or `--jsonl` output.
-Commands that modify cache state support dry-run when the operation can be
-planned without writes.
+Commands write structured JSON to persisted result files. Console output remains
+human-readable and concise. Commands that modify cache state may support dry-run
+when the operation can be planned without writes.
 
 Every command writes structured results under `results/` for the fixed cache
 root. The result folder always contains `result.json`, `events.jsonl`, and a
 user-focused `summary.md`. Markdown summaries use overview tables where useful,
 but avoid long raw row listings.
+
+Result and report folders group first by month and then day:
+`results/<yyyy>.<mm>/<dd>/<hhmmss>-<command>/` and
+`reports/<yyyy>.<mm>/<dd>/<hhmmss>-<command>/`. The command segment is a stable
+lowercase slug such as `scan-folder` or `parse-folder`. If two runs of the same
+command start in the same second, the later folder may add a small numeric
+suffix.
+
+Console output is a concise human summary, not the full JSON payload. It fits on
+one normal terminal screen, highlights the top status/counts, and prints links
+to `result.json`, `summary.md`, and any generated report. Machine consumers read
+the persisted `result.json` instead of scraping console output.
+
+`index folder` auto-runs folder scan because inventory is safe and bounded by
+configured safeguards. It does not silently parse or OCR missing documents;
+callers run `parse folder` before indexing when no parsed objects exist.
+
+`index folder --semantic` uses the default embedding profile from
+`config/parser.yaml`, resolves the profile definition from
+`config/embeddings.yaml`, and writes one LanceDB table named `chunks` for the
+folder root scope. Semantic V1 supports FastEmbed profiles.
 
 Results include:
 
@@ -317,9 +341,11 @@ Results include:
 - fatal errors separately from retryable or deferred work.
 
 HTML analytics reports are optional and on demand. Commands that support
-reporting expose `--report` and write a generic `report.html` under `reports/`.
-The CLI owns stable report inputs and generic reports; skill wrappers may build
-custom reports by reading `result.json`, `summary.md`, and the SQLite catalog.
+reporting expose `--report` and write `report.html` under `reports/`. Parse
+reports include document-level failure and partial-conversion tables with
+classified failure kinds and suggested retry actions. The CLI owns stable
+report inputs and baseline reports; skill wrappers may build custom reports by
+reading `result.json`, `summary.md`, and the SQLite catalog.
 
 `catalog create`, `catalog migrate`, `catalog status`, and `health` accept no additional
 arguments.
