@@ -18,6 +18,7 @@ from typing import Any, TextIO
 from agents_cli import __version__
 from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
 from agents_cli.fts import IndexOptions, SearchOptions, index_folder_to_tantivy, search_text_indexes
+from agents_cli.hybrid import HybridSearchOptions, search_hybrid_indexes
 from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
 from agents_cli.parse import ParseOptions, parse_folder_to_catalog
 from agents_cli.paths import catalog_path, fixed_cache_root, reports_root, results_root
@@ -333,6 +334,35 @@ def search_semantic(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
+def search_hybrid(args: argparse.Namespace) -> int:
+    run = CommandRun.start("search hybrid")
+    payload = _base_payload("search hybrid")
+    try:
+        result = search_hybrid_indexes(
+            args.query,
+            HybridSearchOptions(
+                limit=args.limit,
+                candidate_limit=args.candidate_limit,
+                rrf_k=args.rrf_k,
+                rerank=args.rerank,
+                ollama_model=args.ollama_model,
+                ollama_url=args.ollama_url,
+            ),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agents-docs",
@@ -491,8 +521,8 @@ def build_parser() -> argparse.ArgumentParser:
     search_text_parser.add_argument(
         "--limit",
         type=int,
-        default=10,
-        help="Maximum number of FTS hits to return.",
+        default=30,
+        help="Maximum number of FTS hits to return. Defaults to 30.",
     )
     search_text_parser.set_defaults(handler=search_text)
 
@@ -503,10 +533,50 @@ def build_parser() -> argparse.ArgumentParser:
     search_semantic_parser.add_argument(
         "--limit",
         type=int,
-        default=10,
-        help="Maximum number of semantic hits to return.",
+        default=30,
+        help="Maximum number of semantic hits to return. Defaults to 30.",
     )
     search_semantic_parser.set_defaults(handler=search_semantic)
+
+    search_hybrid_parser = search_sub.add_parser(
+        "hybrid", help="Search FTS and semantic stores with RRF fusion."
+    )
+    search_hybrid_parser.add_argument("query", help="Search query.")
+    search_hybrid_parser.add_argument(
+        "--limit",
+        type=int,
+        default=30,
+        help="Maximum number of hybrid hits to return. Defaults to 30.",
+    )
+    search_hybrid_parser.add_argument(
+        "--candidate-limit",
+        type=int,
+        default=60,
+        help="Maximum candidates to collect from each backend before fusion. Defaults to 60.",
+    )
+    search_hybrid_parser.add_argument(
+        "--rrf-k",
+        type=int,
+        default=60,
+        help="Reciprocal Rank Fusion k constant.",
+    )
+    search_hybrid_parser.add_argument(
+        "--rerank",
+        choices=["none", "ollama"],
+        default="none",
+        help="Optional local reranker. Defaults to no reranker.",
+    )
+    search_hybrid_parser.add_argument(
+        "--ollama-model",
+        default=None,
+        help="Local Ollama model used only when --rerank ollama is set.",
+    )
+    search_hybrid_parser.add_argument(
+        "--ollama-url",
+        default="http://localhost:11434",
+        help="Local Ollama base URL used only when --rerank ollama is set.",
+    )
+    search_hybrid_parser.set_defaults(handler=search_hybrid)
 
     return parser
 

@@ -32,8 +32,8 @@ retrieval stores.
 | FTS ranking | Lexical BM25 retrieval | Implemented | `tantivy_default_en` | No model weights | `tantivy` | Native library via Python binding |
 | Embeddings | Chunk and query vectors for semantic search | Implemented | `fastembed_bge_small_en_v1_5` | `$HOME/.cache/agents-docs/models/fastembed/` | `fastembed`, `numpy` | Python API |
 | Vector store | Semantic nearest-neighbor retrieval | Implemented | LanceDB per folder root | `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | `lancedb`, `pyarrow` | Embedded DB |
-| Hybrid fusion | Merge FTS and semantic results | Planned | RRF, no model | No model weights | Existing FTS + semantic deps | In-process formula |
-| Reranking | Reorder top hybrid candidates | Planned | Disabled | FastEmbed or SentenceTransformers cache | `fastembed` or `sentence-transformers` | Python API |
+| Hybrid fusion | Merge FTS and semantic results | Implemented | RRF, no model | No model weights | Existing FTS + semantic deps | In-process formula |
+| Reranking | Reorder top hybrid candidates | Partially implemented | Disabled | Ollama model store for optional Ollama mode; future FastEmbed or SentenceTransformers cache | Ollama outside uv; future `fastembed` or `sentence-transformers` | Local REST or Python API |
 | Local REST enrichment | Future local LLM/VLM use for captions, summaries, or extraction | Planned | Disabled | Service-managed local model store | Client dependency if needed | OpenAI-compatible local REST or Ollama |
 
 ## Install Profiles
@@ -82,7 +82,7 @@ Profiles live in `config/embeddings.yaml`.
 
 ## Reranking Plan
 
-Hybrid V1 should use rank fusion first, without a reranker:
+Hybrid V1 uses rank fusion first, without a reranker:
 
 ```text
 rrf_score = 1 / (k + fts_rank) + 1 / (k + semantic_rank)
@@ -90,15 +90,15 @@ rrf_score = 1 / (k + fts_rank) + 1 / (k + semantic_rank)
 
 Use `k = 60` unless tests show a better local default.
 
-Reranking comes after RRF is stable. It is local-only.
+Reranking is local-only and opt-in.
 
 | Mode | Candidate | Dependency | Input | Output | Pros | Tradeoff | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `none` | No reranker | None | FTS + semantic ranks | RRF score | Fast, deterministic, no extra model | Less precise top ordering | Planned default for hybrid V1 |
+| `none` | No reranker | None | FTS + semantic ranks | RRF score | Fast, deterministic, no extra model | Less precise top ordering | Implemented default |
 | `fastembed` | FastEmbed reranker if available in installed version | `fastembed` | Query plus top candidate texts | Rerank score | Reuses lighter local stack | Model availability/version must be checked | Planned |
 | `sentence_transformers` | Cross-encoder reranker | `sentence-transformers` | Query plus top candidate texts | Rerank score | Usually stronger top-k ordering | Heavier dependency and slower CPU runs | Planned |
 | `local_rest_openai_compatible` | Local OpenAI-compatible rerank or score endpoint | Local service | Query plus candidates | Rerank score or ordered candidates | Keeps model outside Python process | Needs explicit local service config | Planned |
-| `ollama` | Ollama local model scoring prompt | Ollama outside uv | Query plus candidates | Ordered candidates or scores | Easy local model manager | Slower and less deterministic for scoring | Planned |
+| `ollama` | Ollama local model ranking prompt | Ollama outside uv | Query plus top candidates | Ordered candidate IDs | Easy local model manager | Slower and less deterministic for scoring | Implemented optional, never default |
 
 Remote hosted reranking is intentionally excluded from the default roadmap.
 
@@ -110,7 +110,7 @@ model inside the Python process is not ideal.
 | Provider Type | Example Endpoint Shape | Supported Purpose | Default? | Notes |
 | --- | --- | --- | --- | --- |
 | OpenAI-compatible local server | `http://localhost:<port>/v1/...` | Future local reranking, captions, summaries, extraction | No | Only local endpoints are in scope by default. Hosted OpenAI-compatible providers require explicit future policy. |
-| Ollama | `http://localhost:11434/...` | Future local VLM/LLM enrichment and optional reranking | No | The CLI should check availability and report missing models; it should not silently pull large models. |
+| Ollama | `http://localhost:11434/...` | Optional hybrid reranking; future local VLM/LLM enrichment | No | The CLI checks local endpoint shape and reports missing model configuration; it does not silently pull large models. |
 | Direct Transformers service | Custom local service | Experimental local VLM/LLM serving | No | Prefer OpenAI-compatible local REST or Ollama before custom protocols. |
 
 ## Task Matrix
@@ -146,7 +146,8 @@ model inside the Python process is not ideal.
 | Fast smoke test | `docling_fast_text` | Avoids OCR/table cost while testing plumbing. |
 | First semantic index | `fastembed_bge_small_en_v1_5` | Already implemented, 384-dimensional, fast enough for folder roots. |
 | Higher-quality semantic pass | `sentence_transformers_bge_base_en_v1_5` | Planned heavier local profile for selected corpora. |
-| First hybrid search | RRF without reranker | Stable, explainable, no model dependency. |
+| First hybrid search | `agents-docs search hybrid "<query>"` with RRF and no reranker | Stable, explainable, no model dependency. |
+| Local LLM rerank trial | `agents-docs search hybrid "<query>" --rerank ollama --ollama-model <model>` | Keeps reranking opt-in and local-only. |
 | Better top-10 ordering | Local reranker after RRF candidate collection | Limits model cost to a small candidate set. |
 | Visual figure understanding | Local REST VLM or Docling picture description profile | Keep heavy vision models outside default parse path. |
 
@@ -154,8 +155,8 @@ model inside the Python process is not ideal.
 
 | Decision | Current Proposal | Status |
 | --- | --- | --- |
-| Hybrid V1 ranking | Reciprocal Rank Fusion over FTS and semantic ranks | Planned |
-| Reranker default | No reranker by default; optional `fastembed` first, `sentence_transformers` second | Planned |
+| Hybrid V1 ranking | Reciprocal Rank Fusion over FTS and semantic ranks | Implemented |
+| Reranker default | No reranker by default; optional local Ollama available, `fastembed` and `sentence_transformers` still planned | Partially implemented |
 | Local REST protocol | OpenAI-compatible local endpoint first, Ollama also planned | Planned |
 | Remote providers | Not part of default policy | Excluded unless future caller policy explicitly adds them |
 | Docling visual profile | Add only after base object extraction and search are stable | Planned |

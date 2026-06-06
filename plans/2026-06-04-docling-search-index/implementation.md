@@ -1,7 +1,7 @@
 # Implementation: Docling Search Index
 
 Date: 2026-06-04
-Status: Phase 6 LanceDB semantic indexing started.
+Status: Phase 7 hybrid search implemented.
 
 ## Notes
 
@@ -245,16 +245,33 @@ Status: Phase 6 LanceDB semantic indexing started.
   with FastEmbed or SentenceTransformers, and planned local REST providers
   limited to OpenAI-compatible local servers and Ollama.
 - Linked `docs/models.md` from README and `docs/dependencies.md`.
+- Added `src/agents_cli/hybrid.py` for hybrid search across current Tantivy FTS
+  indexes and LanceDB semantic stores.
+- `search hybrid` now collects backend candidates, fuses them with Reciprocal
+  Rank Fusion using default `k = 60`, and returns hydrated chunk provenance with
+  `hybrid_score`, backend ranks, backend scores, and matched backend labels.
+- Added optional `search hybrid --rerank ollama --ollama-model <model>` for
+  local-only Ollama reranking. It is not the default, accepts only localhost
+  endpoints, and does not implicitly pull a model.
+- Updated console and markdown result summaries for hybrid search so terminal
+  output stays compact while `summary.md` records fusion and rerank metadata.
+- Updated README, the durable corpus-cache CLI spec, the active plan, and
+  `docs/models.md` for the hybrid command and optional Ollama reranker.
+- Set search result-count defaults: FTS defaults to 30 hits, semantic defaults
+  to 30 hits, and hybrid defaults to 30 final hits with 60 candidates collected
+  from each backend before RRF fusion.
+- Added those search defaults to `config/parser.yaml` and the stdlib fallback
+  config loader.
 
 ## Pending Decisions
 
 - Confirm whether the initial blob threshold and compression defaults need
   tuning after larger real-document parsing.
-- Define the exact generated chunking profile and copied lower-index metadata
-  set for `store_templates.yaml`.
-- Choose the first embedding default.
-- Decide when search commands enter scope after build/refresh/status commands.
+- Define the next richer generated chunking profile and copied lower-index
+  metadata set for `store_templates.yaml` after the one-object preview chunk V1.
 - Pin dependency versions in `pyproject.toml`.
 - Finalize folder-tree safeguards and override flags for large jobs.
 - Decide whether the initial stdlib command router remains or gets replaced by
   Typer after dependency installation.
+- Decide when to implement non-Ollama local reranking modes
+  (`fastembed`, `sentence_transformers`, and local OpenAI-compatible REST).

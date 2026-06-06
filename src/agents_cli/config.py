@@ -84,6 +84,17 @@ def _load_parser_config_fallback(text: str) -> dict[str, Any]:
                 text, "create_index_for_folder_root", True
             ),
             "results_format": _scalar(text, "results_format", "jsonl"),
+            "search_limit_default": _scalar(text, "search_limit_default", 30),
+            "hybrid_fts_candidate_limit_default": _scalar(
+                text, "hybrid_fts_candidate_limit_default", 60
+            ),
+            "hybrid_semantic_candidate_limit_default": _scalar(
+                text, "hybrid_semantic_candidate_limit_default", 60
+            ),
+            "hybrid_result_limit_default": _scalar(
+                text, "hybrid_result_limit_default", 30
+            ),
+            "hybrid_rrf_k_default": _scalar(text, "hybrid_rrf_k_default", 60),
         },
         "folder_safeguards": {
             "max_files_default": _scalar(text, "max_files_default", 5000),

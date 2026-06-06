@@ -140,8 +140,9 @@ for the only values that cannot sensibly default.
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional overrides are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
 | `parse` | `folder <path>` | `path` | Auto-scans the folder tree, parses current sources through Docling, and records JSON artifacts/objects. | Parser defaults from `config/parser.yaml`; default profile is `docling_ocr`; optional flags are `--profile`, `--limit`, and `--report`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes the Tantivy FTS island for the folder root from current parsed document objects. Add `--semantic` to build the LanceDB semantic store instead. | FTS, embedding, and chunk defaults from config; optional `--force` rebuilds even when current. |
-| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Search defaults from config; optional `--limit` caps returned hits. |
-| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Embedding defaults from config; optional `--limit` caps returned hits. |
+| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Default `--limit` is 30. |
+| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Default `--limit` is 30. |
+| `search` | `hybrid <query>` | `query` | Searches current FTS and semantic islands, fuses candidates with RRF, and returns hydrated chunk provenance. | Default final `--limit` is 30; default `--candidate-limit` is 60 per backend; default no reranker. |
 
 Example minimal calls:
 
@@ -153,6 +154,8 @@ agents-docs health
 agents-docs scan folder "C:\docs\example-folder"
 agents-docs parse folder "C:\docs\example-folder"
 agents-docs index folder "C:\docs\example-folder"
+agents-docs index folder "C:\docs\example-folder" --semantic
+agents-docs search hybrid "contract renewal clause"
 ```
 
 ## Design Answers
@@ -450,8 +453,7 @@ Proof:
 
 Deliverables:
 
-- lexical, semantic, and hybrid search commands if still wanted after build
-  commands stabilize;
+- lexical, semantic, and hybrid search commands;
 - structured handoff/export records for manager repositories;
 - redaction-safe diagnostics.
 
@@ -479,6 +481,7 @@ Proof:
 | DD-013 | Parse artifact storage. | Store canonical Docling JSON through the blob storage manager; Markdown is lazy/optional and not stored by default. |
 | DD-014 | FTS V1 scope. | Default `index folder` builds Tantivy FTS from existing parsed objects and auto-runs scan. |
 | DD-015 | Semantic V1 scope. | `index folder --semantic` builds one LanceDB store per folder root from the same generated chunks, using the default FastEmbed profile. |
+| DD-016 | Hybrid V1 ranking. | `search hybrid` uses Reciprocal Rank Fusion with default `k = 60`; final results default to 30, candidates default to 60 per backend, reranking is disabled by default, and optional Ollama reranking is local-only. |
 
 ## Exit Criteria
 

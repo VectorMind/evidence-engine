@@ -24,7 +24,7 @@ class IndexOptions:
 
 @dataclass(frozen=True)
 class SearchOptions:
-    limit: int = 10
+    limit: int = 30
 
 
 def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]:
@@ -187,7 +187,7 @@ def search_text_indexes(query: str, options: SearchOptions) -> dict[str, Any]:
             "message": "No current FTS indexes were registered.",
         }
 
-    limit = max(1, int(options.limit or 10))
+    limit = max(1, int(options.limit or 30))
     hits: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     for index_row in indexes:

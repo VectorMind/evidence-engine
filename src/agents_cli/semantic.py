@@ -37,7 +37,7 @@ class SemanticIndexOptions:
 
 @dataclass(frozen=True)
 class SemanticSearchOptions:
-    limit: int = 10
+    limit: int = 30
     embedding_profile: str | None = None
 
 
@@ -244,7 +244,7 @@ def search_semantic_indexes(
             "message": "No current LanceDB semantic stores were registered.",
         }
 
-    limit = max(1, int(options.limit or 10))
+    limit = max(1, int(options.limit or 30))
     hits: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     for store in stores:

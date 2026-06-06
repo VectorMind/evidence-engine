@@ -405,15 +405,43 @@ Status: Phase 4 Docling parse proof started.
 - Ran final read-only registry counts; result: `tantivy_indexes` has two
   current rows totaling 100 chunks, and `lancedb_stores` has three current rows
   totaling 101 chunks with vector dimension `384`.
+- Ran `uv run pytest tests\test_hybrid_search.py tests\test_parse_failure_reporting.py`;
+  result: six tests passed, including RRF fusion and localhost-only Ollama
+  endpoint validation.
+- Ran `uv run python -m py_compile src\agents_cli\hybrid.py src\agents_cli\cli.py src\agents_cli\results.py`;
+  result: success.
+- Ran `uv run ruff check src\agents_cli\hybrid.py src\agents_cli\cli.py src\agents_cli\results.py tests\test_hybrid_search.py`;
+  result: all checks passed.
+- Reran `uv run pytest tests\test_hybrid_search.py` and the same Ruff command
+  after the final rerank-mode normalization tweak; result: two hybrid tests
+  passed and Ruff passed.
+- Ran `uv run python -m agents_cli.cli search hybrid --help`; result: help
+  shows `--limit`, `--candidate-limit`, `--rrf-k`, `--rerank {none,ollama}`,
+  `--ollama-model`, and `--ollama-url`.
+- Ran `uv run python -m agents_cli.cli search hybrid "dummy pdf" --limit 5`;
+  result: `status: ok`, five hits returned, 50 candidates fused, and the dummy
+  PDF fixture was the top hit with matched backends `fts+semantic`. Result
+  folder: `results/2026.06/06/172325-search-hybrid/`.
+- Ran `uv run python -m agents_cli.cli search hybrid "scalable capital" --limit 5`;
+  result: `status: ok`, five hits returned, 58 candidates fused, and the top
+  three hits were scalable-capital documents matched by both FTS and semantic
+  search. Result folder: `results/2026.06/06/172339-search-hybrid/`.
+- Ran `uv run python -m agents_cli.cli search hybrid "dummy pdf" --limit 3 --rerank ollama --ollama-model local-test --ollama-url https://example.com`;
+  result: `status: partial`, the non-local Ollama URL was rejected before any
+  remote call, and RRF results were preserved. Result folder:
+  `results/2026.06/06/172350-search-hybrid/`.
+- Updated search defaults to FTS `--limit 30`, semantic `--limit 30`, and
+  hybrid final `--limit 30` with `--candidate-limit 60` per backend.
+- Verified `agents-docs search text --help`, `agents-docs search semantic
+  --help`, and `agents-docs search hybrid --help` expose the new defaults.
 
 Runtime proof currently covers Phase 2 CLI scaffold commands, Phase 3 SQLite
 catalog migration/status plus source inventory, the first Phase 4 Docling parse
 path, Phase 5 Tantivy FTS build/search, and Phase 6 LanceDB semantic
-build/search. Hybrid search behavior is not implemented yet.
+build/search, and Phase 7 hybrid RRF search.
 
 ## Future Proof Targets
 
-- Query in hybrid mode.
 - Show expected versus actual search hits for a small fixture corpus.
 - Show that search results hydrate provenance through SQLite instead of relying
   on lower indexes as the catalog.

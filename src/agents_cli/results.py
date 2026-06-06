@@ -108,6 +108,8 @@ def render_console_summary(payload: dict[str, Any]) -> str:
         return _search_console_summary(payload)
     if command == "search semantic":
         return _search_console_summary(payload)
+    if command == "search hybrid":
+        return _search_console_summary(payload)
     if str(command).startswith("catalog "):
         return _catalog_console_summary(payload)
     if command == "health":
@@ -125,6 +127,8 @@ def render_summary_markdown(payload: dict[str, Any]) -> str:
     if payload.get("command") == "search text":
         return _search_summary_markdown(payload)
     if payload.get("command") == "search semantic":
+        return _search_summary_markdown(payload)
+    if payload.get("command") == "search hybrid":
         return _search_summary_markdown(payload)
     return _generic_summary_markdown(payload)
 
@@ -446,6 +450,32 @@ def _index_summary_markdown(payload: dict[str, Any]) -> str:
 def _search_summary_markdown(payload: dict[str, Any]) -> str:
     counts = payload.get("counts", {})
     hits = payload.get("hits", [])[:10]
+    is_hybrid = payload.get("search_backend") == "hybrid"
+    ranking = payload.get("ranking", {})
+    rerank = ranking.get("rerank", {})
+    overview_rows: list[tuple[str, Any]] = [
+        ("Status", payload.get("status", "unknown")),
+        ("Query", payload.get("query", "")),
+        ("Indexes searched", counts.get("indexes_searched", 0)),
+        ("Index failures", counts.get("index_failures", 0)),
+        ("Hits returned", counts.get("hits_returned", 0)),
+        ("Result URI", payload.get("result_uri", "n/a")),
+    ]
+    if is_hybrid:
+        overview_rows = [
+            ("Status", payload.get("status", "unknown")),
+            ("Query", payload.get("query", "")),
+            ("Fusion", ranking.get("fusion", "rrf")),
+            ("RRF k", ranking.get("rrf_k", "n/a")),
+            ("Rerank", f"{rerank.get('mode', 'none')} / {rerank.get('status', 'n/a')}"),
+            ("FTS indexes", counts.get("fts_indexes_searched", 0)),
+            ("Semantic indexes", counts.get("semantic_indexes_searched", 0)),
+            ("FTS candidates", counts.get("fts_hits", 0)),
+            ("Semantic candidates", counts.get("semantic_hits", 0)),
+            ("Fused candidates", counts.get("candidates_fused", 0)),
+            ("Hits returned", counts.get("hits_returned", 0)),
+            ("Result URI", payload.get("result_uri", "n/a")),
+        ]
     lines = [
         f"# Search Summary: {payload.get('query', '')}",
         "",
@@ -453,37 +483,50 @@ def _search_summary_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Overview",
         "",
-        _markdown_table(
-            ["Metric", "Value"],
-            [
-                ("Status", payload.get("status", "unknown")),
-                ("Query", payload.get("query", "")),
-                ("Indexes searched", counts.get("indexes_searched", 0)),
-                ("Index failures", counts.get("index_failures", 0)),
-                ("Hits returned", counts.get("hits_returned", 0)),
-                ("Result URI", payload.get("result_uri", "n/a")),
-            ],
-        ),
+        _markdown_table(["Metric", "Value"], overview_rows),
         "",
     ]
     if hits:
+        headers = ["Score", "Root", "Path", "Title", "Preview"]
+        rows: list[tuple[Any, ...]] = [
+            (
+                f"{float(hit.get('score', 0)):.4f}",
+                hit.get("root_label", ""),
+                hit.get("relative_path", ""),
+                hit.get("title", ""),
+                _truncate(hit.get("body_preview", ""), 120),
+            )
+            for hit in hits
+        ]
+        if is_hybrid:
+            headers = [
+                "Score",
+                "Backends",
+                "FTS Rank",
+                "Semantic Rank",
+                "Root",
+                "Path",
+                "Title",
+                "Preview",
+            ]
+            rows = [
+                (
+                    f"{float(hit.get('score', 0)):.4f}",
+                    "+".join(hit.get("matched_backends", [])),
+                    hit.get("fts_rank", ""),
+                    hit.get("semantic_rank", ""),
+                    hit.get("root_label", ""),
+                    hit.get("relative_path", ""),
+                    hit.get("title", ""),
+                    _truncate(hit.get("body_preview", ""), 100),
+                )
+                for hit in hits
+            ]
         lines.extend(
             [
                 "## Top Hits",
                 "",
-                _markdown_table(
-                    ["Score", "Root", "Path", "Title", "Preview"],
-                    [
-                        (
-                            f"{float(hit.get('score', 0)):.4f}",
-                            hit.get("root_label", ""),
-                            hit.get("relative_path", ""),
-                            hit.get("title", ""),
-                            _truncate(hit.get("body_preview", ""), 120),
-                        )
-                        for hit in hits
-                    ],
-                ),
+                _markdown_table(headers, rows),
                 "",
             ]
         )
@@ -521,6 +564,12 @@ def _index_lede(payload: dict[str, Any]) -> str:
 def _search_lede(payload: dict[str, Any]) -> str:
     counts = payload.get("counts", {})
     backend = payload.get("search_backend", "FTS")
+    if backend == "hybrid":
+        return (
+            f"The hybrid search fused {counts.get('candidates_fused', 0)} candidates "
+            f"from {counts.get('fts_hits', 0)} FTS hits and "
+            f"{counts.get('semantic_hits', 0)} semantic hits."
+        )
     return (
         f"The search returned {counts.get('hits_returned', 0)} hits across "
         f"{counts.get('indexes_searched', 0)} current {backend} indexes."
@@ -734,6 +783,7 @@ def _index_console_summary(payload: dict[str, Any]) -> str:
 def _search_console_summary(payload: dict[str, Any]) -> str:
     counts = payload.get("counts", {})
     command = payload.get("command", "search text")
+    is_hybrid = payload.get("search_backend") == "hybrid"
     lines = [
         f"{command}: {payload.get('status', 'unknown')}",
         (
@@ -741,11 +791,26 @@ def _search_console_summary(payload: dict[str, Any]) -> str:
             f"{counts.get('indexes_searched', 0)} indexes"
         ),
     ]
+    if is_hybrid:
+        ranking = payload.get("ranking", {})
+        rerank = ranking.get("rerank", {})
+        lines[1] = (
+            f"hits {counts.get('hits_returned', 0)}, "
+            f"fused {counts.get('candidates_fused', 0)} candidates "
+            f"(fts {counts.get('fts_hits', 0)}, semantic {counts.get('semantic_hits', 0)})"
+        )
+        lines.append(
+            f"ranking {ranking.get('fusion', 'rrf')} k={ranking.get('rrf_k', 'n/a')}, "
+            f"rerank {rerank.get('mode', 'none')}/{rerank.get('status', 'n/a')}"
+        )
     for index, hit in enumerate(payload.get("hits", [])[:3], start=1):
         title = _truncate(hit.get("title", ""), 42)
         path = _truncate(hit.get("relative_path", ""), 52)
+        backend_label = ""
+        if is_hybrid:
+            backend_label = "+".join(hit.get("matched_backends", [])) + " | "
         lines.append(
-            f"{index}. {float(hit.get('score', 0)):.4f} | {path} | {title}"
+            f"{index}. {float(hit.get('score', 0)):.4f} | {backend_label}{path} | {title}"
         )
     if payload.get("message"):
         lines.append(str(payload["message"]))

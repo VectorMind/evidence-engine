@@ -278,7 +278,8 @@ The public CLI exposes:
 - `agents-docs parse folder`;
 - `agents-docs index folder`;
 - `agents-docs search text`;
-- `agents-docs search semantic`.
+- `agents-docs search semantic`;
+- `agents-docs search hybrid`.
 
 The CLI is two levels at most: first command plus optional subcommand. Profiles,
 cache paths, traversal defaults, parser defaults, index defaults, and safeguard
@@ -294,8 +295,9 @@ path or query text when those cannot be defaulted.
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional flags are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
 | `parse` | `folder <path>` | `path` | Auto-scans the folder tree when needed, parses current sources through Docling, and records JSON artifacts/objects. | Parser profile defaults to `docling_ocr`; canonical artifact output defaults to `docling_json`; optional flags are `--profile`, `--limit`, `--document-timeout`, `--max-pages`, `--max-file-size`, `--docling-threads`, `--batch-size`, `--queue-size`, `--progress`, `--no-progress`, `--verbose`, and `--report`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes the Tantivy FTS island for the given folder root from current parsed document objects. Add `--semantic` to build the LanceDB semantic store instead. | FTS, embedding, and chunk defaults from config; optional `--force` rebuilds even when current. |
-| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Search/index defaults from config; optional `--limit` caps returned hits. |
-| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Embedding defaults from config; optional `--limit` caps returned hits. |
+| `search` | `text <query>` | `query` | Searches current Tantivy FTS islands and returns hydrated chunk provenance. | Default `--limit` is 30. |
+| `search` | `semantic <query>` | `query` | Searches current LanceDB semantic stores and returns hydrated chunk provenance. | Default `--limit` is 30. |
+| `search` | `hybrid <query>` | `query` | Searches current Tantivy and LanceDB islands, fuses candidates with Reciprocal Rank Fusion, and returns hydrated chunk provenance. | Default final `--limit` is 30; default `--candidate-limit` is 60 per backend; RRF default `k = 60`; local-only `--rerank ollama --ollama-model <model>` is optional. |
 
 Commands write structured JSON to persisted result files. Console output remains
 human-readable and concise. Commands that modify cache state may support dry-run
@@ -326,6 +328,13 @@ callers run `parse folder` before indexing when no parsed objects exist.
 `config/parser.yaml`, resolves the profile definition from
 `config/embeddings.yaml`, and writes one LanceDB table named `chunks` for the
 folder root scope. Semantic V1 supports FastEmbed profiles.
+
+`search hybrid` uses Reciprocal Rank Fusion over FTS and semantic ranks. It
+collects 60 FTS candidates and 60 semantic candidates by default, returns 30
+final fused results by default, and preserves backend ranks and scores in the
+result hit payload. The default reranker mode is `none`. Optional Ollama reranking is local-only: endpoints
+must resolve to localhost, no model is pulled implicitly, and callers must pass
+`--ollama-model` or set `AGENTS_DOCS_OLLAMA_RERANK_MODEL`.
 
 Results include:
 

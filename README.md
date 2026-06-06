@@ -16,8 +16,8 @@ Model/runtime choices are documented in [docs/models.md](./docs/models.md).
 
 This repository is moving from specification into implementation. The package
 skeleton, fixed-cache catalog creation/migration, catalog status, health
-commands, and folder inventory are implemented. Heavy runtime behavior such as
-Docling parsing and index building lands in later phases.
+commands, folder inventory, Docling parsing, Tantivy FTS, LanceDB semantic
+indexing, and hybrid search are implemented.
 
 ## Install Shape
 
@@ -69,6 +69,7 @@ from config files rather than command arguments.
 | `index` | `folder <path>` | `path` | result files | Build or refresh the FTS island for a folder root. Add `--semantic` for the LanceDB store. |
 | `search` | `text <query>` | `query` | result files | Search current Tantivy FTS islands and hydrate chunk provenance. |
 | `search` | `semantic <query>` | `query` | result files | Search current LanceDB semantic stores and hydrate chunk provenance. |
+| `search` | `hybrid <query>` | `query` | result files | Search FTS and semantic stores, fuse candidates with RRF, and optionally use local Ollama reranking. |
 
 Minimal examples:
 
@@ -83,6 +84,8 @@ agents-docs index folder "C:\docs\example-folder"
 agents-docs index folder "C:\docs\example-folder" --semantic
 agents-docs search text "contract renewal clause"
 agents-docs search semantic "contract renewal clause"
+agents-docs search hybrid "contract renewal clause"
+agents-docs search hybrid "contract renewal clause" --rerank ollama --ollama-model llama3.2
 ```
 
 `scan folder` accepts optional safeguard overrides only when a caller needs to
@@ -117,10 +120,20 @@ FastEmbed profile from `config/embeddings.yaml`.
 
 `search text` searches current Tantivy FTS islands and returns hydrated
 provenance fields from stored chunk metadata. Use `--limit` to cap returned
-hits.
+hits; the default is 30.
 
 `search semantic` searches current LanceDB stores and returns the same hydrated
-chunk provenance shape, with vector distances converted to sortable scores.
+chunk provenance shape, with vector distances converted to sortable scores. Its
+default `--limit` is 30.
+
+`search hybrid` searches both current Tantivy and LanceDB islands, fuses
+candidates with Reciprocal Rank Fusion, and returns hydrated chunk provenance
+with `hybrid_score`, backend ranks, backend scores, and matched backend labels.
+The default final result limit is 30, with 60 FTS candidates and 60 semantic
+candidates collected before fusion. Use `--limit`, `--candidate-limit`, or
+`--rrf-k` only when the defaults need a deliberate override. `--rerank ollama
+--ollama-model <model>` enables optional local-only Ollama reranking; it is not
+the default and only accepts localhost Ollama endpoints.
 
 Commands print a short human summary to the terminal instead of the full JSON
 payload. The summary includes links to the persisted `result.json`,
