@@ -33,6 +33,10 @@ catalog is created by `catalog create` or by the first producer command that
 needs it, using the schema in `catalog.yaml`. A stale or incomplete catalog is
 upgraded by `catalog migrate` or by the same producer ensure path before writes.
 
+Producer commands also run required prior producer steps with defaults when it
+is safe to do so. `parse folder` auto-runs folder scan before parsing, so first
+use does not require manual catalog or inventory commands.
+
 ## Catalog Contract
 
 The repository root contains `catalog.yaml`. It is the public SQLite schema
@@ -206,9 +210,12 @@ Direct Docling CLI usage remains useful for debugging. The CLI contract maps
 Docling options to named parser profiles rather than requiring callers to pass
 raw Docling flags for every run.
 
-The implementation stores raw Docling output where useful, but normalizes only
-the first approved object and valuable-item layers into SQLite. It does not
-mirror every Docling JSON node into SQL.
+The canonical stored parse artifact is Docling JSON. Markdown is a lazy/export
+concern and is not stored by default because it can be regenerated from the
+Docling document representation when needed. The implementation stores raw
+Docling JSON where useful, but normalizes only the first approved object and
+valuable-item layers into SQLite. It does not mirror every Docling JSON node
+into SQL.
 
 ## Object And Chunk Contract
 
@@ -283,7 +290,7 @@ path or query text when those cannot be defaulted.
 | `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
 | `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records current source items, and creates the root index scope. | Traversal and safeguard defaults from `config/parser.yaml`; optional flags are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
-| `parse` | `folder <path>` | `path` | Parses inventoried or directly supplied folder-tree sources through Docling and records artifacts/objects. | Parser and artifact defaults from `config/parser.yaml`. |
+| `parse` | `folder <path>` | `path` | Auto-scans the folder tree when needed, parses current sources through Docling, and records JSON artifacts/objects. | Parser profile defaults to `docling_ocr`; canonical artifact output defaults to `docling_json`; optional flags are `--profile`, `--limit`, and `--report`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the given folder root. | FTS, embedding, chunk, store, and safeguard defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates results through SQLite. | Search/index defaults from config; exact scope rules are deferred. |
 

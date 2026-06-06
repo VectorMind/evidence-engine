@@ -94,6 +94,8 @@ class CommandRun:
 def render_summary_markdown(payload: dict[str, Any]) -> str:
     if payload.get("command") == "scan folder":
         return _scan_summary_markdown(payload)
+    if payload.get("command") == "parse folder":
+        return _parse_summary_markdown(payload)
     return _generic_summary_markdown(payload)
 
 
@@ -256,6 +258,87 @@ def _generic_summary_markdown(payload: dict[str, Any]) -> str:
             "",
         ]
     )
+
+
+def _parse_summary_markdown(payload: dict[str, Any]) -> str:
+    counts = payload.get("counts", {})
+    lines = [
+        f"# Parse Summary: {payload.get('root_label', 'folder')}",
+        "",
+        _parse_lede(payload),
+        "",
+        "## Overview",
+        "",
+        _markdown_table(
+            ["Metric", "Value"],
+            [
+                ("Status", payload.get("status", "unknown")),
+                ("Root label", payload.get("root_label", "n/a")),
+                ("Parser profile", payload.get("parser_profile", "n/a")),
+                ("OCR requested", payload.get("ocr_requested", "n/a")),
+                ("Auto scan", payload.get("auto_scan_status", "n/a")),
+                ("Planned documents", counts.get("documents_planned", 0)),
+                ("Parsed documents", counts.get("documents_parsed", 0)),
+                ("Unchanged documents", counts.get("documents_unchanged", 0)),
+                ("Failed documents", counts.get("documents_failed", 0)),
+                ("Artifacts written", counts.get("artifacts_written", 0)),
+                ("Objects written", counts.get("objects_written", 0)),
+                ("Result URI", payload.get("result_uri", "n/a")),
+            ],
+        ),
+        "",
+    ]
+    failures = payload.get("failures", [])
+    if failures:
+        lines.extend(
+            [
+                "## Failures",
+                "",
+                _markdown_table(
+                    ["Error", "Documents"],
+                    _failure_summary_rows(failures),
+                ),
+                "",
+            ]
+        )
+    elif payload.get("error_kind"):
+        lines.extend(
+            [
+                "## Failure",
+                "",
+                _markdown_table(
+                    ["Field", "Value"],
+                    [
+                        ("Error kind", payload.get("error_kind")),
+                        ("Message", payload.get("message", "")),
+                    ],
+                ),
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _parse_lede(payload: dict[str, Any]) -> str:
+    status = payload.get("status", "unknown")
+    counts = payload.get("counts", {})
+    if status in {"ok", "partial"}:
+        return (
+            f"The parse run used `{payload.get('parser_profile', 'unknown')}` and "
+            f"parsed {counts.get('documents_parsed', 0)} of "
+            f"{counts.get('documents_planned', 0)} planned documents."
+        )
+    if payload.get("error_kind") == "docling_missing":
+        return "Docling is not installed, so parsing could not start."
+    return f"The parse run finished with status `{status}`."
+
+
+def _failure_summary_rows(failures: list[dict[str, Any]]) -> list[tuple[str, Any]]:
+    grouped: dict[str, int] = {}
+    for failure in failures:
+        key = str(failure.get("error_kind", "unknown"))
+        grouped[key] = grouped.get(key, 0) + 1
+    return sorted(grouped.items())
 
 
 def _scan_lede(payload: dict[str, Any]) -> str:

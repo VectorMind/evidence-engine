@@ -8,6 +8,7 @@ installed.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import platform
 import sys
@@ -17,6 +18,7 @@ from typing import Any
 from agents_cli import __version__
 from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
 from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
+from agents_cli.parse import ParseOptions, parse_folder_to_catalog
 from agents_cli.paths import catalog_path, fixed_cache_root, reports_root, results_root
 from agents_cli.results import CommandRun
 
@@ -88,6 +90,12 @@ def health(_: argparse.Namespace) -> int:
             "checks": [
                 {"name": "fixed_cache_contract", "status": "ok"},
                 {"name": "sqlite_stdlib", "status": "ok"},
+                {
+                    "name": "docling",
+                    "status": "ok"
+                    if importlib.util.find_spec("docling") is not None
+                    else "missing",
+                },
             ],
         }
     )
@@ -122,7 +130,25 @@ def scan_folder(args: argparse.Namespace) -> int:
 
 
 def parse_folder(args: argparse.Namespace) -> int:
-    return _not_implemented("parse folder", source_path=str(Path(args.path)))
+    run = CommandRun.start("parse folder")
+    payload = _base_payload("parse folder")
+    try:
+        result = parse_folder_to_catalog(
+            Path(args.path),
+            ParseOptions(profile=args.profile, limit=args.limit),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload, write_report=args.report)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
 def index_folder(args: argparse.Namespace) -> int:
@@ -195,6 +221,23 @@ def build_parser() -> argparse.ArgumentParser:
     parse_sub = parse.add_subparsers(dest="parse_command")
     parse_folder_parser = parse_sub.add_parser("folder", help="Parse a folder tree.")
     parse_folder_parser.add_argument("path", help="Folder path to parse.")
+    parse_folder_parser.add_argument(
+        "--profile",
+        default=None,
+        choices=["docling_ocr", "docling_default", "docling_fast_text"],
+        help="Parser profile. Defaults to config/parser.yaml parser_profile.",
+    )
+    parse_folder_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Parse at most this many current source files.",
+    )
+    parse_folder_parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Write an optional generic HTML report under the fixed reports directory.",
+    )
     parse_folder_parser.set_defaults(handler=parse_folder)
 
     index = subparsers.add_parser("index", help="Build or refresh indexes.")

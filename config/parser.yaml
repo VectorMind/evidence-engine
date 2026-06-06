@@ -7,9 +7,9 @@ description: >
   legitimately vary per call, such as a source path or query text.
 
 defaults:
-  parser_profile: docling_default
+  parser_profile: docling_ocr
   artifact_storage_profile: default_artifact_blobs
-  artifact_outputs: [docling_json, markdown]
+  artifact_outputs: [docling_json]
   fts_profile: tantivy_default_en
   embedding_profile: fastembed_bge_small_en_v1_5
   chunk_profile: docling_hybrid_v1

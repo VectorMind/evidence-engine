@@ -1,7 +1,7 @@
 # Test: Docling Search Index
 
 Date: 2026-06-04
-Status: Planning proof only. No implementation to test yet.
+Status: Phase 4 Docling parse proof started.
 
 ## Proof So Far
 
@@ -260,16 +260,50 @@ Status: Planning proof only. No implementation to test yet.
   result: exit code 1 with `status: deferred`, a partial `statistics` object,
   and `result_uri` under `results/`. A later read-only stats query confirmed
   the fixture's current catalog stats still reflect the prior complete scan.
+- Updated `config/parser.yaml` so omitted parse profiles default to
+  `docling_ocr`, and canonical artifact outputs default to `docling_json`.
+- Added `tests/fixtures/parse-basic/dummy.pdf` as a public PDF fixture.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli parse folder tests\fixtures\parse-basic --limit 1 --report`
+  before Docling was installed in the active Python; result: `status: failed`,
+  `error_kind: docling_missing`, `parser_profile: docling_ocr`, and
+  `auto_scan_status: ok`, proving parse auto-runs scan/catalog prerequisites
+  before failing on the missing runtime dependency.
+- Ran `uv pip install -e ".[docling]"`; result: Docling and OCR dependencies
+  installed successfully in `.venv` after two timeout attempts with
+  `python -m pip install -e ".[docling]"`.
+- Ran `uv run python -m agents_cli.cli parse folder tests\fixtures\parse-basic --profile docling_fast_text --limit 1`;
+  result: `status: ok`, `parser_profile: docling_fast_text`,
+  `ocr_requested: false`, `documents_planned: 1`, `documents_parsed: 1`,
+  `documents_failed: 0`, `artifacts_written: 1`, and `objects_written: 1`.
+- Ran `uv run python -m agents_cli.cli parse folder tests\fixtures\parse-basic --limit 1 --report`;
+  result: `status: ok`, `parser_profile: docling_ocr`,
+  `ocr_requested: true`, `documents_planned: 1`, `documents_parsed: 1`,
+  `documents_failed: 0`, `artifacts_written: 1`, `objects_written: 1`,
+  `summary_uri: results/2026-06-06/094130-4715251af6/summary.md`, and
+  `report_uri: reports/2026-06-06/094130-4715251af6/report.html`.
+- Ran a read-only catalog query after the successful default OCR parse; result:
+  one `documents` row with profile `docling_ocr` and status `parsed`, one
+  `docling_artifacts` row of type `docling_json`, one inline blob, and one
+  preview `document_objects` row.
+- Reran `uv run python -m agents_cli.cli parse folder tests\fixtures\parse-basic --limit 1`;
+  result: `status: ok`, `documents_unchanged: 1`, `documents_parsed: 0`, and
+  `documents_failed: 0`, proving profile-aware freshness for the default OCR
+  path.
+- Ran `uv run python -m agents_cli.cli catalog status` after parsing; result:
+  `status: current`, `documents: 1`, `docling_artifacts: 1`,
+  `artifact_blobs: 1`, and `document_objects: 1`.
+- Observed first-run OCR model behavior on Windows: a parallel OCR/fast-text run
+  returned one OCR `RuntimeError` while RapidOCR models were being downloaded,
+  but the direct sequential OCR diagnostic and the later default OCR parse
+  succeeded after models were present.
 
-Runtime proof currently covers Phase 2 CLI scaffold commands and Phase 3
-SQLite catalog migration/status plus source inventory. Docling, Tantivy,
-LanceDB, embedding, and indexing behavior is not implemented yet.
+Runtime proof currently covers Phase 2 CLI scaffold commands, Phase 3 SQLite
+catalog migration/status plus source inventory, and the first Phase 4 Docling
+parse path. Tantivy, LanceDB, embedding, and indexing behavior is not
+implemented yet.
 
 ## Future Proof Targets
 
-- Convert at least one PDF or Markdown source through Docling.
-- Persist Docling artifacts and SQLite catalog records for source items,
-  current documents, objects, valuable items, blobs, and index scopes.
 - Build or refresh Tantivy FTS indexes over generated chunks derived from
   catalog objects.
 - Build or refresh scoped LanceDB vector stores over generated chunks derived
@@ -280,6 +314,6 @@ LanceDB, embedding, and indexing behavior is not implemented yet.
   on lower indexes as the catalog.
 - Record index health, rebuild, refresh, and deletion commands.
 - Prove the manager-repository contract with a synthetic source manifest and
-  structured JSON/JSONL outputs under `.results/`.
+  structured JSON/JSONL outputs under `results/`.
 - Prove no command exposes `--cache-root` and that producer commands create
   missing catalog tables through the centralized table-creation path.

@@ -1,7 +1,7 @@
 # Implementation: Docling Search Index
 
 Date: 2026-06-04
-Status: Phase 3 SQLite catalog started.
+Status: Phase 4 Docling parsing started.
 
 ## Notes
 
@@ -157,20 +157,47 @@ Status: Phase 3 SQLite catalog started.
 - `summary.md` now includes file-size statistics and a top-extension table.
 - `scan folder --report` now includes generic SVG pie charts for extension mix
   by file count and by total size, plus an extension summary table.
-- No heavy runtime dependency installation has been run.
+- Updated parser defaults so omitted `--profile` uses `docling_ocr` and
+  canonical artifact outputs default to `docling_json` only.
+- Added `src/agents_cli/blobs.py` with thresholded artifact blob storage for
+  inline SQLite blobs and external `blobs/` payloads, with zstd compression
+  when available and gzip fallback for larger inline payloads.
+- Added `src/agents_cli/parse.py` implementing `parse folder`.
+- `parse folder` auto-runs catalog ensure and folder scan, then parses current
+  source files through Docling.
+- Added parse CLI flags `--profile`, `--limit`, and `--report`.
+- Added Docling runtime health detection.
+- Added public PDF fixture `tests/fixtures/parse-basic/dummy.pdf`.
+- `parse folder` stores canonical Docling JSON through `artifact_blobs` and
+  `docling_artifacts`, updates `documents`, and writes a first preview
+  `document_objects` paragraph row.
+- Parse freshness now includes source hash, parser profile, and `parsed` status,
+  so switching profiles reparses instead of incorrectly returning unchanged.
+- Installed the Docling extra successfully in the local uv environment with
+  `uv pip install -e ".[docling]"` after
+  `python -m pip install -e ".[docling]"` timed out twice.
+- The first parallel OCR/fast-text run exposed a first-run model-download race:
+  OCR returned one `RuntimeError` while RapidOCR/docling models were still being
+  downloaded. A sequential direct OCR diagnostic succeeded after models were
+  present.
+- Verified default `docling_ocr` parsing on the public PDF fixture after model
+  downloads; it wrote one document, one JSON artifact, one blob, and one
+  preview object.
+- Verified `docling_fast_text` parsing on the public PDF fixture; it wrote the
+  same canonical JSON artifact shape with OCR disabled.
+- Verified a repeated default `docling_ocr` parse returns one unchanged document
+  after freshness detection includes source hash, parser profile, and parsed
+  status.
 
 ## Pending Decisions
 
-- Confirm blob thresholds and compression defaults.
-- Confirm first Docling parser profiles.
+- Confirm whether the initial blob threshold and compression defaults need
+  tuning after larger real-document parsing.
 - Define the exact generated chunking profile and copied lower-index metadata
   set for `store_templates.yaml`.
-- Confirm whether LanceDB defaults to one store per folder or one store per
-  root for the first proof.
 - Choose the first embedding default.
 - Decide when search commands enter scope after build/refresh/status commands.
 - Pin dependency versions in `pyproject.toml`.
-- Define the synthetic fixture set for first proofs.
 - Finalize folder-tree safeguards and override flags for large jobs.
 - Decide whether the initial stdlib command router remains or gets replaced by
   Typer after dependency installation.

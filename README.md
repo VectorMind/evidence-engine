@@ -64,7 +64,7 @@ from config files rather than command arguments.
 | `catalog` | `status` | none | JSON | Report catalog presence, version, expected tables, missing tables, and row counts. |
 | `health` | none | none | JSON | Check fixed paths and available runtime dependencies. |
 | `scan` | `folder <path>` | `path` | JSON | Inventory a folder tree and record source items. |
-| `parse` | `folder <path>` | `path` | JSONL planned | Parse folder-tree sources through Docling and record artifacts/objects. |
+| `parse` | `folder <path>` | `path` | JSON | Auto-scan, parse sources through Docling, and record JSON artifacts/objects. |
 | `index` | `folder <path>` | `path` | JSON/JSONL planned | Build or refresh FTS and semantic islands for a folder root. |
 | `search` | `text <query>` | `query` | JSONL planned | Search built lower-index islands and hydrate through SQLite. |
 
@@ -87,6 +87,11 @@ Add `--report` when an on-demand HTML report is needed. It writes
 `source_roots`, `source_items`, current inventory statistics, and a root
 `index_scopes` row, then writes `result.json`, `events.jsonl`, and `summary.md`
 under `results/`.
+
+`parse folder` auto-runs the required catalog and scan prerequisites. It
+defaults to `docling_ocr`; use `--profile docling_fast_text` when a faster
+non-OCR run is wanted. The canonical stored artifact is Docling JSON; Markdown
+is treated as a lazy/export concern, not a default stored duplicate.
 
 ## CLI And Data Surfaces
 

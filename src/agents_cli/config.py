@@ -56,6 +56,32 @@ def _load_parser_config_fallback(text: str) -> dict[str, Any]:
             "include_globs_default": _list(text, "include_globs_default", []),
             "exclude_globs_default": _list(text, "exclude_globs_default", []),
         },
+        "parser_profiles": [
+            {
+                "name": "docling_default",
+                "description": "Default balanced Docling parse profile.",
+                "ocr": "auto",
+                "table_structure": True,
+                "picture_classification": True,
+                "picture_description": False,
+            },
+            {
+                "name": "docling_ocr",
+                "description": "OCR-enabled Docling profile for scanned or low-text documents.",
+                "ocr": True,
+                "table_structure": True,
+                "picture_classification": True,
+                "picture_description": False,
+            },
+            {
+                "name": "docling_fast_text",
+                "description": "Faster text-first profile for simple markup or text-heavy sources.",
+                "ocr": False,
+                "table_structure": False,
+                "picture_classification": False,
+                "picture_description": False,
+            },
+        ],
     }
 
 

@@ -52,6 +52,8 @@ Use a current-state catalog plus separate config/template files:
 - there is no `init` command; producers call centralized table creation before
   writing. `catalog create` creates the fixed catalog when it is missing, and
   `catalog migrate` upgrades an existing stale or incomplete catalog.
+- producer commands auto-run safe prerequisites with defaults. `parse folder`
+  auto-runs catalog ensure and folder scan before parsing.
 
 ## Goal
 
@@ -135,7 +137,7 @@ for the only values that cannot sensibly default.
 | `catalog` | `status` | none | Reports catalog version, table presence, key counts, and stale state. | Fixed home cache; no args. |
 | `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree, records source items, and creates the root index scope. | Includes/excludes and safety limits from `config/parser.yaml`; optional overrides are `--max-files`, `--max-bytes`, `--max-depth`, and `--report`. |
-| `parse` | `folder <path>` | `path` | Parses folder-tree sources through Docling and records artifacts/objects. | Parser profile and artifact outputs from `config/parser.yaml`. |
+| `parse` | `folder <path>` | `path` | Auto-scans the folder tree, parses current sources through Docling, and records JSON artifacts/objects. | Parser defaults from `config/parser.yaml`; default profile is `docling_ocr`; optional flags are `--profile`, `--limit`, and `--report`. |
 | `index` | `folder <path>` | `path` | Builds or refreshes FTS and semantic islands for the folder root. | FTS, embedding, chunk, and store defaults from config. |
 | `search` | `text <query>` | `query` | Searches built lower-index islands and hydrates via SQLite. | Search scope defaults are deferred until search enters scope. |
 
@@ -175,6 +177,8 @@ agents-docs index folder "C:\docs\example-folder"
 - Safeguards such as max file count, max byte budget, max parse time, traversal
   depth, symlink behavior, include globs, and exclude globs live in
   `config/parser.yaml`.
+- Docling JSON is the canonical stored parse artifact. Markdown is lazy or
+  optional export output, not a default stored duplicate.
 
 ## Implemented Patch: Inventory Statistics
 
@@ -459,6 +463,9 @@ Proof:
 | DD-008 | Folder versus folder tree behavior and safeguards. | `folder` means folder tree by default; keep safeguard defaults in `config/parser.yaml` and require explicit overrides for big jobs. |
 | DD-009 | Result summaries. | Every `results/` command folder includes a user-focused `summary.md` with concise overview tables and no long raw listings. |
 | DD-010 | HTML reports. | Reports are optional on-demand CLI artifacts under `reports/`; the CLI owns generic reports and stable data inputs, while skill wrappers may create customized reports from the same surfaces. |
+| DD-011 | Producer prerequisites. | Producer commands auto-run safe prior steps with defaults; `parse folder` auto-scans before parsing. |
+| DD-012 | Default parser profile. | Omitted `--profile` uses `docling_ocr`; faster non-OCR parsing remains available through `--profile docling_fast_text`. |
+| DD-013 | Parse artifact storage. | Store canonical Docling JSON through the blob storage manager; Markdown is lazy/optional and not stored by default. |
 
 ## Exit Criteria
 
