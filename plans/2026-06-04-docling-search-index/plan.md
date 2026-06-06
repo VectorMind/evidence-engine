@@ -48,7 +48,8 @@ Use a current-state catalog plus separate config/template files:
 - generated chunks live inside lower index islands, not as catalog tables;
 - command reports and logs live under `.results/` folders, not SQLite.
 - there is no `init` command; producers call centralized table creation before
-  writing, and `catalog migrate` can create or upgrade the fixed catalog.
+  writing. `catalog create` creates the fixed catalog when it is missing, and
+  `catalog migrate` upgrades an existing stale or incomplete catalog.
 
 ## Goal
 
@@ -108,8 +109,9 @@ $HOME/.cache/agents-docs/catalog/catalog.sqlite
 ```
 
 Every producer command calls the same centralized table creation/migration
-function before writing. `catalog migrate` and the first write command both
-create missing tables according to `catalog.yaml`.
+function before writing. `catalog create` and the first write command both
+create missing tables according to `catalog.yaml`; `catalog migrate` upgrades
+an existing stale or incomplete catalog.
 
 ## CLI Surface
 
@@ -120,7 +122,8 @@ for the only values that cannot sensibly default.
 
 | First command | Subcommand | Mandatory args | Explanation | Defaults |
 | --- | --- | --- | --- | --- |
-| `catalog` | `migrate` | none | Creates or upgrades `$HOME/.cache/agents-docs/catalog/catalog.sqlite`. | `catalog.yaml`; no args. |
+| `catalog` | `create` | none | Creates `$HOME/.cache/agents-docs/catalog/catalog.sqlite` if it is missing. | `catalog.yaml`; no args. |
+| `catalog` | `migrate` | none | Upgrades an existing stale or incomplete fixed home catalog. | `catalog.yaml`; no args. |
 | `catalog` | `status` | none | Reports catalog version, table presence, key counts, and stale state. | Fixed home cache; no args. |
 | `health` | none | none | Checks configured paths and available dependencies. | Fixed home cache and config files; no args. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree and records source items. | Includes/excludes and safety limits from `config/parser.yaml`. |
@@ -131,6 +134,7 @@ for the only values that cannot sensibly default.
 Example minimal calls:
 
 ```powershell
+agents-docs catalog create
 agents-docs catalog migrate
 agents-docs catalog status
 agents-docs health
@@ -252,7 +256,8 @@ Deliverables:
 
 Proof:
 
-- `agents-docs catalog migrate` creates or updates the fixed catalog;
+- `agents-docs catalog create` creates the fixed catalog when missing;
+- `agents-docs catalog migrate` upgrades an existing stale or incomplete catalog;
 - synthetic folder inventory can also create missing tables through the central
   table-creation path;
 - consumers can open the `.db` read-only and inspect rows.

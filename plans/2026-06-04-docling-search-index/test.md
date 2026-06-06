@@ -112,10 +112,64 @@ Status: Planning proof only. No implementation to test yet.
 - Ran ASCII/no-tab checks on `README.md`, `docs/dependencies.md`,
   `implementation.md`, and `test.md`; all checked files are ASCII-only and have
   no tab characters.
+- Ran `python -m py_compile` on `src/agents_cli/__init__.py`,
+  `src/agents_cli/paths.py`, `src/agents_cli/contracts.py`,
+  `src/agents_cli/catalog.py`, and `src/agents_cli/cli.py`; result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status` before
+  migration; result: JSON reported the fixed catalog as missing and listed ten
+  expected missing tables.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog migrate`; result:
+  created `$HOME/.cache/agents-docs/catalog/catalog.sqlite`, set
+  `sqlite_user_version` to `2`, and created ten catalog tables.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status` after
+  migration; result: `status: current`, `missing_tables: []`,
+  `extra_tables: []`, `table_count: 10`, and zero row counts for all expected
+  tables.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli health` after migration;
+  result: fixed cache and catalog paths exist, stdlib SQLite check is `ok`.
+- Tried a direct read-only SQLite schema inspection command once with bad
+  PowerShell quoting; it failed with a Python `SyntaxError`.
+- Reran the read-only SQLite schema inspection with parameterized SQL; result:
+  `user_version 2`, ten expected tables, and expected primary/secondary indexes.
+- Reran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog migrate`;
+  result: idempotent output with `created: false`, `status: current`, and
+  `sqlite_user_version_before: 2`.
+- Reran stale command-surface scan over README, spec, plan, and CLI code for
+  `--cache-root`, `catalog init`, old command names, and `<cache_root>`; no
+  matches were found.
+- Ran ASCII/no-tab checks on updated README, Python files, implementation notes,
+  and test notes; all checked files are ASCII-only and have no tab characters.
+- Removed generated `src/agents_cli/__pycache__` after verification.
+- Added explicit `catalog create` while keeping `catalog migrate` and
+  `catalog status`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog create`;
+  result against the existing fixed catalog: `status: current`,
+  `created: false`, `sqlite_user_version_before: 2`,
+  `sqlite_user_version: 2`, and `table_count: 10`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog migrate`;
+  result against the existing fixed catalog: `status: current`,
+  `created: false`, `sqlite_user_version_before: 2`,
+  `sqlite_user_version: 2`, and `table_count: 10`.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog status`;
+  result: `status: current`, `missing_tables: []`, `extra_tables: []`,
+  `table_count: 10`, and zero row counts for all expected tables.
+- Ran `python -m py_compile` on all current `src/agents_cli/*.py` files;
+  result: success.
+- Ran `$env:PYTHONPATH='src'; python -m agents_cli.cli catalog --help`;
+  result: help lists `{create,migrate,status}` with no cache-root argument.
+- Ran `rg` over README, spec, plan, and source for stale active CLI wording:
+  `catalog init`, `--cache-root`, legacy `catalog migrate|status`, and
+  "create or upgrade" migration wording. Matches were limited to historical
+  test notes, not active contracts or code.
+- Removed generated `src/agents_cli/__pycache__` after verification.
+- Did not delete the fixed user catalog to retest the missing-create path; that
+  path was already created in the prior migration proof, and the new
+  non-destructive proof covers idempotent `catalog create` on an existing
+  current catalog.
 
-Runtime proof is currently limited to Phase 2 scaffold commands. Docling,
-Tantivy, LanceDB, embedding, migration, and indexing behavior is not implemented
-yet.
+Runtime proof currently covers Phase 2 CLI scaffold commands and Phase 3
+SQLite catalog migration/status. Docling, Tantivy, LanceDB, embedding, and
+indexing behavior is not implemented yet.
 
 ## Future Proof Targets
 

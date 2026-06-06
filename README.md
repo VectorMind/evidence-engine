@@ -13,9 +13,10 @@ Dependency rationale is documented in [docs/dependencies.md](./docs/dependencies
 
 ## Current Status
 
-This repository is moving from specification into implementation scaffolding.
-The package skeleton and command names exist for review. Heavy runtime behavior
-such as Docling parsing and index building lands in later phases.
+This repository is moving from specification into implementation. The package
+skeleton, fixed-cache catalog creation/migration, catalog status, and health
+commands are implemented. Heavy runtime behavior such as Docling parsing and
+index building lands in later phases.
 
 ## Install Shape
 
@@ -47,7 +48,8 @@ $HOME/.cache/agents-docs/catalog/catalog.sqlite
 ```
 
 There is no `init` command. Producer commands call centralized table creation
-before writing, and `catalog migrate` can create or upgrade the fixed catalog.
+before writing. `catalog create` creates the fixed catalog when it is missing,
+and `catalog migrate` upgrades an existing stale or incomplete catalog.
 
 ## Binding CLI Surface
 
@@ -57,8 +59,9 @@ from config files rather than command arguments.
 
 | First command | Subcommand | Mandatory args | Output | Purpose |
 | --- | --- | --- | --- | --- |
-| `catalog` | `migrate` | none | JSON | Create or upgrade the fixed home catalog. |
-| `catalog` | `status` | none | JSON | Report catalog presence, version, tables, and stale state. |
+| `catalog` | `create` | none | JSON | Create the fixed home catalog if it is missing. |
+| `catalog` | `migrate` | none | JSON | Upgrade an existing stale or incomplete fixed home catalog. |
+| `catalog` | `status` | none | JSON | Report catalog presence, version, expected tables, missing tables, and row counts. |
 | `health` | none | none | JSON | Check fixed paths and available runtime dependencies. |
 | `scan` | `folder <path>` | `path` | JSONL planned | Inventory a folder tree and record source items. |
 | `parse` | `folder <path>` | `path` | JSONL planned | Parse folder-tree sources through Docling and record artifacts/objects. |
@@ -68,6 +71,7 @@ from config files rather than command arguments.
 Minimal examples:
 
 ```powershell
+agents-docs catalog create
 agents-docs catalog migrate
 agents-docs catalog status
 agents-docs health

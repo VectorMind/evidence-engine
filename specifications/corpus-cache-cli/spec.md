@@ -29,8 +29,9 @@ $HOME/.cache/agents-docs/catalog/catalog.sqlite
 
 Every producer command calls the central catalog table-creation/migration
 function before it writes catalog state. There is no `init` command. A missing
-catalog is created by `catalog migrate` or by the first producer command that
-needs it, using the schema in `catalog.yaml`.
+catalog is created by `catalog create` or by the first producer command that
+needs it, using the schema in `catalog.yaml`. A stale or incomplete catalog is
+upgraded by `catalog migrate` or by the same producer ensure path before writes.
 
 ## Catalog Contract
 
@@ -249,7 +250,7 @@ Remote embedding providers are not hard-coded defaults.
 
 The public CLI exposes:
 
-- `agents-docs catalog migrate|status`;
+- `agents-docs catalog create|migrate|status`;
 - `agents-docs health`;
 - `agents-docs scan folder`;
 - `agents-docs parse folder`;
@@ -264,7 +265,8 @@ path or query text when those cannot be defaulted.
 
 | First command | Subcommand | Mandatory args | Explanation | Defaults |
 | --- | --- | --- | --- | --- |
-| `catalog` | `migrate` | none | Creates or upgrades the fixed home catalog to the current schema. | Fixed cache root and `catalog.yaml`. |
+| `catalog` | `create` | none | Creates the fixed home catalog when it is missing; returns current when it already exists. | Fixed cache root and `catalog.yaml`. |
+| `catalog` | `migrate` | none | Upgrades a stale or incomplete existing fixed home catalog to the current schema. | Fixed cache root and `catalog.yaml`. |
 | `catalog` | `status` | none | Reports fixed catalog version, table presence, counts, and stale state. | Fixed cache root. |
 | `health` | none | none | Checks Python package, SQLite catalog, Docling, Tantivy, LanceDB, embeddings, and configured paths. | Fixed cache root and config files. |
 | `scan` | `folder <path>` | `path` | Inventories a folder tree and records current source items. | Traversal and safeguard defaults from `config/parser.yaml`. |
@@ -288,7 +290,7 @@ root. Results include:
 - created, changed, unchanged, skipped, deferred, stale, and failed counts;
 - fatal errors separately from retryable or deferred work.
 
-`catalog migrate`, `catalog status`, and `health` accept no additional
+`catalog create`, `catalog migrate`, `catalog status`, and `health` accept no additional
 arguments.
 
 ## Refresh Contract

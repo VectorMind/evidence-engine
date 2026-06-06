@@ -10,12 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import platform
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
 
 from agents_cli import __version__
+from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
 from agents_cli.paths import catalog_path, fixed_cache_root, results_root
 
 
@@ -49,49 +49,25 @@ def _not_implemented(command: str, **extra: Any) -> int:
     return 2
 
 
+def catalog_create(_: argparse.Namespace) -> int:
+    payload = _base_payload("catalog create")
+    payload.update(create_catalog())
+    _emit(payload)
+    return 0 if payload["status"] in {"created", "current", "migrated"} else 1
+
+
 def catalog_migrate(_: argparse.Namespace) -> int:
-    return _not_implemented(
-        "catalog migrate",
-        expected_behavior="Create or upgrade the fixed home catalog via centralized table creation.",
-    )
+    payload = _base_payload("catalog migrate")
+    payload.update(migrate_catalog())
+    _emit(payload)
+    return 0 if payload["status"] in {"current", "migrated"} else 1
 
 
 def catalog_status(_: argparse.Namespace) -> int:
-    path = catalog_path()
     payload = _base_payload("catalog status")
-    payload.update(
-        {
-            "status": "missing" if not path.exists() else "present",
-            "exists": path.exists(),
-        }
-    )
-
-    if path.exists():
-        try:
-            with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
-                user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-                tables = conn.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type = 'table' ORDER BY name"
-                ).fetchall()
-            payload.update(
-                {
-                    "sqlite_user_version": user_version,
-                    "table_count": len(tables),
-                    "tables": [row[0] for row in tables],
-                }
-            )
-        except sqlite3.Error as exc:
-            payload.update(
-                {
-                    "status": "error",
-                    "error_kind": "sqlite_error",
-                    "redacted_detail": str(exc),
-                }
-            )
-
+    payload.update(catalog_status_report())
     _emit(payload)
-    return 0
+    return 0 if payload["status"] in {"current", "missing", "stale"} else 1
 
 
 def health(_: argparse.Namespace) -> int:
@@ -143,8 +119,13 @@ def build_parser() -> argparse.ArgumentParser:
     catalog = subparsers.add_parser("catalog", help="Catalog control commands.")
     catalog_sub = catalog.add_subparsers(dest="catalog_command")
 
+    catalog_create_parser = catalog_sub.add_parser(
+        "create", help="Create the fixed home catalog if it is missing."
+    )
+    catalog_create_parser.set_defaults(handler=catalog_create)
+
     catalog_migrate_parser = catalog_sub.add_parser(
-        "migrate", help="Create or upgrade the fixed home catalog."
+        "migrate", help="Upgrade the fixed home catalog if it exists."
     )
     catalog_migrate_parser.set_defaults(handler=catalog_migrate)
 

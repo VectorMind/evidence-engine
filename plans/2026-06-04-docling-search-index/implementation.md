@@ -1,7 +1,7 @@
 # Implementation: Docling Search Index
 
 Date: 2026-06-04
-Status: Phase 2 scaffold started.
+Status: Phase 3 SQLite catalog started.
 
 ## Notes
 
@@ -84,6 +84,27 @@ Status: Phase 2 scaffold started.
 - Added `docs/dependencies.md` with a table of all declared Python dependencies,
   one-sentence descriptions, selection rationale, and closest alternatives.
 - Linked `docs/dependencies.md` from the top of `README.md`.
+- Added `src/agents_cli/contracts.py` for bundled/source-tree contract file
+  discovery.
+- Added `src/agents_cli/catalog.py` with catalog schema loading, stdlib fallback
+  parsing for `catalog.yaml`, centralized SQLite table creation, `PRAGMA
+  user_version` migration, idempotent migration, and status reporting.
+- Replaced the scaffold `catalog migrate` implementation with real fixed-home
+  catalog creation at `$HOME/.cache/agents-docs/catalog/catalog.sqlite`.
+- Expanded `catalog status` to report expected tables, missing tables, extra
+  tables, row counts, and SQLite `user_version`.
+- Updated `README.md` current status and catalog-status description.
+- Split fixed catalog lifecycle into explicit `catalog create`, explicit
+  `catalog migrate`, and shared producer `ensure_catalog()`.
+- `catalog create` creates the fixed catalog when missing and is idempotent
+  when the catalog is already current.
+- `catalog migrate` now upgrades an existing stale or incomplete fixed catalog;
+  when the catalog is missing it reports `status: missing` instead of acting as
+  the manual create command.
+- `ensure_catalog()` is the future producer path: it creates a missing catalog
+  and migrates stale or incomplete catalog state before writes.
+- Updated README, durable spec, and plan wording so the binding surface is
+  `catalog create|migrate|status` with no `init` and no cache-root argument.
 - No heavy runtime dependency installation has been run.
 
 ## Pending Decisions
