@@ -47,6 +47,7 @@ media = [
   "Pillow",        # image metadata + thumbnails
   "pillow-heif",   # HEIC/HEIF support
   "imagehash",     # perceptual hashing for dedupe candidates
+  "pymediainfo",   # video/audio container + stream metadata
 ]
 
 # Default working profile: the full local CPU stack a laptop needs.

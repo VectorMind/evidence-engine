@@ -29,16 +29,34 @@ No model runs as a hosted/remote call by default.
 
 ## VLM Candidates (picture description / visual enrichment)
 
-Run through Ollama when available, otherwise direct Transformers. None are
-pulled automatically. Listed smallest to largest.
+Run through Ollama when a model is in its registry, otherwise direct
+Transformers. None are pulled automatically. The `Ollama tag` column is the
+exact `ollama pull <tag>` name; smallest to largest.
 
-| Model | Size | Tier | Usage |
-| --- | --- | --- | --- |
-| SmolVLM2 | 0.5 B | Laptop | Cheap captions and simple object hints. |
-| Granite Vision 3.2 | 2 B | Laptop / light station | Docling-aligned picture descriptions and structured observations. |
-| Qwen2.5-VL | 3 B | Station | General captions and object/label candidates. |
-| MiniCPM-V 2.6 | 8 B | Station | Stronger visual understanding and OCR-like tasks. |
-| InternVL3 / Llama 3.2 Vision | 8–11 B | Station stress | Upper-bound quality test on 8 GB GPU / 32 GB RAM. |
+| Model | Size | Tier | Ollama tag | Notes |
+| --- | --- | --- | --- | --- |
+| Moondream 2 | 1.8 B | Laptop | `moondream` | Smallest Ollama vision model; quick captions and object hints. |
+| Granite Vision 3.2 | 2 B | Laptop | `granite3.2-vision` | Docling-aligned picture descriptions and structured observations. |
+| Qwen2.5-VL | 3 / 7 B | Laptop / station | `qwen2.5vl:3b`, `qwen2.5vl:7b` | General captions and object/label candidates. |
+| Gemma 3 (multimodal) | 4 B | Laptop | `gemma3:4b` | Strong small general-purpose multimodal. |
+| LLaVA-Phi3 | 3.8 B | Laptop | `llava-phi3` | Compact LLaVA variant. |
+| MiniCPM-V 2.6 | 8 B | Station | `minicpm-v` | Stronger visual understanding and OCR-like tasks. |
+| Llama 3.2 Vision | 11 B | Station | `llama3.2-vision` | Upper-bound quality on 8 GB GPU / 32 GB RAM. |
+| SmolVLM2 | 0.25–2.2 B | Laptop | — | **Not in the Ollama registry.** Run via Hugging Face Transformers or llama.cpp directly. |
+
+SmolVLM2 is not packaged by Ollama, so it cannot be `ollama pull`ed. For an
+Ollama-only laptop path, the smallest option is `moondream`, then
+`granite3.2-vision`.
+
+### Captioning cost (measured)
+
+On a CPU-bound dev laptop, `granite3.2-vision` captioning runs ~90–150 s per
+image, and **downscaling the input barely changes it** — the cost is model
+generation, not image size. So `media describe` is opt-in and selective
+(`--limit`), never a default bulk pass: ~345 photos would take hours. Bulk
+description needs a GPU, a smaller/faster model (try `moondream`), or a
+background batch. `media describe` still downscales to `--max-edge 1024` by
+default to cap memory and keep OCR-grade text legible.
 
 ## Defaults and Policy
 

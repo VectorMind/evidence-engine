@@ -692,14 +692,24 @@ def _mark_document_failed(
         conn.commit()
 
 
+# Media classes are routed to `media inspect`, not Docling parse. Each source
+# item goes to exactly one processor; parse handles documents and unknown types.
+_MEDIA_TYPE_PREFIXES = ("image/", "video/", "audio/", "model/")
+
+
 def _source_items_for_root(root_id: str, limit: int | None) -> list[dict[str, Any]]:
-    sql = """
+    media_filter = " AND ".join(
+        f"(media_type IS NULL OR media_type NOT LIKE '{prefix}%')"
+        for prefix in _MEDIA_TYPE_PREFIXES
+    )
+    sql = f"""
         SELECT source_item_id, relative_path, source_uri, media_type, size_bytes,
                source_mtime, source_sha256
         FROM "source_items"
         WHERE root_id = ?
           AND item_kind = 'file'
           AND inventory_status IN ('current', 'unchanged', 'changed')
+          AND {media_filter}
         ORDER BY relative_path
     """
     params: list[Any] = [root_id]

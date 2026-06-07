@@ -73,8 +73,9 @@ Implemented today:
 - package and CLI entrypoint named `coev`;
 - workspace-local storage under `.cache/coev/`;
 - SQLite catalog create/status/wipe;
-- folder source inventory through `sources scan`;
+- media-aware source inventory through `sources scan` (documents, images, video, audio, 3D);
 - Docling parsing through `docs parse`;
+- deterministic image, video, and 3D (OBJ/STL) metadata through `media inspect`;
 - text, semantic, and hybrid search/index plumbing;
 - JSON-first command stdout;
 - persisted result JSON, events, summaries, and optional HTML reports.
@@ -130,8 +131,11 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `catalog` | `status` | none | Report catalog presence, version, table state, and row counts. |
 | `catalog` | `wipe` | none | Delete the workspace catalog database. |
 | `health` | none | none | Check workspace paths and optional dependencies. |
-| `sources` | `scan <path>` | `path` | Inventory a mixed-content folder tree. |
+| `sources` | `scan <path>` | `path` | Inventory a mixed-content folder tree (documents, images, video, audio, 3D models). |
 | `docs` | `parse <path>` | `path` | Auto-scan and parse documents through Docling. |
+| `media` | `inspect <path>` | `path` | Extract image metadata (size, EXIF, GPS) and thumbnails into the catalog. |
+| `media` | `describe <path>` | `path` | Shallow VLM captions (and optional `--kind`) via a local Ollama model. Opt-in, read-only. |
+| `media` | `dedupe <path>` | `path` | *(planned)* Near-duplicate media candidate pairs from perceptual hashing. |
 | `index` | `scope <path>` | `path` | Build or refresh the text index for a source scope. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
 | `search` | `text <query>` | `query` | Search current text indexes. |
@@ -146,6 +150,7 @@ coev catalog status
 coev health
 coev sources scan "C:\docs\example-folder"
 coev docs parse "C:\docs\example-folder"
+coev media inspect "C:\docs\example-folder"
 coev index scope "C:\docs\example-folder"
 coev index scope "C:\docs\example-folder" --semantic
 coev search text "contract renewal clause"
@@ -161,6 +166,13 @@ Add `--report` for an HTML inventory report.
 to `docling_ocr`; use `--profile docling_fast_text` for a faster non-OCR run.
 Parse failures are classified into actionable categories and included in
 result JSON, Markdown summaries, and optional HTML reports.
+
+`media inspect` auto-scans, then extracts deterministic metadata into typed
+catalog tables, dispatched by media class: images (dimensions, color mode, EXIF
+camera/orientation/GPS, capture time, plus a thumbnail through the shared blob
+store), video (container, codecs, resolution, duration, frame rate, bit rate),
+and 3D models (vertex/face counts and bounding box for OBJ and STL). It runs no
+model. The model-based `describe`/`dedupe` commands follow in later slices.
 
 `index scope` builds the text index from current parsed document objects. It
 auto-scans the source path but does not silently parse/OCR missing documents.

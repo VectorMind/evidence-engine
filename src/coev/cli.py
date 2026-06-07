@@ -21,6 +21,12 @@ from coev.catalog import catalog_status_report, create_catalog, wipe_catalog
 from coev.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
 from coev.hybrid import HybridSearchOptions, search_hybrid_indexes
 from coev.inventory import ScanOptions, scan_folder_to_catalog
+from coev.media import (
+    DescribeOptions,
+    InspectOptions,
+    describe_folder_to_catalog,
+    inspect_folder_to_catalog,
+)
 from coev.parse import ParseOptions, parse_folder_to_catalog
 from coev.paths import catalog_path, reports_root, results_root, workspace_root
 from coev.references import attach_hit_refs
@@ -264,6 +270,56 @@ def docs_parse(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
+def media_inspect(args: argparse.Namespace) -> int:
+    run = CommandRun.start("media inspect")
+    payload = _base_payload("media inspect")
+    try:
+        result = inspect_folder_to_catalog(
+            Path(args.path),
+            InspectOptions(limit=args.limit, thumbnails=not args.no_thumbnails),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
+def media_describe(args: argparse.Namespace) -> int:
+    run = CommandRun.start("media describe")
+    payload = _base_payload("media describe")
+    try:
+        result = describe_folder_to_catalog(
+            Path(args.path),
+            DescribeOptions(
+                limit=args.limit,
+                model=args.model,
+                ollama_url=args.ollama_url,
+                classify_kind=args.kind,
+                max_edge=args.max_edge,
+            ),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
 def index_scope(args: argparse.Namespace) -> int:
     run = CommandRun.start("index scope")
     payload = _base_payload("index scope")
@@ -502,6 +558,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write an optional generic HTML report under the workspace reports directory.",
     )
     docs_parse_parser.set_defaults(handler=docs_parse)
+
+    media = subparsers.add_parser("media", help="Media evidence commands.")
+    media_sub = media.add_subparsers(dest="media_command")
+    media_inspect_parser = media_sub.add_parser(
+        "inspect", help="Extract deterministic media metadata for a folder."
+    )
+    media_inspect_parser.add_argument("path", help="Folder path to inspect.")
+    media_inspect_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Inspect at most this many current image source items.",
+    )
+    media_inspect_parser.add_argument(
+        "--no-thumbnails",
+        action="store_true",
+        help="Skip thumbnail generation and store only metadata rows.",
+    )
+    media_inspect_parser.set_defaults(handler=media_inspect)
+
+    media_describe_parser = media_sub.add_parser(
+        "describe", help="Generate shallow VLM captions for images (opt-in)."
+    )
+    media_describe_parser.add_argument("path", help="Folder path to describe.")
+    media_describe_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Describe at most this many current image source items.",
+    )
+    media_describe_parser.add_argument(
+        "--model",
+        default="granite3.2-vision",
+        help="Local Ollama vision model. Defaults to granite3.2-vision.",
+    )
+    media_describe_parser.add_argument(
+        "--ollama-url",
+        default="http://localhost:11434",
+        help="Local Ollama base URL. Defaults to http://localhost:11434.",
+    )
+    media_describe_parser.add_argument(
+        "--kind",
+        action="store_true",
+        help="Also classify each image into the closed media-kind vocabulary.",
+    )
+    media_describe_parser.add_argument(
+        "--max-edge",
+        type=int,
+        default=1024,
+        help="Downscale the longest image edge before the VLM call. 0 disables.",
+    )
+    media_describe_parser.set_defaults(handler=media_describe)
 
     index = subparsers.add_parser("index", help="Build or refresh indexes.")
     index_sub = index.add_subparsers(dest="index_command")

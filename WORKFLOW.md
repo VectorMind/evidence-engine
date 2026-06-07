@@ -17,6 +17,19 @@ just into a plan or a commit message. Plans are time-bounded and get abandoned
 after implementation; the spec is what survives. Do not record case-level
 implementation detail in the spec; capture the durable rule behind it.
 
+## Read-Only Sources
+
+Source files are read-only, always. The engine, tools, and tests must never
+copy, move, rename, edit, or write to a source file or its folder. Pointing a
+command at a source location is for reading only.
+
+The only outputs are **derived** artifacts under the workspace cache
+(`.cache/coev/`): metadata rows, thumbnails/previews, embeddings, indexes, and
+result files. Generating a small thumbnail from a source is fine; duplicating
+the source is not — copies waste storage and break the read-only contract. When
+a test needs sample media, read it in place from the user-provided path; do not
+copy it into a fixture.
+
 ## Git Ownership
 
 The maintainer owns all git operations. Assistants and tools must not run

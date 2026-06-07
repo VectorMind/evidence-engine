@@ -122,6 +122,10 @@ Media is inventoried through the single `sources scan` path; there is no
 model3d) alongside documents, including 3D model formats (`.obj`, `.stl`,
 `.gltf`, `.glb`, `.ply`).
 
+Each inventoried source item is routed to exactly one processor by media class:
+documents and unknown types go to `docs parse`; image, video, audio, and 3D
+items go to `media inspect`. Neither processor handles the other's types.
+
 Media processors operate on already-inventoried items:
 
 - `media inspect` extracts deterministic metadata into typed tables —

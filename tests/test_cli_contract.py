@@ -87,3 +87,63 @@ def test_sources_scan_is_media_aware(
     assert media_types.get("clip.mp4") == "video/mp4"
     assert media_types.get("part.obj") == "model/obj"
     assert media_types.get("notes.txt") == "text/plain"
+
+
+def test_parse_selection_excludes_media_items(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from coev.inventory import ScanOptions, scan_folder_to_catalog
+    from coev.parse import _source_items_for_root
+
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "report.txt").write_text("a document", encoding="utf-8")
+    (data / "photo.png").write_bytes(b"\x89PNG\r\n")
+    (data / "clip.mp4").write_bytes(b"\x00")
+    (data / "part.obj").write_text("v 0 0 0\n", encoding="utf-8")
+
+    scan = scan_folder_to_catalog(
+        data, ScanOptions(max_files=None, max_bytes=None, max_depth=None)
+    )
+    selected = {
+        item["relative_path"] for item in _source_items_for_root(scan["root_id"], None)
+    }
+
+    assert selected == {"report.txt"}
+
+
+def test_media_inspect_writes_image_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import sqlite3
+
+    pil = pytest.importorskip("PIL.Image")
+
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    pil.new("RGB", (48, 32), color=(10, 20, 30)).save(data / "swatch.png")
+    (data / "notes.txt").write_text("not an image", encoding="utf-8")
+
+    assert main(["media", "inspect", str(data)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "media inspect"
+    assert payload["counts"]["assets_written"] == 1
+
+    with sqlite3.connect(catalog_path()) as conn:
+        asset = conn.execute(
+            "SELECT media_class, primary_artifact_id FROM media_assets"
+        ).fetchone()
+        image = conn.execute(
+            "SELECT width, height, color_mode FROM image_metadata"
+        ).fetchone()
+        artifact_count = conn.execute(
+            "SELECT COUNT(*) FROM media_artifacts WHERE artifact_kind = 'thumbnail'"
+        ).fetchone()[0]
+
+    assert asset[0] == "image"
+    assert asset[1] is not None  # thumbnail wired as primary artifact
+    assert image == (48, 32, "RGB")
+    assert artifact_count == 1
