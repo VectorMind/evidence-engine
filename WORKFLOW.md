@@ -8,6 +8,22 @@ This repository does not use repo-level `memory/`, `knowledge_base/`, or
 output paths or implementation-specific test fixtures, not in persistent
 workflow folders.
 
+## Spec Maintenance
+
+Keep `specifications/` current as durable decisions emerge. Whenever the
+maintainer states a strategy, policy, contract, or wisdom-level rule — or work
+settles such a decision — fold it into the relevant spec in the same pass, not
+just into a plan or a commit message. Plans are time-bounded and get abandoned
+after implementation; the spec is what survives. Do not record case-level
+implementation detail in the spec; capture the durable rule behind it.
+
+## Git Ownership
+
+The maintainer owns all git operations. Assistants and tools must not run
+`git add`, `git commit`, `git push`, branch, or any other history-changing git
+command. Leave finished work in the working tree and let the maintainer review,
+stage, and commit it.
+
 ## Areas
 
 ### `specifications/`
@@ -101,7 +117,7 @@ checks instead of runtime proof.
 
 ## Scope Ownership
 
-`agents-cli` owns reusable CLI implementation for manager repositories and
+`coev` owns reusable CLI implementation for manager repositories and
 central skills. Central skills may wrap these commands and manage dependency
 installation, but they do not own the SQL catalog, FTS indexing, semantic
 indexing, search routing, schema migrations, or lower-index health behavior.

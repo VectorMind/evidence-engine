@@ -15,45 +15,52 @@ script remain `coev` (see [Install Shape](#install-shape)).
 
 ## Layered Architecture
 
-The system is a stack of knowledge layers. Each layer only describes what the
-layer below produced; meaning is added on the way up, never assumed at the
-bottom. The single rule that governs every boundary:
+The system is a five-layer stack. A *layer* is a band; it can hold several
+boxes. Each layer only describes what the layer below produced — meaning is
+added on the way up, never assumed at the bottom:
 
 ```text
-Lower layers describe what was observed and generated.
-Upper layers describe what was believed, reviewed, promoted, or used.
+5  Curated knowledge     [ markdown notes · conventions · handoff slices ]   ▲ meaning
+4  Reviewed facts        [ entities · classifications · links · decisions ]  │
+3  Search projections    [ text (FTS) · semantic (vector) · hybrid · routing ]
+2  Evidence              [ inventory · parsed objects · OCR/captions/summaries ]
+1  Source authority      [ folders · OneDrive · archives · connectors ]      ▼ evidence
 ```
 
-`corpus-evidence` owns the five lower **evidence** layers. Private
-workspaces (`private-documents`, `private-media`) own the two upper **meaning**
-layers. Dependencies are one-way: private layers may read public catalog/schema
-contracts; the public engine never knows about private state.
+`coev` **produces layers 2–3** from the layer-1 sources. **Layers 4–5 are
+written by workspaces on top** (`private-documents`, `private-media`). There are
+**no access boundaries**: every layer is open data the layer above reads
+directly, plus one search API. The dependency direction is one-way — upper
+layers know lower ones, never the reverse.
 
-| # | Layer | Owner | What it holds | Catalog tables | Command |
-| --- | --- | --- | --- | --- | --- |
-| 1 | **Source authority** | public | Original files and connectors, read-only. Paths/URIs are private data; only schemas are public. | `source_roots` | `sources scan` |
-| 2 | **Source inventory** | public | Generic typed source items, hashes, sizes, per-root and per-extension stats. No personal meaning. | `source_items`, `source_root_stats`, `source_extension_stats` | `sources scan` |
-| 3 | **Evidence objects** | public | Parsed typed objects: documents, pages, tables, figures, images, stored artifacts and blobs. | `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items` | `docs parse` |
-| 4 | **Generated observations** | public | Machine-produced material: OCR text, captions, shallow descriptions, summaries, duplicate candidates. Rebuildable; never proof of absence. | (carried on artifacts/objects) | `docs parse` *(media `describe` planned)* |
-| 5 | **Search projections** | public | Fast rebuildable retrieval indexes: text (FTS), semantic (vector), hybrid fusion. Hydrate back to catalog refs. | `index_scopes`, `fts_indexes`, `semantic_stores` | `index scope`, `search` |
-| 6 | **Reviewed semantic facts** | private | Durable reviewed meaning: entities, classifications, identities, relationships, promotion choices. | *(private overlay)* | *(private workspaces)* |
-| 7 | **Curated knowledge & handoff** | private | Human-readable Markdown knowledge, conventions, decisions, and topic handoff slices. | *(private overlay)* | *(private workspaces)* |
+| # | Layer | Boxes inside | Catalog tables | Built by |
+| --- | --- | --- | --- | --- |
+| 1 | **Source authority** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots` | `sources scan` |
+| 2 | **Evidence** | Everything machine-produced and **rebuildable**: source inventory, parsed typed objects (documents, pages, tables, figures, images, blobs), and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `source_items`, `source_root_stats`, `source_extension_stats`, `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items` | `docs parse` |
+| 3 | **Search projections** | Fast rebuildable retrieval indexes: text (FTS), semantic (vector), hybrid fusion; global routing later. | `index_scopes`, `fts_indexes`, `semantic_stores` | `index scope`, `search` |
+| 4 | **Reviewed facts** | Meaning a human or agent **decided**: entities, classifications, identities, relationships, promotion choices. Durable; carries judgment. | *(upper catalog)* | workspaces on top |
+| 5 | **Curated knowledge** | Human-readable Markdown: conventions, decisions, selected facts, topic handoff slices. | *(markdown)* | workspaces on top |
 
-The **SQLite catalog** is the current-state spine of layers 1–5. The stable
-stitching primitive across all layers is:
+The two middle layers carry the load, so their scope is explicit:
 
-```text
-catalog row identity + evidence_ref + provenance
-```
+- **Layer 2 — Evidence** is *rebuildable from sources + config + hashes*. No
+  human judgment lives here; it can always be regenerated.
+- **Layer 4 — Reviewed facts** is *decided and durable*. It is not regenerable
+  and must never be overwritten by a re-parse.
 
-This lets a private row or a search hit point back to exact public evidence
-without copying lower-layer data. Search is the one public surface accessed
-through the CLI/API rather than direct reads, because the physical text/vector
-projection internals are deliberately hidden behind `text`, `semantic`, and
-`hybrid`.
+The **SQLite catalog** is the current-state spine of layers 1–3. Layers stitch
+together through plain catalog references — `corpus_cache.<table>.<row_id>`,
+the same `ref:` convention the catalog uses for its own foreign keys — so an
+upper row or a search hit points at exact evidence **without copying it**. See
+the [Reference Contract](./specifications/corpus-cache-cli/spec.md#reference-contract).
 
-For the full design rationale and the per-layer contract see the
-[Knowledge Layers plan](./plans/2026-06-07-knowledge-layers/plan.md).
+Search is the one surface accessed through the CLI/API rather than direct reads,
+because the physical text/vector internals stay hidden behind `text`,
+`semantic`, and `hybrid`.
+
+> The five bands are a mental model, not the precise data flow — indexing in
+> particular touches several layers. They pack the real complexity into
+> something a mind can stack.
 
 ## Current Status
 

@@ -23,6 +23,7 @@ from coev.hybrid import HybridSearchOptions, search_hybrid_indexes
 from coev.inventory import ScanOptions, scan_folder_to_catalog
 from coev.parse import ParseOptions, parse_folder_to_catalog
 from coev.paths import catalog_path, reports_root, results_root, workspace_root
+from coev.references import attach_hit_refs
 from coev.results import CommandRun
 from coev.semantic import (
     SemanticIndexOptions,
@@ -300,6 +301,7 @@ def search_text(args: argparse.Namespace) -> int:
             SearchOptions(limit=args.limit),
         )
         payload.update(result)
+        attach_hit_refs(payload)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
         payload.update(
             {
@@ -322,6 +324,7 @@ def search_semantic(args: argparse.Namespace) -> int:
             SemanticSearchOptions(limit=args.limit),
         )
         payload.update(result)
+        attach_hit_refs(payload)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
         payload.update(
             {
@@ -351,6 +354,7 @@ def search_hybrid(args: argparse.Namespace) -> int:
             ),
         )
         payload.update(result)
+        attach_hit_refs(payload)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
         payload.update(
             {

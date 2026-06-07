@@ -13,7 +13,8 @@ It owns:
 - artifact/blob storage;
 - current-state SQLite catalog control;
 - normalized document objects;
-- generic media evidence contracts planned for the next slice;
+- media-aware source inventory and generic media evidence (assets, typed
+  metadata, generated observations, duplicate candidates);
 - text search index management;
 - semantic search store management;
 - hybrid search result hydration;
@@ -114,6 +115,39 @@ Rules:
   single monolith, so a reference always resolves to the current row. Referencing
   rows must not snapshot or copy lower-row data.
 
+## Media Contract
+
+Media is inventoried through the single `sources scan` path; there is no
+`media scan`. Scan classifies items by `media_class` (image, video, audio,
+model3d) alongside documents, including 3D model formats (`.obj`, `.stl`,
+`.gltf`, `.glb`, `.ply`).
+
+Media processors operate on already-inventoried items:
+
+- `media inspect` extracts deterministic metadata into typed tables —
+  `media_assets` plus `image_metadata`, `video_metadata`, or
+  `model3d_metadata` — and stores thumbnails/previews through the shared blob
+  store (`media_artifacts` referencing `artifact_blobs`). No model is involved.
+- `media describe` generates shallow observations with a local laptop-tier VLM.
+  It is off by default and profile-gated; defaults are decided only after the
+  compute cost is benchmarked.
+- `media dedupe` writes near-duplicate candidate pairs from perceptual hashing
+  into `media_dedupe_candidates`. Candidates are for review, never decisions.
+
+Generated media meaning has a deliberate ceiling:
+
+- A shallow **`media_kind`** observation may classify an asset with a small,
+  closed vocabulary (for example photo, screenshot, document_scan, diagram,
+  chart, illustration, map, render). This is generic and useful for routing.
+- A **caption** observation is general free text only. The engine does not
+  produce a subject taxonomy (nature, animal, people, objects). Mixed-subject
+  content is left as text; upper layers extract structured subjects from it.
+- Identity meaning — faces, people, named places, reviewed identity — is never
+  produced here. It belongs to private workspaces.
+
+Media observations are stored in `media_observations` as generated, rebuildable
+rows; they are never evidence of absence.
+
 ## Search Contract
 
 Search projections are rebuildable implementation details. Higher layers should
@@ -125,11 +159,20 @@ Public search commands are:
 coev search text <query>
 coev search semantic <query>
 coev search hybrid <query>
+coev search image <image-path>
 ```
 
+`text`, `semantic`, and `hybrid` take a text query. Media participates in them
+through its indexed metadata and generated captions. `search image` is a
+distinct query-by-example mode: it takes an image path, embeds it with the media
+image-embedding model, and returns visually similar assets. Visual similarity is
+a separate retrieval mode, not a text search over generated captions.
+
 Search results hydrate back to catalog identities such as `source_item_id`,
-`doc_id`, `object_id`, `scope_id`, and index/store registry IDs, expressed as
-`corpus_cache.<table>.<row_id>` references per the Reference Contract. Result
+`doc_id`, `object_id`, `scope_id`, and index/store registry IDs. Every hit also
+carries a `ref` field holding its canonical evidence coordinate
+`corpus_cache.document_objects.<object_id>` per the Reference Contract, so upper
+layers can store the hit as a plain reference without copying lower rows. Result
 payloads use public labels: `text`, `semantic`, and `hybrid`.
 
 ## Command Contract
@@ -147,11 +190,15 @@ Public commands:
 | `health` | none | none | Check workspace paths and optional dependencies. |
 | `sources` | `scan <path>` | `path` | Inventory a mixed-content source folder. |
 | `docs` | `parse <path>` | `path` | Parse documents and write lower evidence rows. |
+| `media` | `inspect <path>` | `path` | Extract deterministic media metadata into typed tables and store thumbnails. |
+| `media` | `describe <path>` | `path` | Generate shallow VLM captions/kinds as observations. Off by default, profile-gated. |
+| `media` | `dedupe <path>` | `path` | Write near-duplicate media candidate pairs from perceptual hashing. |
 | `index` | `scope <path>` | `path` | Build or refresh the text index. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
 | `search` | `text <query>` | `query` | Search text projections. |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
+| `search` | `image <image-path>` | `image-path` | Query-by-image visual similarity over media image embeddings. |
 
 There is no `manage` command group and no V1 `handoff` command group.
 

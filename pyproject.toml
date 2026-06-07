@@ -43,10 +43,15 @@ embeddings = [
 heavy-embeddings = [
   "sentence-transformers",  # higher-quality embeddings + cross-encoder rerank
 ]
+media = [
+  "Pillow",        # image metadata + thumbnails
+  "pillow-heif",   # HEIC/HEIF support
+  "imagehash",     # perceptual hashing for dedupe candidates
+]
 
 # Default working profile: the full local CPU stack a laptop needs.
 laptop = [
-  "coev[docling,fts,semantic,embeddings]",
+  "coev[docling,fts,semantic,embeddings,media]",
 ]
 
 # Station adds heavier local models on top of the laptop stack.

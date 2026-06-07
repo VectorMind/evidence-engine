@@ -660,7 +660,24 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+# Media types that stdlib mimetypes does not reliably know, mainly 3D model
+# formats. Kept small and explicit so scan classification stays deterministic.
+_MEDIA_TYPE_OVERRIDES = {
+    ".obj": "model/obj",
+    ".stl": "model/stl",
+    ".gltf": "model/gltf+json",
+    ".glb": "model/gltf-binary",
+    ".ply": "model/ply",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".webp": "image/webp",
+}
+
+
 def _media_type(path: Path) -> str:
+    override = _MEDIA_TYPE_OVERRIDES.get(path.suffix.lower())
+    if override:
+        return override
     guessed, _ = mimetypes.guess_type(str(path))
     return guessed or "application/octet-stream"
 

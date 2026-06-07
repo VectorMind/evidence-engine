@@ -30,7 +30,13 @@ folder_safeguards:
   max_parse_seconds_default: 3600
   max_depth_default: null
   follow_symlinks_default: false
-  include_globs_default: ["**/*.pdf", "**/*.docx", "**/*.md", "**/*.txt", "**/*.html"]
+  include_globs_default: [
+    "**/*.pdf", "**/*.docx", "**/*.md", "**/*.txt", "**/*.html",
+    "**/*.jpg", "**/*.jpeg", "**/*.png", "**/*.gif", "**/*.bmp", "**/*.tiff", "**/*.webp", "**/*.heic", "**/*.heif",
+    "**/*.mp4", "**/*.mov", "**/*.mkv", "**/*.avi", "**/*.webm",
+    "**/*.mp3", "**/*.wav", "**/*.flac", "**/*.m4a",
+    "**/*.obj", "**/*.stl", "**/*.gltf", "**/*.glb", "**/*.ply",
+  ]
   exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**", "**/.cache/**"]
 
 parser_runtime:

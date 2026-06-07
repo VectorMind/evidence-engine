@@ -57,3 +57,33 @@ def test_sources_scan_writes_workspace_results(
     assert payload["result_uri"].startswith("results/")
     assert (workspace_root() / payload["result_uri"] / "result.json").exists()
     assert (workspace_root() / payload["summary_uri"]).exists()
+
+
+def test_sources_scan_is_media_aware(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sqlite3
+
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "photo.png").write_bytes(b"\x89PNG\r\n")
+    (data / "clip.mp4").write_bytes(b"\x00\x00\x00")
+    (data / "part.obj").write_text("v 0 0 0\n", encoding="utf-8")
+    (data / "notes.txt").write_text("hello", encoding="utf-8")
+
+    assert main(["sources", "scan", str(data)]) == 0
+
+    with sqlite3.connect(catalog_path()) as conn:
+        media_types = {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT relative_path, media_type FROM source_items "
+                "WHERE item_kind = 'file'"
+            )
+        }
+
+    assert media_types.get("photo.png") == "image/png"
+    assert media_types.get("clip.mp4") == "video/mp4"
+    assert media_types.get("part.obj") == "model/obj"
+    assert media_types.get("notes.txt") == "text/plain"

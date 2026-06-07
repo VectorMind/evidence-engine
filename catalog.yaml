@@ -1,4 +1,4 @@
-spec_version: "0.4"
+spec_version: "0.5"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -270,3 +270,145 @@ datasets:
             unique: true
           - name: idx_semantic_stores_scope
             columns: [scope_id]
+
+      - name: media_assets
+        description: Current generic media assets derived from inventoried source items.
+        exposures: [sqlite]
+        columns:
+          - {name: asset_id, type: text, description: "Stable media asset ID."}
+          - {name: source_item_id, type: text, description: "Source item this asset is derived from.", ref: corpus_cache.source_items.source_item_id}
+          - {name: media_class, type: enum, description: "Broad media modality.", values: [image, video, audio, model3d, other]}
+          - {name: primary_artifact_id, type: text, description: "Primary generated preview/thumbnail artifact.", ref: corpus_cache.media_artifacts.artifact_id}
+          - {name: inspect_status, type: enum, description: "Metadata extraction state.", values: [pending, current, failed, deferred]}
+          - {name: attrs_json, type: json, description: "Additional generic asset metadata."}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when this asset state last changed."}
+        indexes:
+          - name: pk_media_assets
+            columns: [asset_id]
+            unique: true
+          - name: idx_media_assets_source_item
+            columns: [source_item_id]
+          - name: idx_media_assets_class
+            columns: [media_class]
+
+      - name: image_metadata
+        description: Current deterministic metadata extracted from image assets.
+        exposures: [sqlite]
+        columns:
+          - {name: asset_id, type: text, description: "Owning media asset.", ref: corpus_cache.media_assets.asset_id}
+          - {name: format, type: text, description: "Image format such as JPEG, PNG, HEIC, WEBP."}
+          - {name: width, type: integer, description: "Pixel width."}
+          - {name: height, type: integer, description: "Pixel height."}
+          - {name: megapixels, type: real, description: "Resolution in megapixels."}
+          - {name: color_mode, type: text, description: "Color mode such as RGB, RGBA, L, CMYK."}
+          - {name: has_alpha, type: integer, description: "1 if the image has an alpha channel."}
+          - {name: orientation, type: integer, description: "EXIF orientation tag when present."}
+          - {name: dpi, type: real, description: "Dots per inch when present."}
+          - {name: camera_make, type: text, description: "EXIF camera make."}
+          - {name: camera_model, type: text, description: "EXIF camera model."}
+          - {name: captured_at, type: timestamp, description: "EXIF capture timestamp when present."}
+          - {name: gps_lat, type: real, description: "EXIF GPS latitude in decimal degrees."}
+          - {name: gps_lon, type: real, description: "EXIF GPS longitude in decimal degrees."}
+          - {name: gps_altitude, type: real, description: "EXIF GPS altitude in meters."}
+          - {name: attrs_json, type: json, description: "Additional safe EXIF or header fields."}
+        indexes:
+          - name: pk_image_metadata
+            columns: [asset_id]
+            unique: true
+
+      - name: video_metadata
+        description: Current deterministic metadata extracted from video assets.
+        exposures: [sqlite]
+        columns:
+          - {name: asset_id, type: text, description: "Owning media asset.", ref: corpus_cache.media_assets.asset_id}
+          - {name: container, type: text, description: "Container format such as MP4, MOV, MKV."}
+          - {name: video_codec, type: text, description: "Primary video codec."}
+          - {name: audio_codec, type: text, description: "Primary audio codec when present."}
+          - {name: width, type: integer, description: "Frame width in pixels."}
+          - {name: height, type: integer, description: "Frame height in pixels."}
+          - {name: duration_seconds, type: real, description: "Duration in seconds."}
+          - {name: frame_rate, type: real, description: "Average frames per second."}
+          - {name: bit_rate, type: integer, description: "Overall bit rate in bits per second."}
+          - {name: captured_at, type: timestamp, description: "Container capture timestamp when present."}
+          - {name: gps_lat, type: real, description: "Container GPS latitude when present."}
+          - {name: gps_lon, type: real, description: "Container GPS longitude when present."}
+          - {name: attrs_json, type: json, description: "Additional safe container metadata."}
+        indexes:
+          - name: pk_video_metadata
+            columns: [asset_id]
+            unique: true
+
+      - name: model3d_metadata
+        description: Current deterministic metadata extracted from 3D model assets.
+        exposures: [sqlite]
+        columns:
+          - {name: asset_id, type: text, description: "Owning media asset.", ref: corpus_cache.media_assets.asset_id}
+          - {name: format, type: text, description: "3D format such as OBJ, STL, GLTF, GLB, PLY."}
+          - {name: vertex_count, type: integer, description: "Number of vertices."}
+          - {name: face_count, type: integer, description: "Number of faces."}
+          - {name: has_normals, type: integer, description: "1 if normals are present."}
+          - {name: has_uv, type: integer, description: "1 if UV coordinates are present."}
+          - {name: has_color, type: integer, description: "1 if vertex or material color is present."}
+          - {name: bbox_min, type: text, description: "Bounding box minimum as a JSON [x, y, z] list."}
+          - {name: bbox_max, type: text, description: "Bounding box maximum as a JSON [x, y, z] list."}
+          - {name: units, type: text, description: "Declared units when known."}
+          - {name: attrs_json, type: json, description: "Additional safe model metadata."}
+        indexes:
+          - name: pk_model3d_metadata
+            columns: [asset_id]
+            unique: true
+
+      - name: media_artifacts
+        description: Current generated media artifacts such as thumbnails and previews.
+        exposures: [sqlite]
+        columns:
+          - {name: artifact_id, type: text, description: "Stable media artifact ID."}
+          - {name: asset_id, type: text, description: "Owning media asset.", ref: corpus_cache.media_assets.asset_id}
+          - {name: artifact_kind, type: enum, description: "Generated artifact kind.", values: [thumbnail, preview, frame, render]}
+          - {name: blob_id, type: text, description: "Stored artifact bytes in the shared blob store.", ref: corpus_cache.artifact_blobs.blob_id}
+          - {name: width, type: integer, description: "Artifact pixel width when applicable."}
+          - {name: height, type: integer, description: "Artifact pixel height when applicable."}
+          - {name: attrs_json, type: json, description: "Additional artifact metadata."}
+        indexes:
+          - name: pk_media_artifacts
+            columns: [artifact_id]
+            unique: true
+          - name: idx_media_artifacts_asset
+            columns: [asset_id]
+
+      - name: media_observations
+        description: Current generated non-deterministic media observations such as captions, kinds, and tags.
+        exposures: [sqlite]
+        columns:
+          - {name: observation_id, type: text, description: "Stable observation ID."}
+          - {name: asset_id, type: text, description: "Observed media asset.", ref: corpus_cache.media_assets.asset_id}
+          - {name: observation_kind, type: enum, description: "Generated observation kind.", values: [caption, media_kind, tag, label]}
+          - {name: value_text, type: text, description: "Free-text caption, single media-kind label, tag, or object label."}
+          - {name: confidence, type: real, description: "Model confidence when available."}
+          - {name: producer, type: text, description: "Producing model or pipeline name."}
+          - {name: profile, type: text, description: "Profile used to generate the observation."}
+          - {name: attrs_json, type: json, description: "Additional observation metadata."}
+          - {name: created_at, type: timestamp, description: "UTC timestamp when this observation was generated."}
+        indexes:
+          - name: pk_media_observations
+            columns: [observation_id]
+            unique: true
+          - name: idx_media_observations_asset_kind
+            columns: [asset_id, observation_kind]
+
+      - name: media_dedupe_candidates
+        description: Current near-duplicate media candidate pairs surfaced for review.
+        exposures: [sqlite]
+        columns:
+          - {name: candidate_id, type: text, description: "Stable candidate pair ID."}
+          - {name: asset_id_a, type: text, description: "First asset in the candidate pair.", ref: corpus_cache.media_assets.asset_id}
+          - {name: asset_id_b, type: text, description: "Second asset in the candidate pair.", ref: corpus_cache.media_assets.asset_id}
+          - {name: method, type: enum, description: "Similarity method.", values: [phash, dhash, ahash, frame_phash]}
+          - {name: distance, type: real, description: "Distance score; lower means more similar."}
+          - {name: attrs_json, type: json, description: "Additional candidate metadata."}
+        indexes:
+          - name: pk_media_dedupe_candidates
+            columns: [candidate_id]
+            unique: true
+          - name: idx_media_dedupe_candidates_a
+            columns: [asset_id_a]
