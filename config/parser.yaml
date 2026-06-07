@@ -3,7 +3,7 @@ name: evidence_engine_parser_defaults
 status: draft
 description: >
   Default parsing, indexing, traversal, and safeguard settings used by
-  documents-manager commands. CLI flags should override only the few values that
+  coev commands. CLI flags should override only the few values that
   legitimately vary per call, such as a source path or query text.
 
 defaults:
@@ -31,7 +31,7 @@ folder_safeguards:
   max_depth_default: null
   follow_symlinks_default: false
   include_globs_default: ["**/*.pdf", "**/*.docx", "**/*.md", "**/*.txt", "**/*.html"]
-  exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"]
+  exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**", "**/.cache/**"]
 
 parser_runtime:
   document_timeout_seconds_default: 300

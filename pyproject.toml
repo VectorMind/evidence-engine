@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "documents-manager"
+name = "coev"
 version = "0.1.0"
 description = "Reusable local evidence engine for documents and generic media."
 readme = "README.md"
@@ -22,34 +22,42 @@ dependencies = [
 ]
 
 [project.scripts]
-documents-manager = "documents_manager.cli:main"
+coev = "coev.cli:main"
 
+# Granular building blocks. Compose these, or use the laptop/station bundles.
 [project.optional-dependencies]
 docling = [
-  "docling",
+  "docling",          # parse + OCR (RapidOCR) + layout/table models
 ]
 fts = [
-  "tantivy",
+  "tantivy",          # lexical BM25 full-text index
 ]
 semantic = [
-  "lancedb",
+  "lancedb",          # local vector store
   "numpy",
   "pyarrow",
 ]
 embeddings = [
-  "fastembed",
+  "fastembed",        # default local embedding runtime (ONNX, CPU)
 ]
 heavy-embeddings = [
-  "sentence-transformers",
+  "sentence-transformers",  # higher-quality embeddings + cross-encoder rerank
 ]
+
+# Default working profile: the full local CPU stack a laptop needs.
+laptop = [
+  "coev[docling,fts,semantic,embeddings]",
+]
+
+# Station adds heavier local models on top of the laptop stack.
+# GPU runtimes and local VLM (Transformers) deps get added here later.
+station = [
+  "coev[laptop,heavy-embeddings]",
+]
+
+# Alias kept for convenience; equals the station stack.
 all = [
-  "docling",
-  "fastembed",
-  "lancedb",
-  "numpy",
-  "pyarrow",
-  "sentence-transformers",
-  "tantivy",
+  "coev[station]",
 ]
 
 [dependency-groups]
@@ -57,16 +65,27 @@ dev = [
   "pytest",
   "ruff",
 ]
+# Materializes the `laptop` extra so plain `uv sync` installs the full local
+# stack. Kept in sync automatically by referencing the extra, not re-listing it.
+laptop = [
+  "coev[laptop]",
+]
+
+[tool.uv]
+# Plain `uv sync` installs base + dev + laptop (docling, tantivy, fastembed,
+# lancedb, numpy, pyarrow). For a lean env: `uv sync --no-default-groups`.
+# For the heavier models: `uv sync --extra station`.
+default-groups = ["dev", "laptop"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/documents_manager"]
+packages = ["src/coev"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"catalog.yaml" = "documents_manager/contracts/catalog.yaml"
-"config/embeddings.yaml" = "documents_manager/contracts/config/embeddings.yaml"
-"config/exposures.yaml" = "documents_manager/contracts/config/exposures.yaml"
-"config/parser.yaml" = "documents_manager/contracts/config/parser.yaml"
-"store_templates.yaml" = "documents_manager/contracts/store_templates.yaml"
+"catalog.yaml" = "coev/contracts/catalog.yaml"
+"config/embeddings.yaml" = "coev/contracts/config/embeddings.yaml"
+"config/exposures.yaml" = "coev/contracts/config/exposures.yaml"
+"config/parser.yaml" = "coev/contracts/config/parser.yaml"
+"store_templates.yaml" = "coev/contracts/store_templates.yaml"
 
 [tool.ruff]
 line-length = 88

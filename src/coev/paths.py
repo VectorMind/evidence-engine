@@ -1,15 +1,21 @@
-"""Shared filesystem locations for documents-manager."""
+"""Shared filesystem locations for coev."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 
-WORKSPACE_DIR_NAME = ".documents-manager"
+WORKSPACE_DIR_NAME = ".cache/coev"
 
 
 def workspace_root() -> Path:
-    """Return the caller-workspace documents-manager storage root."""
+    """Return the coev storage root for the current working directory.
+
+    Resolved relative to the caller's current directory, so the same
+    ``.cache/coev`` convention applies whether coev is invoked from the user
+    home (``~/.cache/coev``) or from inside a project folder
+    (``<folder>/.cache/coev``).
+    """
 
     return Path.cwd() / WORKSPACE_DIR_NAME
 

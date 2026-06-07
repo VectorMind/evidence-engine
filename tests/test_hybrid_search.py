@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from documents_manager.hybrid import _fuse_hits, _ollama_generate_endpoint
+from coev.hybrid import _fuse_hits, _ollama_generate_endpoint
 
 
 def test_rrf_fuses_shared_chunk_from_fts_and_semantic() -> None:

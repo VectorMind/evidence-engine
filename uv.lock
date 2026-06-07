@@ -212,6 +212,101 @@ wheels = [
 ]
 
 [[package]]
+name = "coev"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "orjson" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+    { name = "zstandard" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+    { name = "sentence-transformers" },
+    { name = "tantivy" },
+]
+docling = [
+    { name = "docling" },
+]
+embeddings = [
+    { name = "fastembed" },
+]
+fts = [
+    { name = "tantivy" },
+]
+heavy-embeddings = [
+    { name = "sentence-transformers" },
+]
+laptop = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+    { name = "tantivy" },
+]
+semantic = [
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+]
+station = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+    { name = "sentence-transformers" },
+    { name = "tantivy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+laptop = [
+    { name = "coev", extra = ["laptop"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "coev", extras = ["docling", "fts", "semantic", "embeddings"], marker = "extra == 'laptop'" },
+    { name = "coev", extras = ["laptop", "heavy-embeddings"], marker = "extra == 'station'" },
+    { name = "coev", extras = ["station"], marker = "extra == 'all'" },
+    { name = "docling", marker = "extra == 'docling'" },
+    { name = "fastembed", marker = "extra == 'embeddings'" },
+    { name = "lancedb", marker = "extra == 'semantic'" },
+    { name = "numpy", marker = "extra == 'semantic'" },
+    { name = "orjson" },
+    { name = "pyarrow", marker = "extra == 'semantic'" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "sentence-transformers", marker = "extra == 'heavy-embeddings'" },
+    { name = "tantivy", marker = "extra == 'fts'" },
+    { name = "typer" },
+    { name = "zstandard" },
+]
+provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "laptop", "station", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+laptop = [{ name = "coev", extras = ["laptop"] }]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -479,84 +574,6 @@ standard = [
     { name = "torchvision" },
     { name = "typer" },
     { name = "websockets" },
-]
-
-[[package]]
-name = "documents-manager"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "orjson" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "typer" },
-    { name = "zstandard" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "docling" },
-    { name = "fastembed" },
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pyarrow" },
-    { name = "sentence-transformers" },
-    { name = "tantivy" },
-]
-docling = [
-    { name = "docling" },
-]
-embeddings = [
-    { name = "fastembed" },
-]
-fts = [
-    { name = "tantivy" },
-]
-heavy-embeddings = [
-    { name = "sentence-transformers" },
-]
-semantic = [
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pyarrow" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "docling", marker = "extra == 'all'" },
-    { name = "docling", marker = "extra == 'docling'" },
-    { name = "fastembed", marker = "extra == 'all'" },
-    { name = "fastembed", marker = "extra == 'embeddings'" },
-    { name = "lancedb", marker = "extra == 'all'" },
-    { name = "lancedb", marker = "extra == 'semantic'" },
-    { name = "numpy", marker = "extra == 'all'" },
-    { name = "numpy", marker = "extra == 'semantic'" },
-    { name = "orjson" },
-    { name = "pyarrow", marker = "extra == 'all'" },
-    { name = "pyarrow", marker = "extra == 'semantic'" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "sentence-transformers", marker = "extra == 'all'" },
-    { name = "sentence-transformers", marker = "extra == 'heavy-embeddings'" },
-    { name = "tantivy", marker = "extra == 'all'" },
-    { name = "tantivy", marker = "extra == 'fts'" },
-    { name = "typer" },
-    { name = "zstandard" },
-]
-provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "all"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
 ]
 
 [[package]]

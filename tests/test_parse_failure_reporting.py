@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from io import StringIO
 
-from documents_manager.cli import _ParseProgress
-from documents_manager.parse import _classify_error
-from documents_manager.results import render_html_report, render_summary_markdown
+from coev.cli import _ParseProgress
+from coev.parse import _classify_error
+from coev.results import render_html_report, render_summary_markdown
 
 
 def test_classifies_pdf_password_errors() -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from documents_manager.paths import catalog_path
+from coev.paths import catalog_path
 
 
 def chunks_for_root(

@@ -10,11 +10,11 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from documents_manager.catalog import ensure_catalog
-from documents_manager.chunks import chunks_for_root, document_count, high_watermark, stable_id
-from documents_manager.config import load_parser_config
-from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
-from documents_manager.paths import catalog_path, workspace_root
+from coev.catalog import ensure_catalog
+from coev.chunks import chunks_for_root, document_count, high_watermark, stable_id
+from coev.config import load_parser_config
+from coev.inventory import ScanOptions, scan_folder_to_catalog
+from coev.paths import catalog_path, workspace_root
 
 
 @dataclass(frozen=True)

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from documents_manager.cli import build_parser, main
-from documents_manager.paths import catalog_path, workspace_root
+from coev.cli import build_parser, main
+from coev.paths import catalog_path, workspace_root
 
 
 def test_parser_uses_new_sources_scan_surface() -> None:
@@ -38,7 +38,7 @@ def test_health_outputs_json_for_workspace(monkeypatch: pytest.MonkeyPatch, tmp_
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"] == "health"
-    assert payload["workspace_root"] == str(tmp_path / ".documents-manager")
+    assert payload["workspace_root"] == str(tmp_path / ".cache" / "coev")
     assert "cache_root" not in payload
 
 

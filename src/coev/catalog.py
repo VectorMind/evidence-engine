@@ -7,8 +7,8 @@ import re
 import sqlite3
 from typing import Any
 
-from documents_manager.contracts import read_contract_text
-from documents_manager.paths import catalog_path
+from coev.contracts import read_contract_text
+from coev.paths import catalog_path
 
 
 CATALOG_SCHEMA_VERSION = "0.4"

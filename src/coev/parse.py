@@ -13,10 +13,10 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Callable
 
-from documents_manager.blobs import store_artifact_blob
-from documents_manager.config import load_parser_config
-from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
-from documents_manager.paths import catalog_path
+from coev.blobs import store_artifact_blob
+from coev.config import load_parser_config
+from coev.inventory import ScanOptions, scan_folder_to_catalog
+from coev.paths import catalog_path
 
 
 FAILURE_RESULT_LIMIT = 100

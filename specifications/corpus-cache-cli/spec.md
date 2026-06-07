@@ -1,10 +1,10 @@
-# Specification: corpus-evidence-stack Evidence Engine
+# Specification: corpus-evidence Evidence Engine
 
 ## Purpose
 
-`corpus-evidence-stack` is the public reusable evidence engine for local document
-and generic media workflows. The installable package and console script remain
-`documents-manager`.
+`corpus-evidence` is the public reusable evidence engine for local document
+and generic media workflows. The installable package and console script are
+named `coev`.
 
 It owns:
 
@@ -28,7 +28,7 @@ meaning, curated knowledge, and user-specific workflows.
 Generated state lives under the caller workspace:
 
 ```text
-.documents-manager/
+.cache/coev/
   catalog/
     catalog.sqlite
   blobs/
@@ -45,6 +45,11 @@ Generated state lives under the caller workspace:
   reports/
     <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
 ```
+
+The `.cache/coev/` root is resolved relative to the caller's current
+directory, so the same convention serves the user home (`~/.cache/coev/`) and a
+project-local cache (`<folder>/.cache/coev/`). The scanner excludes `.cache/`
+so it never inventories its own generated output.
 
 The old beta home-cache layout is not a compatibility target. During this
 phase, catalog and index wipe/rebuild is acceptable.
@@ -76,9 +81,38 @@ The catalog does not store:
 - private semantic facts;
 - private knowledge.
 
-Private repositories may open `catalog.sqlite` read-only. They should reference
-catalog rows through stable IDs and evidence refs rather than copying lower
+Private repositories may open `catalog.sqlite` read-only. They reference
+catalog rows through the Reference Contract below rather than copying lower
 rows.
+
+## Reference Contract
+
+Any reference to an evidence row is a catalog coordinate. It reuses the same
+`dataset.table.column` convention `catalog.yaml` already uses for foreign keys
+(for example `ref: corpus_cache.document_objects.object_id`). The public
+dataset is `corpus_cache`, so a reference to one row is:
+
+```text
+corpus_cache.<table>.<row_id>
+```
+
+Rules:
+
+- A reference is just the target row id plus the `dataset.table.column` it
+  points at. There is no separate `evidence_ref` object or nested payload.
+- Upper catalogs reference lower rows by adding a column with
+  `ref: corpus_cache.<table>.<column>`, identical to how the lower catalog
+  declares its own foreign keys. The reference mechanism is the column `ref:`
+  convention; nothing more is needed.
+- "Kind", locator (page, bbox, time range, byte range), and provenance
+  (producer, profile, source hash) are **columns on the referenced row**. They
+  are resolved by reading the row, never copied into the reference.
+- Cross-catalog references are expected and supported through the `dataset`
+  prefix. An upper catalog is its own dataset and points at `corpus_cache.*`;
+  the dependency direction stays one-way.
+- References are not versioned. The catalog is current-state and migrates as a
+  single monolith, so a reference always resolves to the current row. Referencing
+  rows must not snapshot or copy lower-row data.
 
 ## Search Contract
 
@@ -88,14 +122,15 @@ not know physical backend names or projection database layouts.
 Public search commands are:
 
 ```text
-documents-manager search text <query>
-documents-manager search semantic <query>
-documents-manager search hybrid <query>
+coev search text <query>
+coev search semantic <query>
+coev search hybrid <query>
 ```
 
 Search results hydrate back to catalog identities such as `source_item_id`,
-`doc_id`, `object_id`, `scope_id`, and index/store registry IDs. Result payloads
-use public labels: `text`, `semantic`, and `hybrid`.
+`doc_id`, `object_id`, `scope_id`, and index/store registry IDs, expressed as
+`corpus_cache.<table>.<row_id>` references per the Reference Contract. Result
+payloads use public labels: `text`, `semantic`, and `hybrid`.
 
 ## Command Contract
 

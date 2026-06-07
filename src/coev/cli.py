@@ -1,4 +1,4 @@
-"""Minimal documents-manager command surface.
+"""Minimal coev command surface.
 
 The first scaffold intentionally uses only the Python standard library so the
 binding command shape can be tested before heavy optional dependencies are
@@ -16,15 +16,15 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from documents_manager import __version__
-from documents_manager.catalog import catalog_status_report, create_catalog, wipe_catalog
-from documents_manager.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
-from documents_manager.hybrid import HybridSearchOptions, search_hybrid_indexes
-from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
-from documents_manager.parse import ParseOptions, parse_folder_to_catalog
-from documents_manager.paths import catalog_path, reports_root, results_root, workspace_root
-from documents_manager.results import CommandRun
-from documents_manager.semantic import (
+from coev import __version__
+from coev.catalog import catalog_status_report, create_catalog, wipe_catalog
+from coev.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
+from coev.hybrid import HybridSearchOptions, search_hybrid_indexes
+from coev.inventory import ScanOptions, scan_folder_to_catalog
+from coev.parse import ParseOptions, parse_folder_to_catalog
+from coev.paths import catalog_path, reports_root, results_root, workspace_root
+from coev.results import CommandRun
+from coev.semantic import (
     SemanticIndexOptions,
     SemanticSearchOptions,
     index_scope_to_semantic,
@@ -366,7 +366,7 @@ def search_hybrid(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="documents-manager",
+        prog="coev",
         description="Local evidence engine for documents and generic media.",
     )
     parser.set_defaults(handler=None)
