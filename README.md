@@ -1,226 +1,177 @@
-# agents-cli
+# documents-manager
 
-Reusable local document tooling for agent workflows. The first public surface is
-`agents-docs`, a CLI for building and querying a regenerable document corpus
-cache.
+Reusable local evidence engine for document and generic media workflows.
 
-`agents-docs` owns the implementation for inventory, Docling parsing, SQLite
-catalog control, Tantivy FTS indexes, LanceDB semantic stores, refresh behavior,
-health checks, and structured command reports. Manager repositories and central
-skills call the CLI; they do not implement the lower indexing internals.
-
-Dependency rationale is documented in [docs/dependencies.md](./docs/dependencies.md).
-Model/runtime choices are documented in [docs/models.md](./docs/models.md).
+`documents-manager` owns the public mechanics for source inventory, document
+parsing, generated artifacts, SQLite catalog state, text search, semantic
+search, hybrid search, command result files, and provenance-rich evidence
+references. Private workspaces consume this open local data; they do not
+reimplement lower extraction or search internals.
 
 ## Current Status
 
-This repository is moving from specification into implementation. The package
-skeleton, fixed-cache catalog creation/migration, catalog status, health
-commands, folder inventory, Docling parsing, Tantivy FTS, LanceDB semantic
-indexing, and hybrid search are implemented.
+This repository is in beta/pre-development. There is no backward-compatibility
+burden for the older `agents-docs` command or old generated catalogs. Generated
+workspace state may be wiped and rebuilt while the public contract settles.
+
+Implemented today:
+
+- package and CLI entrypoint named `documents-manager`;
+- workspace-local storage under `.documents-manager/`;
+- SQLite catalog create/status/wipe;
+- folder source inventory through `sources scan`;
+- Docling parsing through `docs parse`;
+- text, semantic, and hybrid search/index plumbing;
+- JSON-first command stdout;
+- persisted result JSON, events, summaries, and optional HTML reports.
 
 ## Install Shape
 
-The package name is `agents-cli`; the console script is `agents-docs`.
+The package name is `documents-manager`; the console script is
+`documents-manager`.
 
 Optional dependency groups are defined in [pyproject.toml](./pyproject.toml):
 
 | Extra | Purpose |
 | --- | --- |
 | `docling` | Docling parsing. |
-| `fts` | Tantivy full-text indexes. |
-| `semantic` | LanceDB, PyArrow, and NumPy. |
+| `fts` | Full-text search implementation. |
+| `semantic` | Vector store, PyArrow, and NumPy. |
 | `embeddings` | FastEmbed local embeddings. |
 | `heavy-embeddings` | SentenceTransformers local embeddings. |
 | `all` | Practical full local stack. |
 
-## Fixed Cache
+## Workspace Storage
 
-The cache root is intentionally not configurable:
-
-```text
-$HOME/.cache/agents-docs/
-```
-
-The catalog is always:
+Generated data is written under the caller workspace:
 
 ```text
-$HOME/.cache/agents-docs/catalog/catalog.sqlite
+.documents-manager/
+  catalog/catalog.sqlite
+  blobs/
+  fts/
+  semantic/
+  models/fastembed/
+  results/
+  reports/
 ```
 
-There is no `init` command. Producer commands call centralized table creation
-before writing. `catalog create` creates the fixed catalog when it is missing,
-and `catalog migrate` upgrades an existing stale or incomplete catalog.
+This avoids one shared home-cache result/report tree. Real generated data is
+private even when the code and schema files are public.
 
-## Binding CLI Surface
+There is no V1 migration contract for old beta catalogs. Use
+`documents-manager catalog wipe` and rebuild when the schema changes during
+this phase.
 
-Commands are intentionally shallow: first command plus optional subcommand.
-Cache path, profiles, traversal defaults, index defaults, and safeguards come
-from config files rather than command arguments.
+## CLI Surface
 
-| First command | Subcommand | Mandatory args | Output | Purpose |
-| --- | --- | --- | --- | --- |
-| `catalog` | `create` | none | JSON | Create the fixed home catalog if it is missing. |
-| `catalog` | `migrate` | none | JSON | Upgrade an existing stale or incomplete fixed home catalog. |
-| `catalog` | `status` | none | JSON | Report catalog presence, version, expected tables, missing tables, and row counts. |
-| `health` | none | none | JSON | Check fixed paths and available runtime dependencies. |
-| `scan` | `folder <path>` | `path` | JSON | Inventory a folder tree and record source items. |
-| `parse` | `folder <path>` | `path` | JSON | Auto-scan, parse sources through Docling, and record JSON artifacts/objects. |
-| `index` | `folder <path>` | `path` | result files | Build or refresh the FTS island for a folder root. Add `--semantic` for the LanceDB store. |
-| `search` | `text <query>` | `query` | result files | Search current Tantivy FTS islands and hydrate chunk provenance. |
-| `search` | `semantic <query>` | `query` | result files | Search current LanceDB semantic stores and hydrate chunk provenance. |
-| `search` | `hybrid <query>` | `query` | result files | Search FTS and semantic stores, fuse candidates with RRF, and optionally use local Ollama reranking. |
+Commands return JSON on stdout. Commands that perform larger work also write
+`result.json`, `events.jsonl`, and `summary.md` under the workspace
+`results/` tree. `--report` writes optional HTML under `reports/`.
+
+| Command | Subcommand | Mandatory args | Purpose |
+| --- | --- | --- | --- |
+| `catalog` | `create` | none | Create the workspace catalog if missing. |
+| `catalog` | `status` | none | Report catalog presence, version, table state, and row counts. |
+| `catalog` | `wipe` | none | Delete the workspace catalog database. |
+| `health` | none | none | Check workspace paths and optional dependencies. |
+| `sources` | `scan <path>` | `path` | Inventory a mixed-content folder tree. |
+| `docs` | `parse <path>` | `path` | Auto-scan and parse documents through Docling. |
+| `index` | `scope <path>` | `path` | Build or refresh the text index for a source scope. |
+| `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
+| `search` | `text <query>` | `query` | Search current text indexes. |
+| `search` | `semantic <query>` | `query` | Search current semantic indexes. |
+| `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
 
 Minimal examples:
 
 ```powershell
-agents-docs catalog create
-agents-docs catalog migrate
-agents-docs catalog status
-agents-docs health
-agents-docs scan folder "C:\docs\example-folder"
-agents-docs parse folder "C:\docs\example-folder"
-agents-docs index folder "C:\docs\example-folder"
-agents-docs index folder "C:\docs\example-folder" --semantic
-agents-docs search text "contract renewal clause"
-agents-docs search semantic "contract renewal clause"
-agents-docs search hybrid "contract renewal clause"
-agents-docs search hybrid "contract renewal clause" --rerank ollama --ollama-model llama3.2
+documents-manager catalog create
+documents-manager catalog status
+documents-manager health
+documents-manager sources scan "C:\docs\example-folder"
+documents-manager docs parse "C:\docs\example-folder"
+documents-manager index scope "C:\docs\example-folder"
+documents-manager index scope "C:\docs\example-folder" --semantic
+documents-manager search text "contract renewal clause"
+documents-manager search semantic "contract renewal clause"
+documents-manager search hybrid "contract renewal clause"
 ```
 
-`scan folder` accepts optional safeguard overrides only when a caller needs to
+`sources scan` accepts optional safeguard overrides when a caller needs to
 exceed configured defaults: `--max-files`, `--max-bytes`, and `--max-depth`.
-Add `--report` when an on-demand HTML report is needed. It writes
-`source_roots`, `source_items`, current inventory statistics, and a root
-`index_scopes` row, then writes `result.json`, `events.jsonl`, and `summary.md`
-under `results/`.
+Add `--report` for an HTML inventory report.
 
-`parse folder` auto-runs the required catalog and scan prerequisites. It
-defaults to `docling_ocr`; use `--profile docling_fast_text` when a faster
-non-OCR run is wanted. The canonical stored artifact is Docling JSON; Markdown
-is treated as a lazy/export concern, not a default stored duplicate. OCR parses
-use conservative local runtime defaults: two Docling CPU threads, PDF stage
-batch size 1, queue size 8, and a 300 second per-document timeout. Use
-`--docling-threads`, `--batch-size`, `--queue-size`, `--document-timeout`,
-`--max-pages`, or `--max-file-size` for deliberate overrides.
+`docs parse` auto-runs the catalog and source-scan prerequisites. It defaults
+to `docling_ocr`; use `--profile docling_fast_text` for a faster non-OCR run.
+Parse failures are classified into actionable categories and included in
+result JSON, Markdown summaries, and optional HTML reports.
 
-Parse failures are classified in `result.json`, `summary.md`, and optional
-HTML reports. Password-protected PDFs, memory exhaustion, timeouts, and
-configured size/page safeguards are reported as separate failure kinds with
-suggested retry actions. Interactive parse runs show document-level progress on
-stderr; use `--no-progress` to suppress it or `--verbose` to keep third-party
-parser logs.
+`index scope` builds the text index from current parsed document objects. It
+auto-scans the source path but does not silently parse/OCR missing documents.
+Run `docs parse` first when no parsed objects exist. Add `--semantic` to build
+the semantic index.
 
-`index folder` currently builds the Tantivy FTS island for the folder root from
-current parsed document objects. It auto-scans the folder, but it does not
-silently parse/OCR missing documents; run `parse folder` first when no parsed
-objects exist. Use `--force` to rebuild even when the FTS watermark is current.
-Add `--semantic` to build the LanceDB semantic store instead, using the default
-FastEmbed profile from `config/embeddings.yaml`.
+`search text`, `search semantic`, and `search hybrid` are the public search
+surface. Higher layers should not know which physical search engine backs
+those projections.
 
-`search text` searches current Tantivy FTS islands and returns hydrated
-provenance fields from stored chunk metadata. Use `--limit` to cap returned
-hits; the default is 30.
+## Public Data Contract
 
-`search semantic` searches current LanceDB stores and returns the same hydrated
-chunk provenance shape, with vector distances converted to sortable scores. Its
-default `--limit` is 30.
+The public contract is open local data plus search access:
 
-`search hybrid` searches both current Tantivy and LanceDB islands, fuses
-candidates with Reciprocal Rank Fusion, and returns hydrated chunk provenance
-with `hybrid_score`, backend ranks, backend scores, and matched backend labels.
-The default final result limit is 30, with 60 FTS candidates and 60 semantic
-candidates collected before fusion. Use `--limit`, `--candidate-limit`, or
-`--rrf-k` only when the defaults need a deliberate override. `--rerank ollama
---ollama-model <model>` enables optional local-only Ollama reranking; it is not
-the default and only accepts localhost Ollama endpoints.
-
-Commands print a short human summary to the terminal instead of the full JSON
-payload. The summary includes links to the persisted `result.json`,
-`summary.md`, and any generated `report.html`.
-
-## CLI And Data Surfaces
-
-Upper layers interact with this project through two separate surfaces:
-
-- **CLI surface**: commands that create, refresh, index, search, and report.
-- **Data surface**: generated SQLite/catalog state, lower index islands, result
-  files, and schema/template contracts.
-
-```mermaid
-flowchart LR
-  A[Manager repos / central skills] -->|call commands| B[agents-docs CLI]
-  B --> C[$HOME/.cache/agents-docs]
-  C --> D[catalog/catalog.sqlite]
-  C --> E[fts/<profile>/<scope_id>/]
-  C --> F[semantic/<profile>/<scope_id>.lancedb/]
-  C --> G[results/2026.06/06/120102-parse-folder/]
-  C --> H[reports/2026.06/06/120102-parse-folder/]
-  A -->|read data surface| D
-  A -->|read result summaries| G
-  A -->|read optional reports| H
-  D -->|registry pointers| E
-  D -->|registry pointers| F
-```
-
-The CLI is the write/control surface. Consumers may read the generated SQLite
-catalog directly for data access.
-
-`results/` is generated for every command and is operational proof plus a human
-Markdown summary. `reports/` is generated only when requested, for example with
-`scan folder --report`; it contains generic HTML analytics reports. Skill
-wrappers can customize richer reports by reading `result.json`, `summary.md`,
-and the SQLite catalog. Result and report folders are grouped as
-`<yyyy>.<mm>/<dd>/<hhmmss>-<command>/`; if the same command starts twice in one
-second, a numeric suffix may be added.
-
-## Data Contracts
-
-Review these files for the binding data surface:
-
-| File | Purpose |
+| Surface | Purpose |
 | --- | --- |
-| [catalog.yaml](./catalog.yaml) | Current-state SQLite catalog schema. |
-| [store_templates.yaml](./store_templates.yaml) | Generated Tantivy/LanceDB row templates. |
-| [config/exposures.yaml](./config/exposures.yaml) | Fixed cache root, path templates, exposure kinds, blob storage defaults. |
-| [config/parser.yaml](./config/parser.yaml) | Parser profiles, traversal defaults, index defaults, safeguards. |
+| [catalog.yaml](./catalog.yaml) | Current-state SQLite schema. |
+| `.documents-manager/catalog/catalog.sqlite` | Readable local catalog database. |
+| [store_templates.yaml](./store_templates.yaml) | Generated text/semantic row templates. |
+| [config/exposures.yaml](./config/exposures.yaml) | Workspace storage layout. |
+| [config/parser.yaml](./config/parser.yaml) | Parser, traversal, indexing, and safeguard defaults. |
 | [config/embeddings.yaml](./config/embeddings.yaml) | Embedding profile config. |
-| [docs/models.md](./docs/models.md) | Model/runtime profile plan for Docling, OCR, embeddings, reranking, and local REST providers. |
-| [specifications/corpus-cache-cli/spec.md](./specifications/corpus-cache-cli/spec.md) | Durable CLI and data contract. |
+| `results/` | Run proof: JSON, JSONL events, and Markdown summaries. |
+| `reports/` | Optional human HTML reports. |
+| Search CLI | Hydrated text/semantic/hybrid retrieval without exposing projection internals. |
 
-```mermaid
-flowchart TB
-  subgraph Contracts
-    CY[catalog.yaml]
-    ST[store_templates.yaml]
-    CE[config/exposures.yaml]
-    CP[config/parser.yaml]
-    EM[config/embeddings.yaml]
-  end
+Private repositories may open the SQLite database read-only and query it
+directly. Search is intentionally accessed through the CLI/API because text and
+vector projection internals are implementation details.
 
-  subgraph GeneratedCache["$HOME/.cache/agents-docs"]
-    DB[catalog/catalog.sqlite]
-    BL[blobs/]
-    FTS[fts/]
-    SEM[semantic/]
-    RES[results/]
-    REP[reports/]
-  end
+## Layer Rule
 
-  CY --> DB
-  CE --> BL
-  CE --> FTS
-  CE --> SEM
-  CE --> RES
-  CE --> REP
-  CP --> FTS
-  CP --> SEM
-  EM --> SEM
-  ST --> FTS
-  ST --> SEM
+Use this boundary everywhere:
+
+```text
+Lower schemas describe what was observed and generated.
+Upper schemas describe what was believed, reviewed, promoted, or used.
 ```
 
-## Workflow
+`documents-manager` owns lower evidence. Private workspaces own reviewed
+meaning.
 
-Repository workflow rules are in [WORKFLOW.md](./WORKFLOW.md). Current work is
-tracked in [plans/2026-06-04-docling-search-index](./plans/2026-06-04-docling-search-index/).
+## Public And Private Split
+
+Public repo material:
+
+- code;
+- schemas;
+- empty/synthetic config examples;
+- migration/reset logic during development;
+- synthetic fixtures;
+- contract documentation.
+
+Private or generated material:
+
+- real source manifests and paths;
+- generated SQLite catalogs;
+- OCR text and parser artifacts;
+- generated descriptions and thumbnails;
+- text/vector indexes;
+- embeddings;
+- review decisions;
+- private knowledge Markdown.
+
+## Related Plans
+
+- [Knowledge Layers Merge](./plans/2026-06-07-knowledge-layers/plan.md)
+- [Global Routing Indexes](./plans/2026-06-06-global-routing-indexes/plan.md)
+- [Corpus Cache CLI Specification](./specifications/corpus-cache-cli/spec.md)

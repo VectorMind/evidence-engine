@@ -1,4 +1,4 @@
-"""Tantivy-backed full-text indexing and search."""
+"""Full-text indexing and search."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from agents_cli.catalog import ensure_catalog
-from agents_cli.chunks import chunks_for_root, document_count, high_watermark, stable_id
-from agents_cli.config import load_parser_config
-from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
-from agents_cli.paths import catalog_path, fixed_cache_root
+from documents_manager.catalog import ensure_catalog
+from documents_manager.chunks import chunks_for_root, document_count, high_watermark, stable_id
+from documents_manager.config import load_parser_config
+from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
+from documents_manager.paths import catalog_path, workspace_root
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class SearchOptions:
     limit: int = 30
 
 
-def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]:
+def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:
     """Build or refresh the FTS island for a folder root."""
 
     runtime = _tantivy_runtime_status()
@@ -35,7 +35,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
         return runtime
 
     ensure_report = ensure_catalog()
-    if ensure_report["status"] not in {"created", "current", "migrated"}:
+    if ensure_report["status"] not in {"created", "current"}:
         return {
             "status": "failed",
             "error_kind": "catalog_unavailable",
@@ -56,7 +56,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
 
     config = load_parser_config()
     defaults = config["defaults"]
-    fts_profile = defaults.get("fts_profile", "tantivy_default_en")
+    fts_profile = defaults.get("fts_profile", "text_default_en")
     chunk_profile = defaults.get("chunk_profile", "docling_hybrid_v1")
     root_id = scan_result["root_id"]
     scope_id = scan_result["scope_id"]
@@ -69,7 +69,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
         return {
             "status": "deferred",
             "error_kind": "no_parsed_documents",
-            "message": "No parsed document objects were available. Run parse folder first.",
+            "message": "No parsed document objects were available. Run docs parse first.",
             "root_id": root_id,
             "root_label": scan_result.get("root_label"),
             "scope_id": scope_id,
@@ -85,7 +85,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
         }
 
     index_uri = f"fts/{fts_profile}/{scope_id}"
-    index_dir = fixed_cache_root() / index_uri
+    index_dir = workspace_root() / index_uri
     source_high_watermark = high_watermark(chunks, fts_profile)
     fts_index_id = stable_id("fts", scope_id, fts_profile)
     existing = _fts_registry_state(fts_index_id)
@@ -105,7 +105,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
             "fts_index_id": fts_index_id,
             "fts_profile": fts_profile,
             "chunk_profile": chunk_profile,
-            "template_name": "tantivy_chunk_document",
+            "template_name": "fts_chunk_document",
             "index_uri": index_uri,
             "auto_scan_status": scan_result["status"],
             "index_status": "current",
@@ -153,7 +153,7 @@ def index_folder_to_tantivy(path: Path, options: IndexOptions) -> dict[str, Any]
         "fts_index_id": fts_index_id,
         "fts_profile": fts_profile,
         "chunk_profile": chunk_profile,
-        "template_name": "tantivy_chunk_document",
+        "template_name": "fts_chunk_document",
         "index_uri": index_uri,
         "auto_scan_status": scan_result["status"],
         "index_status": "rebuilt" if options.force else "refreshed",
@@ -184,7 +184,7 @@ def search_text_indexes(query: str, options: SearchOptions) -> dict[str, Any]:
                 "hits_returned": 0,
             },
             "hits": [],
-            "message": "No current FTS indexes were registered.",
+            "message": "No current text indexes were registered.",
         }
 
     limit = max(1, int(options.limit or 30))
@@ -217,7 +217,7 @@ def _tantivy_runtime_status() -> dict[str, str]:
     except ModuleNotFoundError:
         return {
             "status": "failed",
-            "error_kind": "tantivy_missing",
+            "error_kind": "fts_dependency_missing",
             "message": "Install the fts extra before running index or search commands.",
         }
     return {"status": "ok"}
@@ -256,7 +256,7 @@ def _write_tantivy_index(index_dir: Path, chunks: list[dict[str, Any]]) -> dict[
     except Exception as exc:
         return {
             "status": "failed",
-            "error_kind": "tantivy_write_failed",
+            "error_kind": "fts_write_failed",
             "redacted_detail": exc.__class__.__name__,
         }
     return {"status": "ok"}
@@ -300,7 +300,7 @@ def _search_one_index(
     try:
         import tantivy  # type: ignore[import-not-found]
 
-        index_path = fixed_cache_root() / index_row["index_uri"]
+        index_path = workspace_root() / index_row["index_uri"]
         index = tantivy.Index.open(str(index_path))
         parsed, errors = index.parse_query_lenient(
             query,
@@ -332,7 +332,7 @@ def _search_one_index(
     except Exception as exc:
         return {
             "status": "failed",
-            "error_kind": "tantivy_search_failed",
+            "error_kind": "fts_search_failed",
             "fts_index_id": index_row.get("fts_index_id"),
             "redacted_detail": exc.__class__.__name__,
         }
@@ -349,7 +349,7 @@ def _fts_registry_state(fts_index_id: str) -> dict[str, Any] | None:
         row = conn.execute(
             """
             SELECT source_high_watermark, status
-            FROM "tantivy_indexes"
+            FROM "fts_indexes"
             WHERE fts_index_id = ?
             """,
             (fts_index_id,),
@@ -366,7 +366,7 @@ def _current_fts_indexes() -> list[dict[str, Any]]:
             SELECT fts_index_id, scope_id, fts_profile, chunk_profile,
                    template_name, index_uri, indexed_chunk_count,
                    source_high_watermark
-            FROM "tantivy_indexes"
+            FROM "fts_indexes"
             WHERE status = 'current'
             ORDER BY updated_at DESC, fts_index_id
             """
@@ -401,7 +401,7 @@ def _upsert_fts_registry(
     with sqlite3.connect(catalog_path()) as conn:
         conn.execute(
             """
-            INSERT INTO "tantivy_indexes"
+            INSERT INTO "fts_indexes"
             (fts_index_id, scope_id, fts_profile, chunk_profile, template_name,
              index_uri, indexed_chunk_count, source_high_watermark, status,
              updated_at)
@@ -422,7 +422,7 @@ def _upsert_fts_registry(
                 scope_id,
                 fts_profile,
                 chunk_profile,
-                "tantivy_chunk_document",
+                "fts_chunk_document",
                 index_uri,
                 indexed_chunk_count,
                 source_high_watermark,

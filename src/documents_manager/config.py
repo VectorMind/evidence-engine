@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agents_cli.contracts import read_contract_text
+from documents_manager.contracts import read_contract_text
 
 
 def load_parser_config() -> dict[str, Any]:
@@ -73,7 +73,7 @@ def _load_parser_config_fallback(text: str) -> dict[str, Any]:
                 text, "artifact_storage_profile", "default_artifact_blobs"
             ),
             "artifact_outputs": _list(text, "artifact_outputs", []),
-            "fts_profile": _scalar(text, "fts_profile", "tantivy_default_en"),
+            "fts_profile": _scalar(text, "fts_profile", "text_default_en"),
             "embedding_profile": _scalar(
                 text, "embedding_profile", "fastembed_bge_small_en_v1_5"
             ),

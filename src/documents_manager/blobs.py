@@ -9,8 +9,8 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from agents_cli.config import load_parser_config
-from agents_cli.paths import fixed_cache_root
+from documents_manager.config import load_parser_config
+from documents_manager.paths import workspace_root
 
 
 def store_artifact_blob(
@@ -49,7 +49,7 @@ def store_artifact_blob(
     if len(payload) > external_threshold:
         storage_mode = "external_file"
         relative_uri = _blob_relative_uri(sha256)
-        target = fixed_cache_root() / relative_uri
+        target = workspace_root() / relative_uri
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(stored_payload)
         stored_inline = None

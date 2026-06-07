@@ -1,4 +1,4 @@
-"""LanceDB-backed semantic indexing and search."""
+"""Semantic indexing and search."""
 
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ import sys
 from typing import Any, Iterator
 import warnings
 
-from agents_cli.catalog import ensure_catalog
-from agents_cli.chunks import chunks_for_root, document_count, high_watermark, stable_id
-from agents_cli.config import embedding_profile, load_parser_config
-from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
-from agents_cli.paths import catalog_path, fixed_cache_root
+from documents_manager.catalog import ensure_catalog
+from documents_manager.chunks import chunks_for_root, document_count, high_watermark, stable_id
+from documents_manager.config import embedding_profile, load_parser_config
+from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
+from documents_manager.paths import catalog_path, workspace_root
 
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -41,17 +41,17 @@ class SemanticSearchOptions:
     embedding_profile: str | None = None
 
 
-def index_folder_to_lancedb(
+def index_scope_to_semantic(
     path: Path, options: SemanticIndexOptions
 ) -> dict[str, Any]:
-    """Build or refresh the LanceDB semantic island for a folder root."""
+    """Build or refresh the semantic island for a folder root."""
 
     runtime = _semantic_runtime_status()
     if runtime["status"] != "ok":
         return runtime
 
     ensure_report = ensure_catalog()
-    if ensure_report["status"] not in {"created", "current", "migrated"}:
+    if ensure_report["status"] not in {"created", "current"}:
         return {
             "status": "failed",
             "error_kind": "catalog_unavailable",
@@ -103,7 +103,7 @@ def index_folder_to_lancedb(
         return {
             "status": "deferred",
             "error_kind": "no_parsed_documents",
-            "message": "No parsed document objects were available. Run parse folder first.",
+            "message": "No parsed document objects were available. Run docs parse first.",
             "root_id": root_id,
             "root_label": scan_result.get("root_label"),
             "scope_id": scope_id,
@@ -122,7 +122,7 @@ def index_folder_to_lancedb(
     vector_dimension = int(profile.get("dimension") or 0)
     store_uri = f"semantic/{profile_name}/{scope_id}.lancedb"
     table_name = "chunks"
-    store_dir = fixed_cache_root() / store_uri
+    store_dir = workspace_root() / store_uri
     semantic_store_id = stable_id("sem", scope_id, profile_name)
     source_high_watermark = high_watermark(chunks, profile_name, model_name)
     existing = _semantic_registry_state(semantic_store_id)
@@ -144,7 +144,7 @@ def index_folder_to_lancedb(
             "embedding_profile": profile_name,
             "embedding_model": model_name,
             "chunk_profile": chunk_profile,
-            "template_name": "lancedb_chunk_row",
+            "template_name": "semantic_chunk_row",
             "store_uri": store_uri,
             "table_name": table_name,
             "auto_scan_status": scan_result["status"],
@@ -205,7 +205,7 @@ def index_folder_to_lancedb(
         "embedding_profile": profile_name,
         "embedding_model": model_name,
         "chunk_profile": chunk_profile,
-        "template_name": "lancedb_chunk_row",
+        "template_name": "semantic_chunk_row",
         "store_uri": store_uri,
         "table_name": table_name,
         "auto_scan_status": scan_result["status"],
@@ -224,7 +224,7 @@ def index_folder_to_lancedb(
 def search_semantic_indexes(
     query: str, options: SemanticSearchOptions
 ) -> dict[str, Any]:
-    """Search current LanceDB semantic stores."""
+    """Search current semantic stores."""
 
     runtime = _semantic_runtime_status()
     if runtime["status"] != "ok":
@@ -241,7 +241,7 @@ def search_semantic_indexes(
                 "hits_returned": 0,
             },
             "hits": [],
-            "message": "No current LanceDB semantic stores were registered.",
+            "message": "No current semantic stores were registered.",
         }
 
     limit = max(1, int(options.limit or 30))
@@ -313,7 +313,7 @@ def _write_lancedb_store(
     except Exception as exc:
         return {
             "status": "failed",
-            "error_kind": "lancedb_write_failed",
+            "error_kind": "semantic_write_failed",
             "redacted_detail": exc.__class__.__name__,
         }
     dimension = len(rows[0]["vector"]) if rows else 0
@@ -334,7 +334,7 @@ def _search_one_store(
                 "semantic_store_id": store["semantic_store_id"],
             }
         query_vector = _embed_query(profile, query)
-        db = lancedb.connect(str(fixed_cache_root() / store["store_uri"]))
+        db = lancedb.connect(str(workspace_root() / store["store_uri"]))
         table = db.open_table(store["table_name"])
         results = table.search(query_vector).limit(limit).to_list()
         hits = [_hit_from_row(store, row) for row in results]
@@ -368,7 +368,7 @@ def _embed_query(profile: dict[str, Any], text: str) -> list[float]:
 def _fastembed_model(profile: dict[str, Any]) -> Any:
     from fastembed import TextEmbedding  # type: ignore[import-not-found]
 
-    cache_dir = fixed_cache_root() / "models" / "fastembed"
+    cache_dir = workspace_root() / "models" / "fastembed"
     cache_dir.mkdir(parents=True, exist_ok=True)
     with _quiet_output():
         return TextEmbedding(
@@ -428,7 +428,7 @@ def _semantic_registry_state(semantic_store_id: str) -> dict[str, Any] | None:
         row = conn.execute(
             """
             SELECT source_high_watermark, status, vector_dimension
-            FROM "lancedb_stores"
+            FROM "semantic_stores"
             WHERE semantic_store_id = ?
             """,
             (semantic_store_id,),
@@ -449,7 +449,7 @@ def _current_semantic_stores(
         SELECT semantic_store_id, scope_id, embedding_profile, chunk_profile,
                template_name, store_uri, table_name, vector_dimension,
                indexed_chunk_count, source_high_watermark
-        FROM "lancedb_stores"
+        FROM "semantic_stores"
         WHERE status = 'current'
     """
     params: list[Any] = []
@@ -493,7 +493,7 @@ def _upsert_semantic_registry(
     with sqlite3.connect(catalog_path()) as conn:
         conn.execute(
             """
-            INSERT INTO "lancedb_stores"
+            INSERT INTO "semantic_stores"
             (semantic_store_id, scope_id, embedding_profile, chunk_profile,
              template_name, store_uri, table_name, vector_dimension,
              indexed_chunk_count, source_high_watermark, status, updated_at)
@@ -516,7 +516,7 @@ def _upsert_semantic_registry(
                 scope_id,
                 embedding_profile,
                 chunk_profile,
-                "lancedb_chunk_row",
+                "semantic_chunk_row",
                 store_uri,
                 table_name,
                 vector_dimension,

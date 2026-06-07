@@ -13,10 +13,10 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Callable
 
-from agents_cli.blobs import store_artifact_blob
-from agents_cli.config import load_parser_config
-from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
-from agents_cli.paths import catalog_path
+from documents_manager.blobs import store_artifact_blob
+from documents_manager.config import load_parser_config
+from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
+from documents_manager.paths import catalog_path
 
 
 FAILURE_RESULT_LIMIT = 100

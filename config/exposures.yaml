@@ -1,28 +1,28 @@
 spec_version: "0.1"
-name: corpus_cache_exposures
+name: evidence_engine_exposures
 status: draft
 description: >
-  Backend exposure and storage settings for generated corpus-cache outputs.
+  Backend exposure and storage settings for generated evidence-engine outputs.
   These settings are configuration, not SQLite catalog tables.
 
-fixed_cache_root:
-  path_template: "$HOME/.cache/agents-docs"
+workspace_storage_root:
+  path_template: ".documents-manager"
   configurable: false
   description: >
-    The corpus-cache root is fixed. Commands must not accept a cache-root
-    argument. Every producer uses this central location.
+    The generated storage root is relative to the caller workspace. Commands
+    must not default to a shared home-cache result/report location.
 
 exposure_kinds:
   - name: sqlite
     description: Primary local metadata and control database.
   - name: file
     description: Filesystem artifact addressed from SQLite by relative URI.
-  - name: tantivy
-    description: Tantivy full-text index directory managed by this CLI.
-  - name: lancedb
-    description: LanceDB vector store directory managed by this CLI.
+  - name: fts
+    description: Full-text index directory managed by this CLI.
+  - name: semantic
+    description: Vector store directory managed by this CLI.
 
-cache_root_layout:
+workspace_root_layout:
   - name: catalog
     exposure: sqlite
     path_template: "catalog/catalog.sqlite"
@@ -32,13 +32,13 @@ cache_root_layout:
     path_template: "blobs/{yyyy}/{mm}/{sha256_prefix}/{sha256}"
     description: External artifact payloads above the blob threshold.
   - name: fts
-    exposure: tantivy
+    exposure: fts
     path_template: "fts/{fts_profile}/{scope_id}/"
-    description: Tantivy index island for one scope/profile.
+    description: Full-text index island for one scope/profile.
   - name: semantic
-    exposure: lancedb
+    exposure: semantic
     path_template: "semantic/{embedding_profile}/{scope_id}.lancedb/"
-    description: LanceDB store island for one scope/profile.
+    description: Vector store island for one scope/profile.
   - name: embedding_models
     exposure: file
     path_template: "models/fastembed/"
@@ -46,7 +46,7 @@ cache_root_layout:
   - name: results
     exposure: file
     path_template: "results/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/"
-    description: Mandatory command result JSON, events, logs, and Markdown summaries.
+    description: Command result JSON, events, logs, and Markdown summaries.
   - name: reports
     exposure: file
     path_template: "reports/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/"

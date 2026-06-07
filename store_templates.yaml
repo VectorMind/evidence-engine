@@ -7,8 +7,8 @@ description: >
   reference master objects only inside FTS and semantic stores.
 
 templates:
-  - name: tantivy_chunk_document
-    backend: tantivy
+  - name: fts_chunk_document
+    backend: fts
     description: One generated FTS document per indexing chunk.
     columns:
       - {name: chunk_id, type: text, description: "Generated chunk/search-unit ID."}
@@ -24,8 +24,8 @@ templates:
       - {name: body, type: text, description: "Main searchable text."}
       - {name: metadata_json, type: json, description: "Compact filter and provenance metadata."}
 
-  - name: lancedb_chunk_row
-    backend: lancedb
+  - name: semantic_chunk_row
+    backend: semantic
     description: One generated semantic row per indexing chunk.
     columns:
       - {name: chunk_id, type: text, description: "Generated chunk/search-unit ID."}

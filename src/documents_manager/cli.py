@@ -1,4 +1,4 @@
-"""Minimal agents-docs command surface.
+"""Minimal documents-manager command surface.
 
 The first scaffold intentionally uses only the Python standard library so the
 binding command shape can be tested before heavy optional dependencies are
@@ -9,33 +9,34 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import logging
 import platform
 import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from agents_cli import __version__
-from agents_cli.catalog import catalog_status_report, create_catalog, migrate_catalog
-from agents_cli.fts import IndexOptions, SearchOptions, index_folder_to_tantivy, search_text_indexes
-from agents_cli.hybrid import HybridSearchOptions, search_hybrid_indexes
-from agents_cli.inventory import ScanOptions, scan_folder_to_catalog
-from agents_cli.parse import ParseOptions, parse_folder_to_catalog
-from agents_cli.paths import catalog_path, fixed_cache_root, reports_root, results_root
-from agents_cli.results import CommandRun, render_console_summary
-from agents_cli.semantic import (
+from documents_manager import __version__
+from documents_manager.catalog import catalog_status_report, create_catalog, wipe_catalog
+from documents_manager.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
+from documents_manager.hybrid import HybridSearchOptions, search_hybrid_indexes
+from documents_manager.inventory import ScanOptions, scan_folder_to_catalog
+from documents_manager.parse import ParseOptions, parse_folder_to_catalog
+from documents_manager.paths import catalog_path, reports_root, results_root, workspace_root
+from documents_manager.results import CommandRun
+from documents_manager.semantic import (
     SemanticIndexOptions,
     SemanticSearchOptions,
-    index_folder_to_lancedb,
+    index_scope_to_semantic,
     search_semantic_indexes,
 )
 
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 
 
 def _emit(payload: dict[str, Any]) -> None:
-    print(render_console_summary(payload))
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 class _ParseProgress:
@@ -113,7 +114,7 @@ def _base_payload(command: str) -> dict[str, Any]:
         "command": command,
         "package_version": __version__,
         "schema_version": SCHEMA_VERSION,
-        "cache_root": str(fixed_cache_root()),
+        "workspace_root": str(workspace_root()),
         "catalog_path": str(catalog_path()),
     }
 
@@ -135,14 +136,7 @@ def catalog_create(_: argparse.Namespace) -> int:
     payload = _base_payload("catalog create")
     payload.update(create_catalog())
     _emit(payload)
-    return 0 if payload["status"] in {"created", "current", "migrated"} else 1
-
-
-def catalog_migrate(_: argparse.Namespace) -> int:
-    payload = _base_payload("catalog migrate")
-    payload.update(migrate_catalog())
-    _emit(payload)
-    return 0 if payload["status"] in {"current", "migrated"} else 1
+    return 0 if payload["status"] in {"created", "current"} else 1
 
 
 def catalog_status(_: argparse.Namespace) -> int:
@@ -150,6 +144,13 @@ def catalog_status(_: argparse.Namespace) -> int:
     payload.update(catalog_status_report())
     _emit(payload)
     return 0 if payload["status"] in {"current", "missing", "stale"} else 1
+
+
+def catalog_wipe(_: argparse.Namespace) -> int:
+    payload = _base_payload("catalog wipe")
+    payload.update(wipe_catalog())
+    _emit(payload)
+    return 0
 
 
 def health(_: argparse.Namespace) -> int:
@@ -160,13 +161,13 @@ def health(_: argparse.Namespace) -> int:
             "python": sys.version.split()[0],
             "platform": platform.platform(),
             "paths": {
-                "cache_root_exists": fixed_cache_root().exists(),
+                "workspace_root_exists": workspace_root().exists(),
                 "catalog_exists": catalog_path().exists(),
                 "results_root_exists": results_root().exists(),
                 "reports_root_exists": reports_root().exists(),
             },
             "checks": [
-                {"name": "fixed_cache_contract", "status": "ok"},
+                {"name": "workspace_storage_contract", "status": "ok"},
                 {"name": "sqlite_stdlib", "status": "ok"},
                 {
                     "name": "docling",
@@ -175,13 +176,13 @@ def health(_: argparse.Namespace) -> int:
                     else "missing",
                 },
                 {
-                    "name": "tantivy",
+                    "name": "fts",
                     "status": "ok"
                     if importlib.util.find_spec("tantivy") is not None
                     else "missing",
                 },
                 {
-                    "name": "lancedb",
+                    "name": "semantic_store",
                     "status": "ok"
                     if importlib.util.find_spec("lancedb") is not None
                     else "missing",
@@ -199,9 +200,9 @@ def health(_: argparse.Namespace) -> int:
     return 0
 
 
-def scan_folder(args: argparse.Namespace) -> int:
-    run = CommandRun.start("scan folder")
-    payload = _base_payload("scan folder")
+def sources_scan(args: argparse.Namespace) -> int:
+    run = CommandRun.start("sources scan")
+    payload = _base_payload("sources scan")
     try:
         result = scan_folder_to_catalog(
             Path(args.path),
@@ -225,13 +226,13 @@ def scan_folder(args: argparse.Namespace) -> int:
     return 0 if payload["status"] == "ok" else 1
 
 
-def parse_folder(args: argparse.Namespace) -> int:
+def docs_parse(args: argparse.Namespace) -> int:
     _configure_parse_logging(verbose=args.verbose)
     progress_enabled = args.progress
     if progress_enabled is None:
         progress_enabled = sys.stderr.isatty()
-    run = CommandRun.start("parse folder")
-    payload = _base_payload("parse folder")
+    run = CommandRun.start("docs parse")
+    payload = _base_payload("docs parse")
     try:
         result = parse_folder_to_catalog(
             Path(args.path),
@@ -262,17 +263,17 @@ def parse_folder(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
-def index_folder(args: argparse.Namespace) -> int:
-    run = CommandRun.start("index folder")
-    payload = _base_payload("index folder")
+def index_scope(args: argparse.Namespace) -> int:
+    run = CommandRun.start("index scope")
+    payload = _base_payload("index scope")
     try:
         if args.semantic:
-            result = index_folder_to_lancedb(
+            result = index_scope_to_semantic(
                 Path(args.path),
                 SemanticIndexOptions(force=args.force),
             )
         else:
-            result = index_folder_to_tantivy(
+            result = index_scope_to_fts(
                 Path(args.path),
                 IndexOptions(force=args.force),
             )
@@ -365,8 +366,8 @@ def search_hybrid(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="agents-docs",
-        description="Local document corpus-cache CLI.",
+        prog="documents-manager",
+        description="Local evidence engine for documents and generic media.",
     )
     parser.set_defaults(handler=None)
     subparsers = parser.add_subparsers(dest="command")
@@ -375,144 +376,144 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_sub = catalog.add_subparsers(dest="catalog_command")
 
     catalog_create_parser = catalog_sub.add_parser(
-        "create", help="Create the fixed home catalog if it is missing."
+        "create", help="Create the workspace catalog if it is missing."
     )
     catalog_create_parser.set_defaults(handler=catalog_create)
 
-    catalog_migrate_parser = catalog_sub.add_parser(
-        "migrate", help="Upgrade the fixed home catalog if it exists."
-    )
-    catalog_migrate_parser.set_defaults(handler=catalog_migrate)
-
     catalog_status_parser = catalog_sub.add_parser(
-        "status", help="Report fixed catalog status."
+        "status", help="Report workspace catalog status."
     )
     catalog_status_parser.set_defaults(handler=catalog_status)
+
+    catalog_wipe_parser = catalog_sub.add_parser(
+        "wipe", help="Delete the workspace catalog database."
+    )
+    catalog_wipe_parser.set_defaults(handler=catalog_wipe)
 
     health_parser = subparsers.add_parser("health", help="Run read-only health checks.")
     health_parser.set_defaults(handler=health)
 
-    scan = subparsers.add_parser("scan", help="Inventory source inputs.")
-    scan_sub = scan.add_subparsers(dest="scan_command")
-    scan_folder_parser = scan_sub.add_parser("folder", help="Inventory a folder tree.")
-    scan_folder_parser.add_argument("path", help="Folder path to scan.")
-    scan_folder_parser.add_argument(
+    sources = subparsers.add_parser("sources", help="Inventory source inputs.")
+    sources_sub = sources.add_subparsers(dest="sources_command")
+    sources_scan_parser = sources_sub.add_parser("scan", help="Inventory a folder tree.")
+    sources_scan_parser.add_argument("path", help="Folder path to scan.")
+    sources_scan_parser.add_argument(
         "--max-files",
         type=int,
         default=None,
         help="Override the configured file-count safeguard.",
     )
-    scan_folder_parser.add_argument(
+    sources_scan_parser.add_argument(
         "--max-bytes",
         type=int,
         default=None,
         help="Override the configured byte-budget safeguard.",
     )
-    scan_folder_parser.add_argument(
+    sources_scan_parser.add_argument(
         "--max-depth",
         type=int,
         default=None,
         help="Override the configured folder-depth safeguard.",
     )
-    scan_folder_parser.add_argument(
+    sources_scan_parser.add_argument(
         "--report",
         action="store_true",
-        help="Write an optional generic HTML report under the fixed reports directory.",
+        help="Write an optional generic HTML report under the workspace reports directory.",
     )
-    scan_folder_parser.set_defaults(handler=scan_folder)
+    sources_scan_parser.set_defaults(handler=sources_scan)
 
-    parse = subparsers.add_parser("parse", help="Parse source inputs.")
-    parse_sub = parse.add_subparsers(dest="parse_command")
-    parse_folder_parser = parse_sub.add_parser("folder", help="Parse a folder tree.")
-    parse_folder_parser.add_argument("path", help="Folder path to parse.")
-    parse_folder_parser.add_argument(
+    docs = subparsers.add_parser("docs", help="Document evidence commands.")
+    docs_sub = docs.add_subparsers(dest="docs_command")
+    docs_parse_parser = docs_sub.add_parser("parse", help="Parse a folder tree.")
+    docs_parse_parser.add_argument("path", help="Folder path to parse.")
+    docs_parse_parser.add_argument(
         "--profile",
         default=None,
         choices=["docling_ocr", "docling_default", "docling_fast_text"],
         help="Parser profile. Defaults to config/parser.yaml parser_profile.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--limit",
         type=int,
         default=None,
         help="Parse at most this many current source files.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--document-timeout",
         type=float,
         default=None,
         help="Override the per-document Docling timeout in seconds.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--max-pages",
         type=int,
         default=None,
         help="Skip documents above this page count.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--max-file-size",
         type=int,
         default=None,
         help="Skip documents above this byte size.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--docling-threads",
         type=int,
         default=None,
         help="Override Docling CPU inference threads.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
         help="Override Docling PDF OCR/layout/table batch size.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--queue-size",
         type=int,
         default=None,
         help="Override Docling PDF stage queue size.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--progress",
         dest="progress",
         action="store_true",
         default=None,
         help="Show document-level parse progress.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--no-progress",
         dest="progress",
         action="store_false",
         help="Suppress document-level parse progress.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--verbose",
         action="store_true",
         help="Keep verbose third-party parser logs.",
     )
-    parse_folder_parser.add_argument(
+    docs_parse_parser.add_argument(
         "--report",
         action="store_true",
-        help="Write an optional generic HTML report under the fixed reports directory.",
+        help="Write an optional generic HTML report under the workspace reports directory.",
     )
-    parse_folder_parser.set_defaults(handler=parse_folder)
+    docs_parse_parser.set_defaults(handler=docs_parse)
 
     index = subparsers.add_parser("index", help="Build or refresh indexes.")
     index_sub = index.add_subparsers(dest="index_command")
-    index_folder_parser = index_sub.add_parser("folder", help="Index a folder tree.")
-    index_folder_parser.add_argument("path", help="Folder path to index.")
-    index_folder_parser.add_argument(
+    index_scope_parser = index_sub.add_parser("scope", help="Index a source scope.")
+    index_scope_parser.add_argument("path", help="Folder path or scope path to index.")
+    index_scope_parser.add_argument(
         "--force",
         action="store_true",
         help="Force a rebuild even when the indexed source watermark is current.",
     )
-    index_folder_parser.add_argument(
+    index_scope_parser.add_argument(
         "--semantic",
         action="store_true",
-        help="Build the LanceDB semantic store instead of the default FTS index.",
+        help="Build the semantic store instead of the default text index.",
     )
-    index_folder_parser.set_defaults(handler=index_folder)
+    index_scope_parser.set_defaults(handler=index_scope)
 
     search = subparsers.add_parser("search", help="Search built indexes.")
     search_sub = search.add_subparsers(dest="search_command")
@@ -527,7 +528,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_text_parser.set_defaults(handler=search_text)
 
     search_semantic_parser = search_sub.add_parser(
-        "semantic", help="Search semantic LanceDB stores with a text query."
+        "semantic", help="Search semantic stores with a text query."
     )
     search_semantic_parser.add_argument("query", help="Search query.")
     search_semantic_parser.add_argument(

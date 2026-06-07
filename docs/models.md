@@ -29,9 +29,9 @@ retrieval stores.
 | Docling OCR | OCR for scanned or low-text PDFs | Implemented through Docling profile | `docling_ocr` | RapidOCR/Docling model cache | `docling`, RapidOCR transitive deps | Python API |
 | Docling table/layout models | Layout and table structure extraction | Implemented when enabled by profile | Enabled in `docling_ocr` and `docling_default` | Docling model cache/package cache | `docling` | Python API |
 | Docling picture classification/description | Figure classification and visual description | Planned, disabled by current profiles | Disabled | Docling/vision model cache or local REST service | `docling`; future local service deps | Python API or local REST |
-| FTS ranking | Lexical BM25 retrieval | Implemented | `tantivy_default_en` | No model weights | `tantivy` | Native library via Python binding |
-| Embeddings | Chunk and query vectors for semantic search | Implemented | `fastembed_bge_small_en_v1_5` | `$HOME/.cache/agents-docs/models/fastembed/` | `fastembed`, `numpy` | Python API |
-| Vector store | Semantic nearest-neighbor retrieval | Implemented | LanceDB per folder root | `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | `lancedb`, `pyarrow` | Embedded DB |
+| FTS ranking | Lexical BM25 retrieval | Implemented | `text_default_en` | No model weights | `tantivy` | Native library via Python binding |
+| Embeddings | Chunk and query vectors for semantic search | Implemented | `fastembed_bge_small_en_v1_5` | `.documents-manager/models/fastembed/` | `fastembed`, `numpy` | Python API |
+| Vector store | Semantic nearest-neighbor retrieval | Implemented | Semantic store per folder root | `.documents-manager/semantic/<embedding_profile>/<scope_id>.lancedb/` | `lancedb`, `pyarrow` | Embedded DB |
 | Hybrid fusion | Merge FTS and semantic results | Implemented | RRF, no model | No model weights | Existing FTS + semantic deps | In-process formula |
 | Reranking | Reorder top hybrid candidates | Partially implemented | Disabled | Ollama model store for optional Ollama mode; future FastEmbed or SentenceTransformers cache | Ollama outside uv; future `fastembed` or `sentence-transformers` | Local REST or Python API |
 | Local REST enrichment | Future local LLM/VLM use for captions, summaries, or extraction | Planned | Disabled | Service-managed local model store | Client dependency if needed | OpenAI-compatible local REST or Ollama |
@@ -129,11 +129,11 @@ model inside the Python process is not ideal.
 
 | Cache | Location | Owner | Notes |
 | --- | --- | --- | --- |
-| Agents cache root | `$HOME/.cache/agents-docs/` | This CLI | Fixed and not configurable. |
-| SQLite catalog | `$HOME/.cache/agents-docs/catalog/catalog.sqlite` | This CLI | Current-state metadata and registry rows. |
-| FastEmbed models | `$HOME/.cache/agents-docs/models/fastembed/` | This CLI/FastEmbed | Used by semantic indexing and semantic search. |
-| LanceDB stores | `$HOME/.cache/agents-docs/semantic/<embedding_profile>/<scope_id>.lancedb/` | This CLI/LanceDB | One store per folder root and embedding profile. |
-| Tantivy indexes | `$HOME/.cache/agents-docs/fts/<fts_profile>/<scope_id>/` | This CLI/Tantivy | One FTS island per folder root and FTS profile. |
+| Workspace storage root | `.documents-manager/` | This CLI | Generated storage under the caller workspace. |
+| SQLite catalog | `.documents-manager/catalog/catalog.sqlite` | This CLI | Current-state metadata and registry rows. |
+| FastEmbed models | `.documents-manager/models/fastembed/` | This CLI/FastEmbed | Used by semantic indexing and semantic search. |
+| Semantic stores | `.documents-manager/semantic/<embedding_profile>/<scope_id>.lancedb/` | This CLI | One store per folder root and embedding profile. |
+| FTS indexes | `.documents-manager/fts/<fts_profile>/<scope_id>/` | This CLI | One FTS island per folder root and FTS profile. |
 | Docling/RapidOCR model caches | Package or library cache locations | Docling/RapidOCR | May vary by dependency version and platform. |
 | Hugging Face cache | User HF cache unless overridden by dependency | FastEmbed/SentenceTransformers | Windows may warn about disabled symlink optimization. |
 | Ollama models | Ollama-managed model store | Ollama | Planned local service path; installs outside uv. |
@@ -146,8 +146,8 @@ model inside the Python process is not ideal.
 | Fast smoke test | `docling_fast_text` | Avoids OCR/table cost while testing plumbing. |
 | First semantic index | `fastembed_bge_small_en_v1_5` | Already implemented, 384-dimensional, fast enough for folder roots. |
 | Higher-quality semantic pass | `sentence_transformers_bge_base_en_v1_5` | Planned heavier local profile for selected corpora. |
-| First hybrid search | `agents-docs search hybrid "<query>"` with RRF and no reranker | Stable, explainable, no model dependency. |
-| Local LLM rerank trial | `agents-docs search hybrid "<query>" --rerank ollama --ollama-model <model>` | Keeps reranking opt-in and local-only. |
+| First hybrid search | `documents-manager search hybrid "<query>"` with RRF and no reranker | Stable, explainable, no model dependency. |
+| Local LLM rerank trial | `documents-manager search hybrid "<query>" --rerank ollama --ollama-model <model>` | Keeps reranking opt-in and local-only. |
 | Better top-10 ordering | Local reranker after RRF candidate collection | Limits model cost to a small candidate set. |
 | Visual figure understanding | Local REST VLM or Docling picture description profile | Keep heavy vision models outside default parse path. |
 

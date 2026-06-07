@@ -10,8 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from agents_cli.fts import SearchOptions, search_text_indexes
-from agents_cli.semantic import SemanticSearchOptions, search_semantic_indexes
+from documents_manager.fts import SearchOptions, search_text_indexes
+from documents_manager.semantic import SemanticSearchOptions, search_semantic_indexes
 
 
 @dataclass(frozen=True)

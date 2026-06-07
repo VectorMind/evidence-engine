@@ -7,12 +7,12 @@ import re
 import sqlite3
 from typing import Any
 
-from agents_cli.contracts import read_contract_text
-from agents_cli.paths import catalog_path
+from documents_manager.contracts import read_contract_text
+from documents_manager.paths import catalog_path
 
 
-CATALOG_SCHEMA_VERSION = "0.3"
-CATALOG_USER_VERSION = 3
+CATALOG_SCHEMA_VERSION = "0.4"
+CATALOG_USER_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -205,11 +205,27 @@ def _split_inline_mapping(value: str) -> dict[str, str]:
 
 
 def create_catalog() -> dict[str, Any]:
-    """Create the fixed catalog if missing and return a structured report."""
+    """Create the workspace catalog if missing and return a structured report."""
 
     path = catalog_path()
     before_exists = path.exists()
     status_before = catalog_status_report() if before_exists else {"status": "missing"}
+    if before_exists:
+        if status_before["status"] == "current":
+            return {
+                "status": "current",
+                "created": False,
+                "sqlite_user_version": status_before["sqlite_user_version"],
+                "expected_tables": status_before["expected_tables"],
+                "table_count": status_before["table_count"],
+            }
+        return {
+            "status": "reset_required",
+            "created": False,
+            "error_kind": "catalog_reset_required",
+            "catalog_status": status_before["status"],
+            "message": "Run catalog wipe before recreating a stale beta catalog.",
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     tables = load_catalog_tables()
 
@@ -226,16 +242,9 @@ def create_catalog() -> dict[str, Any]:
 
         _apply_schema(conn, tables)
 
-    if not before_exists:
-        status = "created"
-    elif status_before["status"] == "current":
-        status = "current"
-    else:
-        status = "migrated"
-
     return {
-        "status": status,
-        "created": not before_exists,
+        "status": "created",
+        "created": True,
         "sqlite_user_version_before": before_version,
         "sqlite_user_version": CATALOG_USER_VERSION,
         "expected_tables": [table.name for table in tables],
@@ -243,46 +252,17 @@ def create_catalog() -> dict[str, Any]:
     }
 
 
-def migrate_catalog() -> dict[str, Any]:
-    """Upgrade the fixed catalog when it already exists."""
+def wipe_catalog() -> dict[str, Any]:
+    """Delete the workspace-local catalog database if it exists."""
 
     path = catalog_path()
-    tables = load_catalog_tables()
-    expected_table_names = [table.name for table in tables]
-    if not path.exists():
-        return {
-            "status": "missing",
-            "exists": False,
-            "sqlite_user_version": None,
-            "expected_user_version": CATALOG_USER_VERSION,
-            "expected_tables": expected_table_names,
-            "missing_tables": expected_table_names,
-            "table_count": 0,
-            "message": "Run catalog create, or call the producer ensure path before writes.",
-        }
-
-    status_before = catalog_status_report()
-    with sqlite3.connect(path) as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-        before_version = _user_version(conn)
-        if before_version > CATALOG_USER_VERSION:
-            return {
-                "status": "failed",
-                "error_kind": "catalog_version_ahead",
-                "sqlite_user_version": before_version,
-                "expected_user_version": CATALOG_USER_VERSION,
-            }
-
-        _apply_schema(conn, tables)
-
-    status = "current" if status_before["status"] == "current" else "migrated"
+    existed = path.exists()
+    if existed:
+        path.unlink()
     return {
-        "status": status,
-        "created": False,
-        "sqlite_user_version_before": before_version,
-        "sqlite_user_version": CATALOG_USER_VERSION,
-        "expected_tables": expected_table_names,
-        "table_count": len(tables),
+        "status": "wiped" if existed else "missing",
+        "existed": existed,
+        "message": "Workspace catalog was removed." if existed else "No catalog existed.",
     }
 
 
@@ -355,13 +335,20 @@ def catalog_status_report() -> dict[str, Any]:
 
 
 def ensure_catalog() -> dict[str, Any]:
-    """Create or migrate the fixed catalog before producer commands write."""
+    """Create or validate the workspace catalog before producer commands write."""
 
     status = catalog_status_report()
     if status["status"] == "missing":
         return create_catalog()
-    if status["status"] in {"stale", "incomplete", "current"}:
-        return migrate_catalog()
+    if status["status"] == "current":
+        return status
+    if status["status"] in {"stale", "incomplete", "ahead"}:
+        return {
+            "status": "reset_required",
+            "error_kind": "catalog_reset_required",
+            "catalog_status": status["status"],
+            "message": "Run catalog wipe before recreating a stale beta catalog.",
+        }
     return status
 
 

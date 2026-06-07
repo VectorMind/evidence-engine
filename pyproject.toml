@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agents-cli"
+name = "documents-manager"
 version = "0.1.0"
-description = "Reusable local document corpus-cache CLI for agent workflows."
+description = "Reusable local evidence engine for documents and generic media."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agents-docs = "agents_cli.cli:main"
+documents-manager = "documents_manager.cli:main"
 
 [project.optional-dependencies]
 docling = [
@@ -59,14 +59,14 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agents_cli"]
+packages = ["src/documents_manager"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"catalog.yaml" = "agents_cli/contracts/catalog.yaml"
-"config/embeddings.yaml" = "agents_cli/contracts/config/embeddings.yaml"
-"config/exposures.yaml" = "agents_cli/contracts/config/exposures.yaml"
-"config/parser.yaml" = "agents_cli/contracts/config/parser.yaml"
-"store_templates.yaml" = "agents_cli/contracts/store_templates.yaml"
+"catalog.yaml" = "documents_manager/contracts/catalog.yaml"
+"config/embeddings.yaml" = "documents_manager/contracts/config/embeddings.yaml"
+"config/exposures.yaml" = "documents_manager/contracts/config/exposures.yaml"
+"config/parser.yaml" = "documents_manager/contracts/config/parser.yaml"
+"store_templates.yaml" = "documents_manager/contracts/store_templates.yaml"
 
 [tool.ruff]
 line-length = 88

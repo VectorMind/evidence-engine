@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from io import StringIO
 
-from agents_cli.cli import _ParseProgress
-from agents_cli.parse import _classify_error
-from agents_cli.results import render_html_report, render_summary_markdown
+from documents_manager.cli import _ParseProgress
+from documents_manager.parse import _classify_error
+from documents_manager.results import render_html_report, render_summary_markdown
 
 
 def test_classifies_pdf_password_errors() -> None:
@@ -21,7 +21,7 @@ def test_classifies_native_memory_errors() -> None:
 
 def test_parse_summary_and_html_include_failure_tables() -> None:
     payload = {
-        "command": "parse folder",
+        "command": "docs parse",
         "status": "partial",
         "root_label": "sample",
         "parser_profile": "docling_ocr",
@@ -80,4 +80,3 @@ def test_parse_progress_prints_done_lines_for_noninteractive_stream() -> None:
     assert stream.getvalue() == (
         "parse [1/2] failed (resource_exhausted_memory): large.pdf\n"
     )
-

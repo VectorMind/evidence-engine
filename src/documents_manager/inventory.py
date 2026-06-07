@@ -12,9 +12,9 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from agents_cli.catalog import ensure_catalog
-from agents_cli.config import load_parser_config
-from agents_cli.paths import catalog_path
+from documents_manager.catalog import ensure_catalog
+from documents_manager.config import load_parser_config
+from documents_manager.paths import catalog_path
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def scan_folder_to_catalog(path: Path, options: ScanOptions) -> dict[str, Any]:
         }
 
     ensure_report = ensure_catalog()
-    if ensure_report["status"] not in {"created", "current", "migrated"}:
+    if ensure_report["status"] not in {"created", "current"}:
         return {
             "status": "failed",
             "error_kind": "catalog_unavailable",
