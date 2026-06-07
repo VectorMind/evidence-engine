@@ -1,9 +1,10 @@
-# Specification: Documents Manager Evidence Engine
+# Specification: corpus-evidence-stack Evidence Engine
 
 ## Purpose
 
-`documents-manager` is the public reusable evidence engine for local document
-and generic media workflows.
+`corpus-evidence-stack` is the public reusable evidence engine for local document
+and generic media workflows. The installable package and console script remain
+`documents-manager`.
 
 It owns:
 

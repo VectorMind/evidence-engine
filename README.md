@@ -1,12 +1,17 @@
-# documents-manager
+# corpus-evidence-stack
 
 Reusable local evidence engine for document and generic media workflows.
 
-`documents-manager` owns the public mechanics for source inventory, document
+`corpus-evidence-stack` owns the public mechanics for source inventory, document
 parsing, generated artifacts, SQLite catalog state, text search, semantic
 search, hybrid search, command result files, and provenance-rich evidence
 references. Private workspaces consume this open local data; they do not
 reimplement lower extraction or search internals.
+
+The name reflects the layering: a *corpus* of mixed local files, turned into
+provenance-backed *evidence*, exposed as a lower *stack* layer that private
+knowledge workspaces build on top of. The installable package and console
+script remain `documents-manager` (see [Install Shape](#install-shape)).
 
 ## Current Status
 
@@ -27,8 +32,9 @@ Implemented today:
 
 ## Install Shape
 
-The package name is `documents-manager`; the console script is
-`documents-manager`.
+The repository and brand are `corpus-evidence-stack`. The package name is
+`documents-manager`; the console script is `documents-manager`. Branding and the
+CLI/package identity are intentionally separate.
 
 Optional dependency groups are defined in [pyproject.toml](./pyproject.toml):
 
@@ -145,7 +151,7 @@ Lower schemas describe what was observed and generated.
 Upper schemas describe what was believed, reviewed, promoted, or used.
 ```
 
-`documents-manager` owns lower evidence. Private workspaces own reviewed
+`corpus-evidence-stack` owns lower evidence. Private workspaces own reviewed
 meaning.
 
 ## Public And Private Split
