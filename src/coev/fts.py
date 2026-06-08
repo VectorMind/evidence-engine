@@ -11,7 +11,13 @@ import sqlite3
 from typing import Any
 
 from coev.catalog import ensure_catalog
-from coev.chunks import chunks_for_root, document_count, high_watermark, stable_id
+from coev.chunks import (
+    chunks_for_root,
+    document_count,
+    high_watermark,
+    media_chunks_for_root,
+    stable_id,
+)
 from coev.config import load_parser_config
 from coev.inventory import ScanOptions, scan_folder_to_catalog
 from coev.paths import catalog_path, workspace_root
@@ -64,12 +70,16 @@ def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:
         root_id=root_id,
         scope_id=scope_id,
         chunk_profile=chunk_profile,
+    ) + media_chunks_for_root(
+        root_id=root_id,
+        scope_id=scope_id,
+        chunk_profile=chunk_profile,
     )
     if not chunks:
         return {
             "status": "deferred",
-            "error_kind": "no_parsed_documents",
-            "message": "No parsed document objects were available. Run docs parse first.",
+            "error_kind": "no_indexable_text",
+            "message": "No parsed documents or media text were available. Run docs parse or media inspect/describe first.",
             "root_id": root_id,
             "root_label": scan_result.get("root_label"),
             "scope_id": scope_id,
@@ -237,6 +247,8 @@ def _write_tantivy_index(index_dir: Path, chunks: list[dict[str, Any]]) -> dict[
                 "chunk_id",
                 "doc_id",
                 "object_id",
+                "asset_id",
+                "ref",
                 "scope_id",
                 "chunk_profile",
                 "content_type",
@@ -270,6 +282,8 @@ def _schema() -> Any:
         "chunk_id",
         "doc_id",
         "object_id",
+        "asset_id",
+        "ref",
         "scope_id",
         "chunk_profile",
         "content_type",
@@ -318,6 +332,8 @@ def _search_one_index(
                     "chunk_id": _first(stored, "chunk_id"),
                     "doc_id": _first(stored, "doc_id"),
                     "object_id": _first(stored, "object_id"),
+                    "asset_id": _first(stored, "asset_id"),
+                    "ref": _first(stored, "ref") or None,
                     "scope_id": index_row["scope_id"],
                     "fts_index_id": index_row["fts_index_id"],
                     "title": _first(stored, "title"),

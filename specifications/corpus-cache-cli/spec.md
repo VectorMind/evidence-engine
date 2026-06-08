@@ -70,7 +70,10 @@ The catalog stores:
 - valuable item records;
 - index scopes;
 - text index registry rows;
-- semantic store registry rows.
+- semantic store registry rows;
+- media assets and typed image/video/3D metadata;
+- media artifacts, generated observations, and duplicate candidates;
+- image-embedding store registry rows.
 
 The catalog does not store:
 
@@ -152,6 +155,12 @@ Generated media meaning has a deliberate ceiling:
 Media observations are stored in `media_observations` as generated, rebuildable
 rows; they are never evidence of absence.
 
+`index scope` indexes media text — captions, media-kind, and filenames — into
+the same text and semantic projections as documents, so media is retrievable
+through `search text`, `semantic`, and `hybrid`. Media hits reference
+`corpus_cache.media_assets.<asset_id>`, document hits reference
+`corpus_cache.document_objects.<object_id>`, per the Reference Contract.
+
 ## Search Contract
 
 Search projections are rebuildable implementation details. Higher layers should
@@ -199,6 +208,7 @@ Public commands:
 | `media` | `dedupe <path>` | `path` | Write near-duplicate media candidate pairs from perceptual hashing. |
 | `index` | `scope <path>` | `path` | Build or refresh the text index. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
+| `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
 | `search` | `text <query>` | `query` | Search text projections. |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |

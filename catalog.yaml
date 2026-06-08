@@ -1,4 +1,4 @@
-spec_version: "0.5"
+spec_version: "0.6"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -395,6 +395,27 @@ datasets:
             unique: true
           - name: idx_media_observations_asset_kind
             columns: [asset_id, observation_kind]
+
+      - name: image_stores
+        description: Current registry of physical image-embedding vector store islands.
+        exposures: [sqlite, semantic]
+        columns:
+          - {name: image_store_id, type: text, description: "Stable image store registry ID."}
+          - {name: scope_id, type: text, description: "Catalog scope indexed by this island.", ref: corpus_cache.index_scopes.scope_id}
+          - {name: image_profile, type: text, description: "Image embedding profile used for generated rows."}
+          - {name: store_uri, type: text, description: "Workspace-root-relative image store directory."}
+          - {name: table_name, type: text, description: "Image store table name containing generated asset rows."}
+          - {name: vector_dimension, type: integer, description: "Expected image vector dimension."}
+          - {name: indexed_asset_count, type: integer, description: "Number of media assets embedded."}
+          - {name: source_high_watermark, type: text, description: "Asset or generation watermark last indexed."}
+          - {name: status, type: enum, description: "Current image store state.", values: [planned, current, stale, rebuilding, deferred, failed, deleted]}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when this image store state last changed."}
+        indexes:
+          - name: pk_image_stores
+            columns: [image_store_id]
+            unique: true
+          - name: idx_image_stores_scope
+            columns: [scope_id]
 
       - name: media_dedupe_candidates
         description: Current near-duplicate media candidate pairs surfaced for review.

@@ -11,8 +11,8 @@ from coev.contracts import read_contract_text
 from coev.paths import catalog_path
 
 
-CATALOG_SCHEMA_VERSION = "0.5"
-CATALOG_USER_VERSION = 5
+CATALOG_SCHEMA_VERSION = "0.6"
+CATALOG_USER_VERSION = 6
 
 
 @dataclass(frozen=True)

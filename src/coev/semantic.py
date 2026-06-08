@@ -17,7 +17,13 @@ from typing import Any, Iterator
 import warnings
 
 from coev.catalog import ensure_catalog
-from coev.chunks import chunks_for_root, document_count, high_watermark, stable_id
+from coev.chunks import (
+    chunks_for_root,
+    document_count,
+    high_watermark,
+    media_chunks_for_root,
+    stable_id,
+)
 from coev.config import embedding_profile, load_parser_config
 from coev.inventory import ScanOptions, scan_folder_to_catalog
 from coev.paths import catalog_path, workspace_root
@@ -98,12 +104,16 @@ def index_scope_to_semantic(
         root_id=root_id,
         scope_id=scope_id,
         chunk_profile=chunk_profile,
+    ) + media_chunks_for_root(
+        root_id=root_id,
+        scope_id=scope_id,
+        chunk_profile=chunk_profile,
     )
     if not chunks:
         return {
             "status": "deferred",
-            "error_kind": "no_parsed_documents",
-            "message": "No parsed document objects were available. Run docs parse first.",
+            "error_kind": "no_indexable_text",
+            "message": "No parsed documents or media text were available. Run docs parse or media inspect/describe first.",
             "root_id": root_id,
             "root_label": scan_result.get("root_label"),
             "scope_id": scope_id,
@@ -386,6 +396,8 @@ def _row_for_chunk(
         "chunk_id": chunk["chunk_id"],
         "doc_id": chunk["doc_id"],
         "object_id": chunk["object_id"],
+        "asset_id": chunk.get("asset_id") or "",
+        "ref": chunk.get("ref") or "",
         "scope_id": chunk["scope_id"],
         "embedding_profile": profile_name,
         "chunk_profile": chunk["chunk_profile"],
@@ -410,6 +422,8 @@ def _hit_from_row(store: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
         "chunk_id": row.get("chunk_id"),
         "doc_id": row.get("doc_id"),
         "object_id": row.get("object_id"),
+        "asset_id": row.get("asset_id"),
+        "ref": row.get("ref") or None,
         "scope_id": row.get("scope_id") or store["scope_id"],
         "semantic_store_id": store["semantic_store_id"],
         "embedding_profile": store["embedding_profile"],

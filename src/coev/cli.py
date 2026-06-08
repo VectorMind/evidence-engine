@@ -20,10 +20,18 @@ from coev import __version__
 from coev.catalog import catalog_status_report, create_catalog, wipe_catalog
 from coev.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
 from coev.hybrid import HybridSearchOptions, search_hybrid_indexes
+from coev.image_index import (
+    ImageIndexOptions,
+    ImageSearchOptions,
+    index_scope_to_image,
+    search_image_stores,
+)
 from coev.inventory import ScanOptions, scan_folder_to_catalog
 from coev.media import (
+    DedupeOptions,
     DescribeOptions,
     InspectOptions,
+    dedupe_folder_to_catalog,
     describe_folder_to_catalog,
     inspect_folder_to_catalog,
 )
@@ -320,11 +328,42 @@ def media_describe(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
+def media_dedupe(args: argparse.Namespace) -> int:
+    run = CommandRun.start("media dedupe")
+    payload = _base_payload("media dedupe")
+    try:
+        result = dedupe_folder_to_catalog(
+            Path(args.path),
+            DedupeOptions(
+                limit=args.limit,
+                max_distance=args.max_distance,
+                method=args.method,
+            ),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
 def index_scope(args: argparse.Namespace) -> int:
     run = CommandRun.start("index scope")
     payload = _base_payload("index scope")
     try:
-        if args.semantic:
+        if args.image:
+            result = index_scope_to_image(
+                Path(args.path),
+                ImageIndexOptions(force=args.force, limit=args.limit),
+            )
+        elif args.semantic:
             result = index_scope_to_semantic(
                 Path(args.path),
                 SemanticIndexOptions(force=args.force),
@@ -411,6 +450,37 @@ def search_hybrid(args: argparse.Namespace) -> int:
         )
         payload.update(result)
         attach_hit_refs(payload)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
+def search_image(args: argparse.Namespace) -> int:
+    run = CommandRun.start("search image")
+    payload = _base_payload("search image")
+    try:
+        if not args.image_path and not args.text:
+            payload.update(
+                {
+                    "status": "failed",
+                    "error_kind": "missing_query",
+                    "message": "Provide an image path or --text.",
+                }
+            )
+        else:
+            result = search_image_stores(
+                args.image_path,
+                ImageSearchOptions(limit=args.limit, text=args.text),
+            )
+            payload.update(result)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
         payload.update(
             {
@@ -611,6 +681,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     media_describe_parser.set_defaults(handler=media_describe)
 
+    media_dedupe_parser = media_sub.add_parser(
+        "dedupe", help="Find near-duplicate image candidates via perceptual hashing."
+    )
+    media_dedupe_parser.add_argument("path", help="Folder path to dedupe.")
+    media_dedupe_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Hash at most this many current image source items.",
+    )
+    media_dedupe_parser.add_argument(
+        "--max-distance",
+        type=int,
+        default=5,
+        help="Max Hamming distance for a candidate pair. Defaults to 5.",
+    )
+    media_dedupe_parser.add_argument(
+        "--method",
+        default="phash",
+        choices=["phash", "dhash", "ahash"],
+        help="Perceptual hash method. Defaults to phash.",
+    )
+    media_dedupe_parser.set_defaults(handler=media_dedupe)
+
     index = subparsers.add_parser("index", help="Build or refresh indexes.")
     index_sub = index.add_subparsers(dest="index_command")
     index_scope_parser = index_sub.add_parser("scope", help="Index a source scope.")
@@ -624,6 +718,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--semantic",
         action="store_true",
         help="Build the semantic store instead of the default text index.",
+    )
+    index_scope_parser.add_argument(
+        "--image",
+        action="store_true",
+        help="Build the image-embedding store for media images (needs image-search extra).",
+    )
+    index_scope_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="With --image, embed at most this many image assets.",
     )
     index_scope_parser.set_defaults(handler=index_scope)
 
@@ -690,6 +795,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Local Ollama base URL used only when --rerank ollama is set.",
     )
     search_hybrid_parser.set_defaults(handler=search_hybrid)
+
+    search_image_parser = search_sub.add_parser(
+        "image", help="Find visually similar images by example image or text."
+    )
+    search_image_parser.add_argument(
+        "image_path",
+        nargs="?",
+        default=None,
+        help="Query image path. Omit when using --text.",
+    )
+    search_image_parser.add_argument(
+        "--text",
+        default=None,
+        help="Text query for text->image search instead of an example image.",
+    )
+    search_image_parser.add_argument(
+        "--limit",
+        type=int,
+        default=30,
+        help="Maximum number of image hits to return. Defaults to 30.",
+    )
+    search_image_parser.set_defaults(handler=search_image)
 
     return parser
 

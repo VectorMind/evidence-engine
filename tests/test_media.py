@@ -127,6 +127,43 @@ def test_media_describe_writes_observations(
     assert calls["n"] == 2
 
 
+def test_media_dedupe_flags_identical_images(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pil = pytest.importorskip("PIL.Image")
+    pytest.importorskip("imagehash")
+
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    # Two byte-identical images (distance 0) and one clearly different pattern.
+    striped = pil.new("L", (64, 64))
+    for y in range(64):
+        for x in range(64):
+            striped.putpixel((x, y), (x * 4) % 256)  # vertical stripes
+    striped.save(data / "a.png")
+    striped.save(data / "b.png")
+    other = pil.new("L", (64, 64))
+    for y in range(64):
+        for x in range(64):
+            other.putpixel((x, y), (y * 4) % 256)  # horizontal stripes
+    other.save(data / "c.png")
+
+    assert main(["media", "dedupe", str(data)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "media dedupe"
+    assert payload["counts"]["images_hashed"] == 3
+    assert payload["counts"]["candidates_written"] >= 1
+
+    with sqlite3.connect(catalog_path()) as conn:
+        distances = [
+            row[0]
+            for row in conn.execute("SELECT distance FROM media_dedupe_candidates")
+        ]
+    assert 0 in distances  # the identical a/b pair
+
+
 def test_media_inspect_writes_model3d_metadata(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -22,6 +22,7 @@ No model runs as a hosted/remote call by default.
 | **Embeddings (default)** | `BAAI/bge-small-en-v1.5` | ~130 MB · 384-dim | Native | `fastembed` | Implemented | Default chunk + query vectors for folder-scale semantic search. |
 | **Embeddings (draft)** | `minishlab/potion-base-32M` | ~120 MB · static | Native | `model2vec` | Planned | Very high-throughput cheap draft embedding for low-resource tests. |
 | **Embeddings (quality)** | `BAAI/bge-base-en-v1.5` | ~440 MB · 768-dim | Native | `sentence-transformers` | Planned | Higher-quality, slower pass for smaller or higher-value corpora. |
+| **Image embeddings** | SigLIP 2 base | ~400 MB · ~768-dim | Native | open-clip / transformers (torch) | Planned | Visual `search image`: image→image and text→image, one model on laptop + station. |
 | **Lexical ranking** | BM25 (no weights) | — | Native | `tantivy` | Implemented | Full-text scoring for `search text`. Not a learned model. |
 | **Hybrid fusion** | RRF (no weights) | — | Native | in-process | Implemented | Merges text + semantic ranks (`rrf = Σ 1/(k+rank)`, `k=60`). Not a learned model. |
 | **Reranking** | cross-encoder, e.g. `ms-marco-MiniLM-L-6-v2` | ~90 MB | Native | `fastembed` / `sentence-transformers` | Planned | Reorders the top hybrid candidates for sharper top-k. |
@@ -47,6 +48,21 @@ exact `ollama pull <tag>` name; smallest to largest.
 SmolVLM2 is not packaged by Ollama, so it cannot be `ollama pull`ed. For an
 Ollama-only laptop path, the smallest option is `moondream`, then
 `granite3.2-vision`.
+
+## Image Embeddings (visual search)
+
+`search image` uses **SigLIP 2 base** as a single model across tiers: the same
+weights run on laptop (CPU, slower) and station (GPU, fast) — only device and
+batch size change. It gives **image→image** (the primary use) and **text→image**
+in the same vector space. Embedding an image is fast (~tens of ms), unlike VLM
+captioning, so this is the scalable backbone for media findability.
+
+DINOv2 was considered for stronger pure-visual recall but dropped because it has
+no text tower (no text→image) and would need a second per-tier model.
+
+Dependency note: SigLIP 2 runs through `open-clip` / `transformers`, which pull
+**torch**. To keep the default laptop install lean (FastEmbed/ONNX, no torch),
+these live in a dedicated opt-in extra rather than the `laptop` default.
 
 ### Captioning cost (measured)
 

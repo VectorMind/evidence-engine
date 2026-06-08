@@ -75,6 +75,16 @@ KIND_PROMPT = (
 DESCRIBE_PROFILE = "media_describe"
 
 
+_HASH_METHODS = ("phash", "dhash", "ahash")
+
+
+@dataclass
+class DedupeOptions:
+    limit: int | None = None
+    max_distance: int = 5
+    method: str = "phash"
+
+
 @dataclass
 class DescribeOptions:
     limit: int | None = None
@@ -182,6 +192,162 @@ def inspect_folder_to_catalog(path: Path, options: InspectOptions) -> dict[str, 
 
 class _BackendMissing(Exception):
     """Raised when an optional extraction backend is not installed."""
+
+
+# --------------------------------------------------------------------------- #
+# Dedupe (perceptual hashing)
+# --------------------------------------------------------------------------- #
+
+
+def dedupe_folder_to_catalog(path: Path, options: DedupeOptions) -> dict[str, Any]:
+    """Find near-duplicate image candidates via perceptual hashing.
+
+    Deterministic and model-free: hashes each image's pixels and writes pairs
+    within ``max_distance`` Hamming distance to ``media_dedupe_candidates`` for
+    review. Sources are read in place, never modified.
+    """
+
+    if options.method not in _HASH_METHODS:
+        return {
+            "status": "failed",
+            "error_kind": "unknown_hash_method",
+            "method": options.method,
+        }
+
+    catalog_state = ensure_catalog()
+    if catalog_state["status"] not in {"created", "current"}:
+        return {
+            "status": "failed",
+            "error_kind": "catalog_not_ready",
+            "catalog_status": catalog_state["status"],
+        }
+
+    image_module = _load_pillow()
+    imagehash = _load_imagehash()
+    if image_module is None or imagehash is None:
+        return {
+            "status": "failed",
+            "error_kind": "hash_backend_missing",
+            "message": "Install the media extra (run uv sync) to dedupe images.",
+        }
+
+    scan_result = scan_folder_to_catalog(
+        path,
+        ScanOptions(max_files=None, max_bytes=None, max_depth=None),
+    )
+    if scan_result["status"] != "ok":
+        return {
+            "status": scan_result["status"],
+            "error_kind": "auto_scan_failed",
+            "scan_result": scan_result,
+        }
+
+    root_id = scan_result["root_id"]
+    items = [
+        item
+        for item in _media_items_for_root(root_id, None)
+        if item["media_class"] == "image"
+    ]
+    if options.limit is not None:
+        items = items[: options.limit]
+
+    now = _iso(_utc_now())
+    hash_func = _hash_func(imagehash, options.method)
+    counts = {
+        "images_planned": len(items),
+        "images_hashed": 0,
+        "candidates_written": 0,
+        "images_failed": 0,
+    }
+    failures: list[dict[str, Any]] = []
+    hashed: list[tuple[str, Any]] = []
+
+    with sqlite3.connect(catalog_path()) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        for item in items:
+            try:
+                with image_module.open(Path(item["source_uri"])) as image:
+                    fingerprint = hash_func(image)
+                asset_id = _asset_id(item)
+                _ensure_media_asset(conn, asset_id, item, now)
+                hashed.append((asset_id, fingerprint))
+                counts["images_hashed"] += 1
+            except Exception as exc:  # noqa: BLE001 - per-image boundary.
+                counts["images_failed"] += 1
+                failures.append(
+                    {
+                        "relative_path": item["relative_path"],
+                        "error_kind": "hash_failed",
+                        "redacted_detail": exc.__class__.__name__,
+                    }
+                )
+
+        for i in range(len(hashed)):
+            for j in range(i + 1, len(hashed)):
+                distance = int(hashed[i][1] - hashed[j][1])
+                if distance <= options.max_distance:
+                    _write_dedupe_candidate(
+                        conn,
+                        hashed[i][0],
+                        hashed[j][0],
+                        options.method,
+                        distance,
+                        now,
+                    )
+                    counts["candidates_written"] += 1
+        conn.commit()
+
+    status = "ok" if counts["images_failed"] == 0 else (
+        "partial" if counts["images_hashed"] > 0 else "failed"
+    )
+    return {
+        "status": status,
+        "method": options.method,
+        "max_distance": options.max_distance,
+        "root_id": root_id,
+        "root_label": scan_result.get("root_label"),
+        "scope_id": scan_result.get("scope_id"),
+        "counts": counts,
+        "failures": failures,
+    }
+
+
+def _hash_func(imagehash: Any, method: str) -> Any:
+    return {
+        "phash": imagehash.phash,
+        "dhash": imagehash.dhash,
+        "ahash": imagehash.average_hash,
+    }[method]
+
+
+def _write_dedupe_candidate(
+    conn: sqlite3.Connection,
+    asset_a: str,
+    asset_b: str,
+    method: str,
+    distance: int,
+    now: str,
+) -> None:
+    first, second = sorted((asset_a, asset_b))
+    candidate_id = _stable_id("dup", first, second, method)
+    conn.execute(
+        """
+        INSERT INTO "media_dedupe_candidates"
+        (candidate_id, asset_id_a, asset_id_b, method, distance, attrs_json)
+        VALUES (?, ?, ?, ?, ?, NULL)
+        ON CONFLICT(candidate_id) DO UPDATE SET
+            distance = excluded.distance
+        """,
+        (candidate_id, first, second, method, distance),
+    )
+
+
+def _load_imagehash() -> Any | None:
+    try:
+        import imagehash  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return None
+    return imagehash
 
 
 # --------------------------------------------------------------------------- #

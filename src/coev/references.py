@@ -27,12 +27,15 @@ def attach_hit_refs(payload: dict[str, Any]) -> dict[str, Any]:
     """Add a canonical ``ref`` to every hit in a search result payload.
 
     A search hit's evidence row is its normalized document object, so the
-    reference points at ``corpus_cache.document_objects.<object_id>``. Hits with
-    no object id get a null ref rather than a fabricated one. Mutates and returns
-    the payload.
+    reference points at ``corpus_cache.document_objects.<object_id>``. Hits that
+    already carry a ``ref`` (for example media hits pointing at ``media_assets``)
+    keep it; hits with no object id and no ref get a null ref rather than a
+    fabricated one. Mutates and returns the payload.
     """
 
     for hit in payload.get("hits", []):
+        if hit.get("ref"):
+            continue
         object_id = hit.get("object_id")
         hit["ref"] = evidence_ref("document_objects", object_id) if object_id else None
     return payload

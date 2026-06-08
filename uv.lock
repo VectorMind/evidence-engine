@@ -250,6 +250,10 @@ fts = [
 heavy-embeddings = [
     { name = "sentence-transformers" },
 ]
+image-search = [
+    { name = "torch" },
+    { name = "transformers" },
+]
 laptop = [
     { name = "docling" },
     { name = "fastembed" },
@@ -316,10 +320,12 @@ requires-dist = [
     { name = "rich" },
     { name = "sentence-transformers", marker = "extra == 'heavy-embeddings'" },
     { name = "tantivy", marker = "extra == 'fts'" },
+    { name = "torch", marker = "extra == 'image-search'" },
+    { name = "transformers", marker = "extra == 'image-search'" },
     { name = "typer" },
     { name = "zstandard" },
 ]
-provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "media", "laptop", "station", "all"]
+provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "media", "image-search", "laptop", "station", "all"]
 
 [package.metadata.requires-dev]
 dev = [

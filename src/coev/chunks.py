@@ -9,6 +9,7 @@ import sqlite3
 from typing import Any
 
 from coev.paths import catalog_path
+from coev.references import evidence_ref
 
 
 def chunks_for_root(
@@ -56,6 +57,8 @@ def chunks_for_root(
                 "chunk_id": chunk_id,
                 "doc_id": doc_id,
                 "object_id": object_id,
+                "asset_id": "",
+                "ref": evidence_ref("document_objects", object_id),
                 "scope_id": scope_id,
                 "chunk_profile": chunk_profile,
                 "content_type": content_type(object_type),
@@ -66,6 +69,74 @@ def chunks_for_root(
                 "body": text,
                 "metadata_json": json.dumps(metadata, sort_keys=True),
                 "source_sha256": row[11],
+            }
+        )
+    return chunks
+
+
+def media_chunks_for_root(
+    *, root_id: str, scope_id: str, chunk_profile: str
+) -> list[dict[str, Any]]:
+    """Text chunks for media assets: caption, media-kind, and filename text.
+
+    Lets media participate in `search text` / `semantic` / `hybrid` without an
+    image model. Each chunk references its media asset, not a document object.
+    """
+
+    sql = """
+        SELECT a.asset_id, si.source_item_id, si.relative_path, sr.root_label,
+               si.media_type, si.source_sha256,
+               cap.value_text AS caption, knd.value_text AS media_kind
+        FROM "media_assets" a
+        JOIN "source_items" si ON si.source_item_id = a.source_item_id
+        JOIN "source_roots" sr ON sr.root_id = si.root_id
+        LEFT JOIN "media_observations" cap
+            ON cap.asset_id = a.asset_id AND cap.observation_kind = 'caption'
+        LEFT JOIN "media_observations" knd
+            ON knd.asset_id = a.asset_id AND knd.observation_kind = 'media_kind'
+        WHERE si.root_id = ?
+          AND si.inventory_status IN ('current', 'unchanged', 'changed')
+        ORDER BY si.relative_path, a.asset_id
+    """
+    with sqlite3.connect(catalog_path()) as conn:
+        rows = conn.execute(sql, (root_id,)).fetchall()
+
+    chunks: list[dict[str, Any]] = []
+    for row in rows:
+        asset_id = row[0]
+        relative_path = row[2]
+        caption = row[6]
+        media_kind = row[7]
+        stem = Path(relative_path).stem.replace("_", " ").replace("-", " ")
+        body_parts = [part for part in (caption, media_kind, stem) if part]
+        body = " ".join(" ".join(str(part).split()) for part in body_parts)
+        if not body:
+            continue
+        metadata = {
+            "root_id": root_id,
+            "root_label": row[3],
+            "source_item_id": row[1],
+            "relative_path": relative_path,
+            "media_type": row[4],
+        }
+        chunk_id = stable_id("mchunk", scope_id, asset_id, chunk_profile)
+        chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "doc_id": asset_id,
+                "object_id": "",
+                "asset_id": asset_id,
+                "ref": evidence_ref("media_assets", asset_id),
+                "scope_id": scope_id,
+                "chunk_profile": chunk_profile,
+                "content_type": "media_caption" if caption else "media_metadata",
+                "page_start": None,
+                "page_end": None,
+                "title": Path(relative_path).stem,
+                "heading_path": "",
+                "body": body,
+                "metadata_json": json.dumps(metadata, sort_keys=True),
+                "source_sha256": row[5],
             }
         )
     return chunks

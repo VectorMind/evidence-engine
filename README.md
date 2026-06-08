@@ -76,6 +76,8 @@ Implemented today:
 - media-aware source inventory through `sources scan` (documents, images, video, audio, 3D);
 - Docling parsing through `docs parse`;
 - deterministic image, video, and 3D (OBJ/STL) metadata through `media inspect`;
+- visual search (image→image and text→image) via SigLIP 2 image embeddings;
+- media captions/metadata indexed into text/semantic search so media is findable by words;
 - text, semantic, and hybrid search/index plumbing;
 - JSON-first command stdout;
 - persisted result JSON, events, summaries, and optional HTML reports.
@@ -86,7 +88,8 @@ The repository and brand are `corpus-evidence`. The package name is
 `coev`; the console script is `coev`. Branding and the
 CLI/package identity are intentionally separate.
 
-Optional dependency groups are defined in [pyproject.toml](./pyproject.toml):
+Optional dependency groups are defined in [pyproject.toml](./pyproject.toml).
+Plain `uv sync` installs the `laptop` stack by default.
 
 | Extra | Purpose |
 | --- | --- |
@@ -95,7 +98,11 @@ Optional dependency groups are defined in [pyproject.toml](./pyproject.toml):
 | `semantic` | Vector store, PyArrow, and NumPy. |
 | `embeddings` | FastEmbed local embeddings. |
 | `heavy-embeddings` | SentenceTransformers local embeddings. |
-| `all` | Practical full local stack. |
+| `media` | Image/video/3D metadata, thumbnails, perceptual hashing. |
+| `image-search` | SigLIP 2 image embeddings for visual search. |
+| `laptop` | Full local CPU stack (docling + fts + semantic + embeddings + media). Installed by default `uv sync`. |
+| `station` | `laptop` plus heavier models (SentenceTransformers). |
+| `all` | Alias of `station`. |
 
 ## Workspace Storage
 
@@ -135,12 +142,14 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `docs` | `parse <path>` | `path` | Auto-scan and parse documents through Docling. |
 | `media` | `inspect <path>` | `path` | Extract image metadata (size, EXIF, GPS) and thumbnails into the catalog. |
 | `media` | `describe <path>` | `path` | Shallow VLM captions (and optional `--kind`) via a local Ollama model. Opt-in, read-only. |
-| `media` | `dedupe <path>` | `path` | *(planned)* Near-duplicate media candidate pairs from perceptual hashing. |
+| `media` | `dedupe <path>` | `path` | Near-duplicate image candidate pairs via perceptual hashing (no model). |
 | `index` | `scope <path>` | `path` | Build or refresh the text index for a source scope. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
+| `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images (needs `image-search` extra). |
 | `search` | `text <query>` | `query` | Search current text indexes. |
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
+| `search` | `image <image-path>` | `image-path` | Visual search: image→image (or `--text` for text→image) over image embeddings. |
 
 Minimal examples:
 
@@ -174,10 +183,12 @@ store), video (container, codecs, resolution, duration, frame rate, bit rate),
 and 3D models (vertex/face counts and bounding box for OBJ and STL). It runs no
 model. The model-based `describe`/`dedupe` commands follow in later slices.
 
-`index scope` builds the text index from current parsed document objects. It
-auto-scans the source path but does not silently parse/OCR missing documents.
-Run `docs parse` first when no parsed objects exist. Add `--semantic` to build
-the semantic index.
+`index scope` builds the text index from current parsed document objects **and
+media text** (captions, media-kind, and filenames), so media shows up in
+`search text`, `semantic`, and `hybrid` alongside documents. It auto-scans the
+source path but does not silently parse/OCR missing documents. Run `docs parse`
+and/or `media inspect`/`describe` first. Add `--semantic` for the semantic
+index or `--image` for the image-embedding store.
 
 `search text`, `search semantic`, and `search hybrid` are the public search
 surface. Higher layers should not know which physical search engine backs

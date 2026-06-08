@@ -49,6 +49,12 @@ media = [
   "imagehash",     # perceptual hashing for dedupe candidates
   "pymediainfo",   # video/audio container + stream metadata
 ]
+# Visual search (SigLIP 2 image embeddings). torch/transformers are already
+# pulled transitively by docling, but declared here so the feature is explicit.
+image-search = [
+  "transformers",
+  "torch",
+]
 
 # Default working profile: the full local CPU stack a laptop needs.
 laptop = [
