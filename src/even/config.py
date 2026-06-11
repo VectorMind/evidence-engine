@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from coev.contracts import read_contract_text
+from even.contracts import read_contract_text
 
 
 def load_parser_config() -> dict[str, Any]:

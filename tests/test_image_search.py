@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from coev.cli import main
+from even.cli import main
 
 
 class _FakeEmbedder:
@@ -32,7 +32,7 @@ def test_index_and_search_image_round_trip(
     pytest.importorskip("lancedb")
 
     monkeypatch.setattr(
-        "coev.image_index._load_embedder", lambda profile: _FakeEmbedder()
+        "even.image_index._load_embedder", lambda profile: _FakeEmbedder()
     )
 
     monkeypatch.chdir(tmp_path)

@@ -20,12 +20,12 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from coev.catalog import ensure_catalog
-from coev.inventory import ScanOptions, scan_folder_to_catalog
-from coev.media import _ensure_media_asset
-from coev.paths import catalog_path, workspace_root
-from coev.references import evidence_ref
-from coev.semantic import _quiet_output
+from even.catalog import ensure_catalog
+from even.inventory import ScanOptions, scan_folder_to_catalog
+from even.media import _ensure_media_asset
+from even.paths import catalog_path, workspace_root
+from even.references import evidence_ref
+from even.semantic import _quiet_output
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")

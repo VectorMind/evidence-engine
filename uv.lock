@@ -212,129 +212,6 @@ wheels = [
 ]
 
 [[package]]
-name = "coev"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "orjson" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "typer" },
-    { name = "zstandard" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "docling" },
-    { name = "fastembed" },
-    { name = "imagehash" },
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "pillow-heif" },
-    { name = "pyarrow" },
-    { name = "pymediainfo" },
-    { name = "sentence-transformers" },
-    { name = "tantivy" },
-]
-docling = [
-    { name = "docling" },
-]
-embeddings = [
-    { name = "fastembed" },
-]
-fts = [
-    { name = "tantivy" },
-]
-heavy-embeddings = [
-    { name = "sentence-transformers" },
-]
-image-search = [
-    { name = "torch" },
-    { name = "transformers" },
-]
-laptop = [
-    { name = "docling" },
-    { name = "fastembed" },
-    { name = "imagehash" },
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "pillow-heif" },
-    { name = "pyarrow" },
-    { name = "pymediainfo" },
-    { name = "tantivy" },
-]
-media = [
-    { name = "imagehash" },
-    { name = "pillow" },
-    { name = "pillow-heif" },
-    { name = "pymediainfo" },
-]
-semantic = [
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pyarrow" },
-]
-station = [
-    { name = "docling" },
-    { name = "fastembed" },
-    { name = "imagehash" },
-    { name = "lancedb" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "pillow-heif" },
-    { name = "pyarrow" },
-    { name = "pymediainfo" },
-    { name = "sentence-transformers" },
-    { name = "tantivy" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
-laptop = [
-    { name = "coev", extra = ["laptop"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "coev", extras = ["docling", "fts", "semantic", "embeddings", "media"], marker = "extra == 'laptop'" },
-    { name = "coev", extras = ["laptop", "heavy-embeddings"], marker = "extra == 'station'" },
-    { name = "coev", extras = ["station"], marker = "extra == 'all'" },
-    { name = "docling", marker = "extra == 'docling'" },
-    { name = "fastembed", marker = "extra == 'embeddings'" },
-    { name = "imagehash", marker = "extra == 'media'" },
-    { name = "lancedb", marker = "extra == 'semantic'" },
-    { name = "numpy", marker = "extra == 'semantic'" },
-    { name = "orjson" },
-    { name = "pillow", marker = "extra == 'media'" },
-    { name = "pillow-heif", marker = "extra == 'media'" },
-    { name = "pyarrow", marker = "extra == 'semantic'" },
-    { name = "pydantic" },
-    { name = "pymediainfo", marker = "extra == 'media'" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "sentence-transformers", marker = "extra == 'heavy-embeddings'" },
-    { name = "tantivy", marker = "extra == 'fts'" },
-    { name = "torch", marker = "extra == 'image-search'" },
-    { name = "transformers", marker = "extra == 'image-search'" },
-    { name = "typer" },
-    { name = "zstandard" },
-]
-provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "media", "image-search", "laptop", "station", "all"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
-laptop = [{ name = "coev", extras = ["laptop"] }]
-
-[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -612,6 +489,129 @@ sdist = { url = "https://files.pythonhosted.org/packages/d3/38/af70d7ab1ae9d4da4
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", hash = "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa", size = 18059, upload-time = "2024-10-25T17:25:39.051Z" },
 ]
+
+[[package]]
+name = "even"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "orjson" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+    { name = "zstandard" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "imagehash" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pillow-heif" },
+    { name = "pyarrow" },
+    { name = "pymediainfo" },
+    { name = "sentence-transformers" },
+    { name = "tantivy" },
+]
+docling = [
+    { name = "docling" },
+]
+embeddings = [
+    { name = "fastembed" },
+]
+fts = [
+    { name = "tantivy" },
+]
+heavy-embeddings = [
+    { name = "sentence-transformers" },
+]
+image-search = [
+    { name = "torch" },
+    { name = "transformers" },
+]
+laptop = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "imagehash" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pillow-heif" },
+    { name = "pyarrow" },
+    { name = "pymediainfo" },
+    { name = "tantivy" },
+]
+media = [
+    { name = "imagehash" },
+    { name = "pillow" },
+    { name = "pillow-heif" },
+    { name = "pymediainfo" },
+]
+semantic = [
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+]
+station = [
+    { name = "docling" },
+    { name = "fastembed" },
+    { name = "imagehash" },
+    { name = "lancedb" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pillow-heif" },
+    { name = "pyarrow" },
+    { name = "pymediainfo" },
+    { name = "sentence-transformers" },
+    { name = "tantivy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+laptop = [
+    { name = "even", extra = ["laptop"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docling", marker = "extra == 'docling'" },
+    { name = "even", extras = ["docling", "fts", "semantic", "embeddings", "media"], marker = "extra == 'laptop'" },
+    { name = "even", extras = ["laptop", "heavy-embeddings"], marker = "extra == 'station'" },
+    { name = "even", extras = ["station"], marker = "extra == 'all'" },
+    { name = "fastembed", marker = "extra == 'embeddings'" },
+    { name = "imagehash", marker = "extra == 'media'" },
+    { name = "lancedb", marker = "extra == 'semantic'" },
+    { name = "numpy", marker = "extra == 'semantic'" },
+    { name = "orjson" },
+    { name = "pillow", marker = "extra == 'media'" },
+    { name = "pillow-heif", marker = "extra == 'media'" },
+    { name = "pyarrow", marker = "extra == 'semantic'" },
+    { name = "pydantic" },
+    { name = "pymediainfo", marker = "extra == 'media'" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "sentence-transformers", marker = "extra == 'heavy-embeddings'" },
+    { name = "tantivy", marker = "extra == 'fts'" },
+    { name = "torch", marker = "extra == 'image-search'" },
+    { name = "transformers", marker = "extra == 'image-search'" },
+    { name = "typer" },
+    { name = "zstandard" },
+]
+provides-extras = ["docling", "fts", "semantic", "embeddings", "heavy-embeddings", "media", "image-search", "laptop", "station", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+]
+laptop = [{ name = "even", extras = ["laptop"] }]
 
 [[package]]
 name = "faker"

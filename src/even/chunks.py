@@ -8,8 +8,8 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from coev.paths import catalog_path
-from coev.references import evidence_ref
+from even.paths import catalog_path
+from even.references import evidence_ref
 
 
 def chunks_for_root(

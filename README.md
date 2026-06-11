@@ -1,8 +1,8 @@
-# corpus-evidence
+# Evidence Engine
 
 Reusable local evidence engine for document and generic media workflows.
 
-`corpus-evidence` owns the public mechanics for source inventory, document
+Evidence Engine owns the public mechanics for source inventory, document
 parsing, generated artifacts, SQLite catalog state, text search, semantic
 search, hybrid search, command result files, and provenance-rich evidence
 references. Private workspaces consume this open local data; they do not
@@ -11,7 +11,7 @@ reimplement lower extraction or search internals.
 The name reflects the layering: a *corpus* of mixed local files, turned into
 provenance-backed *evidence*, exposed as a lower *stack* layer that private
 knowledge workspaces build on top of. The installable package and console
-script remain `coev` (see [Install Shape](#install-shape)).
+script remain `even` (see [Install Shape](#install-shape)).
 
 ## Layered Architecture
 
@@ -27,7 +27,7 @@ added on the way up, never assumed at the bottom:
 1  Source authority      [ folders · OneDrive · archives · connectors ]      ▼ evidence
 ```
 
-`coev` **produces layers 2–3** from the layer-1 sources. **Layers 4–5 are
+`even` **produces layers 2–3** from the layer-1 sources. **Layers 4–5 are
 written by workspaces on top** (`private-documents`, `private-media`). There are
 **no access boundaries**: every layer is open data the layer above reads
 directly, plus one search API. The dependency direction is one-way — upper
@@ -70,8 +70,8 @@ workspace state may be wiped and rebuilt while the public contract settles.
 
 Implemented today:
 
-- package and CLI entrypoint named `coev`;
-- workspace-local storage under `.cache/coev/`;
+- package and CLI entrypoint named `even`;
+- workspace-local storage under `.cache/even/`;
 - SQLite catalog create/status/wipe;
 - media-aware source inventory through `sources scan` (documents, images, video, audio, 3D);
 - Docling parsing through `docs parse`;
@@ -84,9 +84,8 @@ Implemented today:
 
 ## Install Shape
 
-The repository and brand are `corpus-evidence`. The package name is
-`coev`; the console script is `coev`. Branding and the
-CLI/package identity are intentionally separate.
+The brand is **Evidence Engine**. The package name is
+`even`; the console script is `even` (ev-idence en-gine).
 
 Optional dependency groups are defined in [pyproject.toml](./pyproject.toml).
 Plain `uv sync` installs the `laptop` stack by default.
@@ -109,7 +108,7 @@ Plain `uv sync` installs the `laptop` stack by default.
 Generated data is written under the caller workspace:
 
 ```text
-.cache/coev/
+.cache/even/
   catalog/catalog.sqlite
   blobs/
   fts/
@@ -123,7 +122,7 @@ This avoids one shared home-cache result/report tree. Real generated data is
 private even when the code and schema files are public.
 
 There is no V1 migration contract for old beta catalogs. Use
-`coev catalog wipe` and rebuild when the schema changes during
+`even catalog wipe` and rebuild when the schema changes during
 this phase.
 
 ## CLI Surface
@@ -154,17 +153,17 @@ Commands return JSON on stdout. Commands that perform larger work also write
 Minimal examples:
 
 ```powershell
-coev catalog create
-coev catalog status
-coev health
-coev sources scan "C:\docs\example-folder"
-coev docs parse "C:\docs\example-folder"
-coev media inspect "C:\docs\example-folder"
-coev index scope "C:\docs\example-folder"
-coev index scope "C:\docs\example-folder" --semantic
-coev search text "contract renewal clause"
-coev search semantic "contract renewal clause"
-coev search hybrid "contract renewal clause"
+even catalog create
+even catalog status
+even health
+even sources scan "C:\docs\example-folder"
+even docs parse "C:\docs\example-folder"
+even media inspect "C:\docs\example-folder"
+even index scope "C:\docs\example-folder"
+even index scope "C:\docs\example-folder" --semantic
+even search text "contract renewal clause"
+even search semantic "contract renewal clause"
+even search hybrid "contract renewal clause"
 ```
 
 `sources scan` accepts optional safeguard overrides when a caller needs to
@@ -201,7 +200,7 @@ The public contract is open local data plus search access:
 | Surface | Purpose |
 | --- | --- |
 | [catalog.yaml](./catalog.yaml) | Current-state SQLite schema. |
-| `.cache/coev/catalog/catalog.sqlite` | Readable local catalog database. |
+| `.cache/even/catalog/catalog.sqlite` | Readable local catalog database. |
 | [store_templates.yaml](./store_templates.yaml) | Generated text/semantic row templates. |
 | [config/exposures.yaml](./config/exposures.yaml) | Workspace storage layout. |
 | [config/parser.yaml](./config/parser.yaml) | Parser, traversal, indexing, and safeguard defaults. |

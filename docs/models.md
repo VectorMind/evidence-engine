@@ -81,7 +81,7 @@ default to cap memory and keep OCR-grade text legible.
   in the SQLite catalog.
 - Default parse profile: `docling_ocr`. Default embedding profile:
   `fastembed_bge_small_en_v1_5`. Default reranker: none.
-- Weights cache under `.cache/coev/models/` (FastEmbed) or the library's
+- Weights cache under `.cache/even/models/` (FastEmbed) or the library's
   own Hugging Face / Docling / Ollama cache.
 - The CLI reports missing large models rather than downloading them implicitly.
 

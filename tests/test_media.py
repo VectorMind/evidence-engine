@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from coev.cli import main
-from coev.media import _model3d_fields_obj, _model3d_fields_stl, _video_fields
-from coev.paths import catalog_path
+from even.cli import main
+from even.media import _model3d_fields_obj, _model3d_fields_stl, _video_fields
+from even.paths import catalog_path
 
 
 def test_model3d_obj_fields_counts_and_bbox() -> None:
@@ -95,7 +95,7 @@ def test_media_describe_writes_observations(
 ) -> None:
     pil = pytest.importorskip("PIL.Image")
 
-    monkeypatch.setattr("coev.media.ollama_available", lambda url, **kw: True)
+    monkeypatch.setattr("even.media.ollama_available", lambda url, **kw: True)
 
     calls = {"n": 0}
 
@@ -104,7 +104,7 @@ def test_media_describe_writes_observations(
         text = "a small red square" if "Describe" in prompt else "illustration"
         return {"text": text, "elapsed_ms": 12.0}
 
-    monkeypatch.setattr("coev.media.generate_from_image", fake_generate)
+    monkeypatch.setattr("even.media.generate_from_image", fake_generate)
 
     monkeypatch.chdir(tmp_path)
     data = tmp_path / "data"

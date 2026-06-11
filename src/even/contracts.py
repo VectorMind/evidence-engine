@@ -18,6 +18,6 @@ def read_contract_text(relative_path: str) -> str:
         return source_path.read_text(encoding="utf-8")
 
     package_path = "contracts/" + relative_path.replace("\\", "/")
-    return resources.files("coev").joinpath(package_path).read_text(
+    return resources.files("even").joinpath(package_path).read_text(
         encoding="utf-8"
     )

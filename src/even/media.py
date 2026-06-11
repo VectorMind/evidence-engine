@@ -23,11 +23,11 @@ import sqlite3
 import struct
 from typing import Any
 
-from coev.blobs import store_artifact_blob
-from coev.catalog import ensure_catalog
-from coev.inventory import ScanOptions, scan_folder_to_catalog
-from coev.ollama import DEFAULT_MODEL, DEFAULT_URL, generate_from_image, ollama_available
-from coev.paths import catalog_path
+from even.blobs import store_artifact_blob
+from even.catalog import ensure_catalog
+from even.inventory import ScanOptions, scan_folder_to_catalog
+from even.ollama import DEFAULT_MODEL, DEFAULT_URL, generate_from_image, ollama_available
+from even.paths import catalog_path
 
 IMAGE_MEDIA_TYPES = {
     "image/jpeg",

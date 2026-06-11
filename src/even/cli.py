@@ -1,4 +1,4 @@
-"""Minimal coev command surface.
+"""Minimal even command surface.
 
 The first scaffold intentionally uses only the Python standard library so the
 binding command shape can be tested before heavy optional dependencies are
@@ -16,18 +16,18 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from coev import __version__
-from coev.catalog import catalog_status_report, create_catalog, wipe_catalog
-from coev.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
-from coev.hybrid import HybridSearchOptions, search_hybrid_indexes
-from coev.image_index import (
+from even import __version__
+from even.catalog import catalog_status_report, create_catalog, wipe_catalog
+from even.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
+from even.hybrid import HybridSearchOptions, search_hybrid_indexes
+from even.image_index import (
     ImageIndexOptions,
     ImageSearchOptions,
     index_scope_to_image,
     search_image_stores,
 )
-from coev.inventory import ScanOptions, scan_folder_to_catalog
-from coev.media import (
+from even.inventory import ScanOptions, scan_folder_to_catalog
+from even.media import (
     DedupeOptions,
     DescribeOptions,
     InspectOptions,
@@ -35,11 +35,11 @@ from coev.media import (
     describe_folder_to_catalog,
     inspect_folder_to_catalog,
 )
-from coev.parse import ParseOptions, parse_folder_to_catalog
-from coev.paths import catalog_path, reports_root, results_root, workspace_root
-from coev.references import attach_hit_refs
-from coev.results import CommandRun
-from coev.semantic import (
+from even.parse import ParseOptions, parse_folder_to_catalog
+from even.paths import catalog_path, reports_root, results_root, workspace_root
+from even.references import attach_hit_refs
+from even.results import CommandRun
+from even.semantic import (
     SemanticIndexOptions,
     SemanticSearchOptions,
     index_scope_to_semantic,
@@ -496,7 +496,7 @@ def search_image(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="coev",
+        prog="even",
         description="Local evidence engine for documents and generic media.",
     )
     parser.set_defaults(handler=None)

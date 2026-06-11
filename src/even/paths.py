@@ -1,20 +1,20 @@
-"""Shared filesystem locations for coev."""
+"""Shared filesystem locations for even."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 
-WORKSPACE_DIR_NAME = ".cache/coev"
+WORKSPACE_DIR_NAME = ".cache/even"
 
 
 def workspace_root() -> Path:
-    """Return the coev storage root for the current working directory.
+    """Return the even storage root for the current working directory.
 
     Resolved relative to the caller's current directory, so the same
-    ``.cache/coev`` convention applies whether coev is invoked from the user
-    home (``~/.cache/coev``) or from inside a project folder
-    (``<folder>/.cache/coev``).
+    ``.cache/even`` convention applies whether even is invoked from the user
+    home (``~/.cache/even``) or from inside a project folder
+    (``<folder>/.cache/even``).
     """
 
     return Path.cwd() / WORKSPACE_DIR_NAME

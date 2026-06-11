@@ -10,8 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from coev.fts import SearchOptions, search_text_indexes
-from coev.semantic import SemanticSearchOptions, search_semantic_indexes
+from even.fts import SearchOptions, search_text_indexes
+from even.semantic import SemanticSearchOptions, search_semantic_indexes
 
 
 @dataclass(frozen=True)

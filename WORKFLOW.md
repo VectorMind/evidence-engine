@@ -24,7 +24,7 @@ copy, move, rename, edit, or write to a source file or its folder. Pointing a
 command at a source location is for reading only.
 
 The only outputs are **derived** artifacts under the workspace cache
-(`.cache/coev/`): metadata rows, thumbnails/previews, embeddings, indexes, and
+(`.cache/even/`): metadata rows, thumbnails/previews, embeddings, indexes, and
 result files. Generating a small thumbnail from a source is fine; duplicating
 the source is not — copies waste storage and break the read-only contract. When
 a test needs sample media, read it in place from the user-provided path; do not
@@ -79,6 +79,11 @@ plans/YYYY-MM-DD-<slug>/
 Add `survey.md` before `plan.md` when the work needs local inventory, upstream
 research, tradeoff review, or a decision record before scope is shaped.
 
+Two index files at the top of `plans/` track packet status: `closed.md` lists
+completed packets with their proof, and `open.md` lists packets with work still
+outstanding. Update these tables whenever a plan is finished or started so the
+current state of all plans is visible at a glance.
+
 ## Plan Shape
 
 `plan.md` must stay focused on the work package. It should contain:
@@ -130,7 +135,7 @@ checks instead of runtime proof.
 
 ## Scope Ownership
 
-`coev` owns reusable CLI implementation for manager repositories and
+`even` owns reusable CLI implementation for manager repositories and
 central skills. Central skills may wrap these commands and manage dependency
 installation, but they do not own the SQL catalog, FTS indexing, semantic
 indexing, search routing, schema migrations, or lower-index health behavior.

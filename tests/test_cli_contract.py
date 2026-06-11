@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from coev.cli import build_parser, main
-from coev.paths import catalog_path, workspace_root
+from even.cli import build_parser, main
+from even.paths import catalog_path, workspace_root
 
 
 def test_parser_uses_new_sources_scan_surface() -> None:
@@ -38,7 +38,7 @@ def test_health_outputs_json_for_workspace(monkeypatch: pytest.MonkeyPatch, tmp_
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"] == "health"
-    assert payload["workspace_root"] == str(tmp_path / ".cache" / "coev")
+    assert payload["workspace_root"] == str(tmp_path / ".cache" / "even")
     assert "cache_root" not in payload
 
 
@@ -92,8 +92,8 @@ def test_sources_scan_is_media_aware(
 def test_parse_selection_excludes_media_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from coev.inventory import ScanOptions, scan_folder_to_catalog
-    from coev.parse import _source_items_for_root
+    from even.inventory import ScanOptions, scan_folder_to_catalog
+    from even.parse import _source_items_for_root
 
     monkeypatch.chdir(tmp_path)
     data = tmp_path / "data"

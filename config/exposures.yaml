@@ -6,13 +6,13 @@ description: >
   These settings are configuration, not SQLite catalog tables.
 
 workspace_storage_root:
-  path_template: ".cache/coev"
+  path_template: ".cache/even"
   configurable: false
   description: >
-    The generated storage root is the .cache/coev folder relative to the
+    The generated storage root is the .cache/even folder relative to the
     caller's current directory. The same convention resolves to the user home
-    cache (~/.cache/coev) or a project-local cache (<folder>/.cache/coev)
-    depending on where coev is invoked.
+    cache (~/.cache/even) or a project-local cache (<folder>/.cache/even)
+    depending on where even is invoked.
 
 exposure_kinds:
   - name: sqlite

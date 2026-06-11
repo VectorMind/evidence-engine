@@ -12,9 +12,9 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from coev.catalog import ensure_catalog
-from coev.config import load_parser_config
-from coev.paths import catalog_path
+from even.catalog import ensure_catalog
+from even.config import load_parser_config
+from even.paths import catalog_path
 
 
 @dataclass(frozen=True)

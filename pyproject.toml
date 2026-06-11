@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "coev"
+name = "even"
 version = "0.1.0"
 description = "Reusable local evidence engine for documents and generic media."
 readme = "README.md"
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-coev = "coev.cli:main"
+even = "even.cli:main"
 
 # Granular building blocks. Compose these, or use the laptop/station bundles.
 [project.optional-dependencies]
@@ -58,18 +58,18 @@ image-search = [
 
 # Default working profile: the full local CPU stack a laptop needs.
 laptop = [
-  "coev[docling,fts,semantic,embeddings,media]",
+  "even[docling,fts,semantic,embeddings,media]",
 ]
 
 # Station adds heavier local models on top of the laptop stack.
 # GPU runtimes and local VLM (Transformers) deps get added here later.
 station = [
-  "coev[laptop,heavy-embeddings]",
+  "even[laptop,heavy-embeddings]",
 ]
 
 # Alias kept for convenience; equals the station stack.
 all = [
-  "coev[station]",
+  "even[station]",
 ]
 
 [dependency-groups]
@@ -80,7 +80,7 @@ dev = [
 # Materializes the `laptop` extra so plain `uv sync` installs the full local
 # stack. Kept in sync automatically by referencing the extra, not re-listing it.
 laptop = [
-  "coev[laptop]",
+  "even[laptop]",
 ]
 
 [tool.uv]
@@ -90,14 +90,14 @@ laptop = [
 default-groups = ["dev", "laptop"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/coev"]
+packages = ["src/even"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"catalog.yaml" = "coev/contracts/catalog.yaml"
-"config/embeddings.yaml" = "coev/contracts/config/embeddings.yaml"
-"config/exposures.yaml" = "coev/contracts/config/exposures.yaml"
-"config/parser.yaml" = "coev/contracts/config/parser.yaml"
-"store_templates.yaml" = "coev/contracts/store_templates.yaml"
+"catalog.yaml" = "even/contracts/catalog.yaml"
+"config/embeddings.yaml" = "even/contracts/config/embeddings.yaml"
+"config/exposures.yaml" = "even/contracts/config/exposures.yaml"
+"config/parser.yaml" = "even/contracts/config/parser.yaml"
+"store_templates.yaml" = "even/contracts/store_templates.yaml"
 
 [tool.ruff]
 line-length = 88

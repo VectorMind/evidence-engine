@@ -9,8 +9,8 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from coev.config import load_parser_config
-from coev.paths import workspace_root
+from even.config import load_parser_config
+from even.paths import workspace_root
 
 
 def store_artifact_blob(

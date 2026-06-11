@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from coev.references import attach_hit_refs, evidence_ref
+from even.references import attach_hit_refs, evidence_ref
 
 
 def test_evidence_ref_builds_dataset_table_row_coordinate() -> None:

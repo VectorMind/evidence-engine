@@ -10,17 +10,17 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from coev.catalog import ensure_catalog
-from coev.chunks import (
+from even.catalog import ensure_catalog
+from even.chunks import (
     chunks_for_root,
     document_count,
     high_watermark,
     media_chunks_for_root,
     stable_id,
 )
-from coev.config import load_parser_config
-from coev.inventory import ScanOptions, scan_folder_to_catalog
-from coev.paths import catalog_path, workspace_root
+from even.config import load_parser_config
+from even.inventory import ScanOptions, scan_folder_to_catalog
+from even.paths import catalog_path, workspace_root
 
 
 @dataclass(frozen=True)

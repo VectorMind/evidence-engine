@@ -1,10 +1,10 @@
-# Specification: corpus-evidence Evidence Engine
+# Specification: Evidence Engine
 
 ## Purpose
 
-`corpus-evidence` is the public reusable evidence engine for local document
+Evidence Engine is the public reusable evidence engine for local document
 and generic media workflows. The installable package and console script are
-named `coev`.
+named `even`.
 
 It owns:
 
@@ -29,7 +29,7 @@ meaning, curated knowledge, and user-specific workflows.
 Generated state lives under the caller workspace:
 
 ```text
-.cache/coev/
+.cache/even/
   catalog/
     catalog.sqlite
   blobs/
@@ -47,9 +47,9 @@ Generated state lives under the caller workspace:
     <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
 ```
 
-The `.cache/coev/` root is resolved relative to the caller's current
-directory, so the same convention serves the user home (`~/.cache/coev/`) and a
-project-local cache (`<folder>/.cache/coev/`). The scanner excludes `.cache/`
+The `.cache/even/` root is resolved relative to the caller's current
+directory, so the same convention serves the user home (`~/.cache/even/`) and a
+project-local cache (`<folder>/.cache/even/`). The scanner excludes `.cache/`
 so it never inventories its own generated output.
 
 The old beta home-cache layout is not a compatibility target. During this
@@ -169,10 +169,10 @@ not know physical backend names or projection database layouts.
 Public search commands are:
 
 ```text
-coev search text <query>
-coev search semantic <query>
-coev search hybrid <query>
-coev search image <image-path>
+even search text <query>
+even search semantic <query>
+even search hybrid <query>
+even search image <image-path>
 ```
 
 `text`, `semantic`, and `hybrid` take a text query. Media participates in them
