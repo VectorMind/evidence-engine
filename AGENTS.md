@@ -9,10 +9,12 @@ time-bounded planning packets.
   work needs requirements that should outlive one implementation pass.
 - Store planning work under `plans/YYYY-MM-DD-<slug>/`. Use the ISO date for
   the day the plan packet starts, followed by a short lowercase slug.
-- Every dated plan folder must contain `plan.md`, `implementation.md`, and
-  `test.md`.
-- Add `survey.md` before `plan.md` when the work needs a landscape review,
-  local inventory, upstream research, or a decision record before planning.
+- Every dated plan folder must contain `plan.md` and `test.md`.
+- Create `implementation.md` only after implementation work has actually
+  happened, to log facts really implemented. Never create it upfront as a
+  stub during planning.
+- Add `survey.md` only when the maintainer explicitly asks for a survey, not
+  as a default step before planning.
 - Keep `plan.md` focused on approved scope, milestones, dependencies, and exit
   criteria. Do not turn unreviewed survey notes into committed scope.
 - Keep `implementation.md` as a running log of changes made, important

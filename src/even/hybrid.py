@@ -239,14 +239,14 @@ def _rerank_with_ollama(
     model: str | None,
     base_url: str,
 ) -> dict[str, Any]:
-    resolved_model = model or os.environ.get("AGENTS_DOCS_OLLAMA_RERANK_MODEL")
+    resolved_model = model or os.environ.get("EVEN_OLLAMA_RERANK_MODEL")
     if not resolved_model:
         return _rerank_report(
             "failed",
             error_kind="ollama_model_missing",
             mode="ollama",
             message=(
-                "Pass --ollama-model or set AGENTS_DOCS_OLLAMA_RERANK_MODEL for "
+                "Pass --ollama-model or set EVEN_OLLAMA_RERANK_MODEL for "
                 "optional local Ollama reranking."
             ),
         )

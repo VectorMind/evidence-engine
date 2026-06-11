@@ -70,14 +70,15 @@ Each plan folder uses:
 
 ```text
 plans/YYYY-MM-DD-<slug>/
-  survey.md            # optional, for discovery-heavy work
+  survey.md            # only when the maintainer explicitly requests one
   plan.md
-  implementation.md
+  implementation.md    # created only after implementation work has happened
   test.md
 ```
 
-Add `survey.md` before `plan.md` when the work needs local inventory, upstream
-research, tradeoff review, or a decision record before scope is shaped.
+Create `survey.md` only when the maintainer explicitly requests a survey. Do
+not produce one as a default step; fold light discovery notes into `plan.md`
+instead.
 
 Two index files at the top of `plans/` track packet status: `closed.md` lists
 completed packets with their proof, and `open.md` lists packets with work still
@@ -107,7 +108,10 @@ Once implementation starts, facts about what actually landed belong in
 
 ## Implementation Log
 
-Use `implementation.md` as the running trace of work:
+Create `implementation.md` only once implementation work has actually
+happened; it logs facts really implemented, never planned intent. A packet
+that is still in planning or review has no `implementation.md`. Use it as the
+running trace of work:
 
 - files changed;
 - implementation facts;
