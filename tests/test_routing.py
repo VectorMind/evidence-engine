@@ -74,7 +74,7 @@ def test_index_routing_writes_document_summary_with_fake_generator(
     assert json.loads(row[6])[0].startswith("corpus_cache.document_objects.")
 
 
-def test_index_routing_excludes_media_chunks_from_d0_summary(
+def test_index_routing_keeps_document_summary_inputs_document_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     pytest.importorskip("tantivy")
@@ -99,6 +99,82 @@ def test_index_routing_excludes_media_chunks_from_d0_summary(
     assert prompts
     assert "document alpha text" in prompts[0]
     assert "secret media caption" not in prompts[0]
+    assert "secret media caption" in prompts[1]
+
+
+def test_index_routing_writes_media_album_summary_with_fake_generator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "media", "ignored text")
+    (data / "lamp-photo.png").write_bytes(b"\x89PNG\r\n")
+    scan = scan_folder_to_catalog(
+        data,
+        ScanOptions(max_files=None, max_bytes=None, max_depth=None),
+    )
+    _seed_media_caption(scan["root_id"], "lamp-photo.png", "lamp wiring diagram")
+
+    result = index_routing(
+        data,
+        RoutingIndexOptions(force=True),
+        summary_generator=_fake_summary,
+    )
+
+    assert result["status"] == "ok"
+    assert result["counts"]["media_assets_considered"] == 1
+    with sqlite3.connect(catalog_path()) as conn:
+        row = conn.execute(
+            """
+            SELECT kind, modality, container_kind, summary_status, summary_text,
+                   routing_text, source_refs_json
+            FROM summary_nodes
+            WHERE kind = 'album_summary'
+            """
+        ).fetchone()
+
+    assert row[:4] == ("album_summary", "image", "root", "current")
+    assert "generic" in row[4]
+    assert "lamp wiring diagram" in row[5]
+    assert json.loads(row[6])[0].startswith("corpus_cache.media_assets.")
+
+
+def test_search_text_routes_to_media_summary_when_current(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "media", "ignored text")
+    filenames = ["lamp-a.png", "lamp-b.png", "lamp-c.png"]
+    for filename in filenames:
+        (data / filename).write_bytes(b"\x89PNG\r\n")
+    scan = scan_folder_to_catalog(
+        data,
+        ScanOptions(max_files=None, max_bytes=None, max_depth=None),
+    )
+    for filename in filenames:
+        _seed_media_caption(
+            scan["root_id"],
+            filename,
+            f"{filename} zigbee lamp cluster commissioning",
+        )
+
+    assert index_scope_to_fts(data, IndexOptions(force=True))["status"] == "ok"
+    assert (
+        index_routing(
+            data,
+            RoutingIndexOptions(force=True),
+            summary_generator=_fake_summary,
+        )["status"]
+        == "ok"
+    )
+
+    result = search_text_indexes("zigbee lamp cluster", SearchOptions(limit=10))
+
+    assert result["status"] == "ok"
+    assert result["route_trace"]["status"] == "used"
+    assert all(hit["asset_id"] for hit in result["hits"])
+    assert {hit["content_type"] for hit in result["hits"]} == {"media_caption"}
 
 
 def test_search_text_uses_global_routing_when_current(

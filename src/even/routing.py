@@ -1,7 +1,7 @@
 """Global representative routing for text search.
 
-D0 builds document-only root summaries, projects them into a fixed global FTS
-map, and uses that map to choose root-scoped FTS indexes before deep search.
+Builds root-level representative summaries, projects them into a fixed global
+FTS map, and uses that map to choose root-scoped FTS indexes before deep search.
 The summary nodes are routing hints only; final evidence still comes from the
 root-scoped indexes.
 """
@@ -25,11 +25,14 @@ from even.chunks import chunks_for_root, high_watermark, stable_id
 from even.config import load_parser_config, load_routing_config
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.paths import catalog_path, workspace_root
+from even.references import evidence_ref
 
 
 GLOBAL_FTS_TEMPLATE = "fts_summary_node"
 GLOBAL_FTS_MANIFEST = "manifest.json"
 PROMPT_VERSION = "summary_prompt_v1"
+MEDIA_PROMPT_VERSION = "media_summary_prompt_v1"
+MEDIA_SUMMARY_PROFILE = "media_album_summary_v1"
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,7 @@ def index_routing(
     *,
     summary_generator: SummaryGenerator | None = None,
 ) -> dict[str, Any]:
-    """Build document-only summary nodes and the global representative FTS map."""
+    """Build summary nodes and the global representative FTS map."""
 
     runtime = _tantivy_runtime_status()
     if runtime["status"] != "ok":
@@ -83,26 +86,45 @@ def index_routing(
             "scan_result": scan_result,
         }
 
-    summary = _upsert_root_summary(
+    generator = summary_generator or _generate_summary_text
+    document_summary = _upsert_root_summary(
         root_id=scan_result["root_id"],
         root_label=str(scan_result.get("root_label") or ""),
         scope_id=scan_result["scope_id"],
         options=options,
-        summary_generator=summary_generator or _generate_summary_text,
+        summary_generator=generator,
     )
-    if summary["status"] != "ok":
+    media_summary = _upsert_media_summary(
+        root_id=scan_result["root_id"],
+        root_label=str(scan_result.get("root_label") or ""),
+        scope_id=scan_result["scope_id"],
+        options=options,
+        summary_generator=generator,
+    )
+    document_summary["summary_type"] = "document"
+    media_summary["summary_type"] = "media"
+    summaries = [document_summary, media_summary]
+    current_summaries = [
+        summary
+        for summary in summaries
+        if summary.get("status") == "ok" and summary.get("summary_status") == "current"
+    ]
+    if not current_summaries:
+        primary = _primary_summary(summaries)
         return {
-            "status": summary["status"],
-            "error_kind": summary.get("error_kind"),
+            "status": _blocked_summary_status(summaries),
+            "error_kind": primary.get("error_kind"),
             "index_backend": "routing",
             "root_id": scan_result["root_id"],
             "root_label": scan_result.get("root_label"),
             "scope_id": scan_result["scope_id"],
-            "summary_id": summary["summary_id"],
-            "summary_status": summary["summary_status"],
+            "summary_id": primary["summary_id"],
+            "summary_ids": [summary["summary_id"] for summary in summaries],
+            "summary_status": primary["summary_status"],
             "auto_scan_status": scan_result["status"],
-            "counts": summary["counts"],
-            "message": summary.get("message", ""),
+            "summaries": _summary_payloads(summaries),
+            "counts": _combined_summary_counts(summaries),
+            "message": primary.get("message", ""),
         }
 
     config = _routing_defaults()
@@ -119,15 +141,16 @@ def index_routing(
             "root_id": scan_result["root_id"],
             "root_label": scan_result.get("root_label"),
             "scope_id": scan_result["scope_id"],
-            "summary_id": summary["summary_id"],
-            "summary_status": summary["summary_status"],
+            "summary_id": current_summaries[0]["summary_id"],
+            "summary_ids": [summary["summary_id"] for summary in summaries],
+            "summary_status": "current",
             "auto_scan_status": scan_result["status"],
-            "summary": summary,
+            "summaries": _summary_payloads(summaries),
             "global_representative_fts": projection,
-            "counts": summary["counts"],
+            "counts": _combined_summary_counts(summaries),
         }
 
-    counts = dict(summary["counts"])
+    counts = _combined_summary_counts(summaries)
     counts.update(
         {
             "summary_nodes_indexed": projection["counts"]["summary_nodes_indexed"],
@@ -144,13 +167,47 @@ def index_routing(
         "root_id": scan_result["root_id"],
         "root_label": scan_result.get("root_label"),
         "scope_id": scan_result["scope_id"],
-        "summary_id": summary["summary_id"],
-        "summary_status": summary["summary_status"],
-        "summary_index_status": summary["index_status"],
+        "summary_id": current_summaries[0]["summary_id"],
+        "summary_ids": [summary["summary_id"] for summary in summaries],
+        "summary_status": "current",
+        "summary_index_status": projection["index_status"],
         "global_representative_fts": projection,
         "auto_scan_status": scan_result["status"],
+        "summaries": _summary_payloads(summaries),
         "counts": counts,
     }
+
+
+def _primary_summary(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    for summary in summaries:
+        if summary.get("error_kind"):
+            return summary
+    return summaries[0]
+
+
+def _blocked_summary_status(summaries: list[dict[str, Any]]) -> str:
+    if any(summary.get("status") == "failed" for summary in summaries):
+        return "failed"
+    return "deferred"
+
+
+def _summary_payloads(summaries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    for summary in summaries:
+        summary_type = str(summary.get("summary_type") or summary.get("summary_id"))
+        payloads[summary_type] = dict(summary)
+    return payloads
+
+
+def _combined_summary_counts(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, Any] = {}
+    for summary in summaries:
+        for key, value in dict(summary.get("counts") or {}).items():
+            if isinstance(value, (int, float)):
+                counts[key] = counts.get(key, 0) + value
+            else:
+                counts[key] = value
+    return counts
 
 
 def build_global_representative_fts(
@@ -165,7 +222,7 @@ def build_global_representative_fts(
         return runtime
 
     profile = fts_profile or _fts_profile()
-    rows = _current_text_summary_rows()
+    rows = _current_summary_rows()
     index_uri = _global_fts_uri(profile)
     index_dir = workspace_root() / index_uri
     manifest_path = index_dir / GLOBAL_FTS_MANIFEST
@@ -499,6 +556,244 @@ def _upsert_root_summary(
     }
 
 
+def _upsert_media_summary(
+    *,
+    root_id: str,
+    root_label: str,
+    scope_id: str,
+    options: RoutingIndexOptions,
+    summary_generator: SummaryGenerator,
+) -> dict[str, Any]:
+    config = _routing_defaults()
+    sample_policy = "media_album_v1"
+    model = (
+        options.summary_model
+        or os.environ.get("EVEN_SUMMARY_MODEL")
+        or str(config["summary_model"])
+    )
+    url = (
+        options.summary_ollama_url
+        or os.environ.get("EVEN_SUMMARY_OLLAMA_URL")
+        or str(config["summary_ollama_url"])
+    )
+    timeout = float(config["summary_timeout_seconds"])
+    max_assets = int(options.limit or config["summary_sample_chunks_default"])
+    assets = _media_assets_for_root(root_id)
+    summary_id = _media_summary_id(scope_id)
+    now = _iso(_utc_now())
+    state = _summary_state(summary_id)
+
+    if not assets:
+        written = 0
+        if state:
+            _upsert_summary_row(
+                summary_id=summary_id,
+                root_id=root_id,
+                scope_id=scope_id,
+                source_item_id=_root_source_item_id(root_id),
+                title=f"{root_label or scope_id} media",
+                summary_text="",
+                routing_text="",
+                source_refs=[],
+                source_count=0,
+                sample_count=0,
+                coverage_estimate=0.0,
+                sample_policy=sample_policy,
+                producer="none",
+                profile=MEDIA_SUMMARY_PROFILE,
+                watermark=_empty_watermark(root_id, scope_id, sample_policy),
+                status="deleted",
+                attrs={"error_kind": "no_media_summary_inputs"},
+                now=now,
+                created_at=state.get("created_at"),
+                kind="album_summary",
+                modality="mixed",
+                container_kind="root",
+            )
+            written = 1
+        return {
+            "status": "deferred",
+            "error_kind": "no_media_summary_inputs",
+            "message": "No current media assets were available for routing.",
+            "summary_id": summary_id,
+            "summary_status": "deferred",
+            "index_status": "deferred",
+            "counts": {
+                "media_assets_considered": 0,
+                "media_assets_sampled": 0,
+                "summary_nodes_written": written,
+            },
+        }
+
+    watermark = _media_high_watermark(
+        assets,
+        sample_policy,
+        model,
+        str(max_assets),
+        MEDIA_PROMPT_VERSION,
+    )
+    if (
+        not options.force
+        and state
+        and state.get("summary_status") == "current"
+        and state.get("source_high_watermark") == watermark
+    ):
+        return {
+            "status": "ok",
+            "summary_id": summary_id,
+            "summary_status": "current",
+            "index_status": "current",
+            "counts": {
+                "media_assets_considered": len(assets),
+                "media_assets_sampled": 0,
+                "summary_nodes_written": 0,
+            },
+        }
+
+    samples = _sample_media_assets(assets, max_assets=max_assets)
+    prompt = _media_summary_prompt(
+        root_label=root_label,
+        samples=samples,
+        max_chars=int(config["summary_prompt_max_chars"]),
+        per_asset_chars=int(config["summary_sample_chars_per_chunk"]),
+    )
+    modality = _media_modality(assets)
+    media_kind = _dominant_media_kind(assets)
+    title = f"{root_label or scope_id} media"
+
+    try:
+        summary_text = summary_generator(prompt, model=model, url=url, timeout=timeout)
+    except SummaryGenerationError as exc:
+        _upsert_summary_row(
+            summary_id=summary_id,
+            root_id=root_id,
+            scope_id=scope_id,
+            source_item_id=_root_source_item_id(root_id),
+            title=title,
+            summary_text="",
+            routing_text=_media_routing_text(root_label, samples, ""),
+            source_refs=_media_source_refs(samples),
+            source_count=len(assets),
+            sample_count=len(samples),
+            coverage_estimate=_coverage(len(samples), len(assets)),
+            sample_policy=sample_policy,
+            producer=f"ollama:{model}",
+            profile=MEDIA_SUMMARY_PROFILE,
+            watermark=watermark,
+            status=exc.status,
+            attrs=_media_summary_attrs(
+                assets,
+                samples,
+                {"error_kind": exc.error_kind, "message": exc.message},
+            ),
+            now=now,
+            created_at=state.get("created_at") if state else None,
+            kind="album_summary",
+            modality=modality,
+            media_kind=media_kind,
+            container_kind="root",
+        )
+        return {
+            "status": exc.status,
+            "error_kind": exc.error_kind,
+            "message": exc.message,
+            "summary_id": summary_id,
+            "summary_status": exc.status,
+            "index_status": exc.status,
+            "counts": {
+                "media_assets_considered": len(assets),
+                "media_assets_sampled": len(samples),
+                "summary_nodes_written": 1,
+            },
+        }
+
+    summary_text = " ".join(str(summary_text or "").split())
+    if not summary_text:
+        _upsert_summary_row(
+            summary_id=summary_id,
+            root_id=root_id,
+            scope_id=scope_id,
+            source_item_id=_root_source_item_id(root_id),
+            title=title,
+            summary_text="",
+            routing_text=_media_routing_text(root_label, samples, ""),
+            source_refs=_media_source_refs(samples),
+            source_count=len(assets),
+            sample_count=len(samples),
+            coverage_estimate=_coverage(len(samples), len(assets)),
+            sample_policy=sample_policy,
+            producer=f"ollama:{model}",
+            profile=MEDIA_SUMMARY_PROFILE,
+            watermark=watermark,
+            status="failed",
+            attrs=_media_summary_attrs(assets, samples, {"error_kind": "empty_summary"}),
+            now=now,
+            created_at=state.get("created_at") if state else None,
+            kind="album_summary",
+            modality=modality,
+            media_kind=media_kind,
+            container_kind="root",
+        )
+        return {
+            "status": "failed",
+            "error_kind": "empty_summary",
+            "message": "The local summary model returned no text.",
+            "summary_id": summary_id,
+            "summary_status": "failed",
+            "index_status": "failed",
+            "counts": {
+                "media_assets_considered": len(assets),
+                "media_assets_sampled": len(samples),
+                "summary_nodes_written": 1,
+            },
+        }
+
+    _upsert_summary_row(
+        summary_id=summary_id,
+        root_id=root_id,
+        scope_id=scope_id,
+        source_item_id=_root_source_item_id(root_id),
+        title=title,
+        summary_text=summary_text,
+        routing_text=_media_routing_text(root_label, samples, summary_text),
+        source_refs=_media_source_refs(samples),
+        source_count=len(assets),
+        sample_count=len(samples),
+        coverage_estimate=_coverage(len(samples), len(assets)),
+        sample_policy=sample_policy,
+        producer=f"ollama:{model}",
+        profile=MEDIA_SUMMARY_PROFILE,
+        watermark=watermark,
+        status="current",
+        attrs=_media_summary_attrs(
+            assets,
+            samples,
+            {
+                "prompt_version": MEDIA_PROMPT_VERSION,
+                "model": model,
+                "ollama_url": url,
+            },
+        ),
+        now=now,
+        created_at=state.get("created_at") if state else None,
+        kind="album_summary",
+        modality=modality,
+        media_kind=media_kind,
+        container_kind="root",
+    )
+    return {
+        "status": "ok",
+        "summary_id": summary_id,
+        "summary_status": "current",
+        "index_status": "rebuilt" if options.force else "refreshed",
+        "counts": {
+            "media_assets_considered": len(assets),
+            "media_assets_sampled": len(samples),
+            "summary_nodes_written": 1,
+        },
+    }
+
+
 def _generate_summary_text(
     prompt: str,
     *,
@@ -639,7 +934,7 @@ def _search_global_representatives(
         return {"status": "unavailable", "reasons": [runtime["error_kind"]]}
 
     try:
-        rows = _current_text_summary_rows()
+        rows = _current_summary_rows()
     except sqlite3.Error:
         return {"status": "unavailable", "reasons": ["summary_nodes_unavailable"]}
 
@@ -726,6 +1021,13 @@ def _upsert_summary_row(
     attrs: dict[str, Any],
     now: str,
     created_at: str | None,
+    parent_summary_id: str | None = None,
+    doc_id: str | None = None,
+    kind: str = "root_summary",
+    modality: str = "text",
+    media_kind: str | None = None,
+    container_kind: str = "root",
+    summary_level: int = 0,
 ) -> None:
     with sqlite3.connect(catalog_path()) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -772,14 +1074,14 @@ def _upsert_summary_row(
                 summary_id,
                 root_id,
                 scope_id,
-                None,
+                parent_summary_id,
                 source_item_id,
-                None,
-                "root_summary",
-                "text",
-                None,
-                "root",
-                0,
+                doc_id,
+                kind,
+                modality,
+                media_kind,
+                container_kind,
+                summary_level,
                 title,
                 summary_text,
                 routing_text,
@@ -820,17 +1122,18 @@ def _summary_state(summary_id: str) -> dict[str, Any] | None:
     }
 
 
-def _current_text_summary_rows() -> list[dict[str, Any]]:
+def _current_summary_rows() -> list[dict[str, Any]]:
     with sqlite3.connect(catalog_path()) as conn:
         rows = conn.execute(
             """
             SELECT s.summary_id, s.root_id, s.scope_id, s.kind, s.modality,
                    s.title, s.summary_text, s.routing_text, s.source_refs_json,
-                   s.source_high_watermark, s.updated_at, sr.root_label
+                   s.source_high_watermark, s.updated_at, sr.root_label,
+                   s.media_kind, s.container_kind
             FROM "summary_nodes" s
             JOIN "source_roots" sr ON sr.root_id = s.root_id
             WHERE s.summary_status = 'current'
-              AND s.modality = 'text'
+              AND COALESCE(s.routing_text, '') <> ''
             ORDER BY s.root_id, s.scope_id, s.summary_id
             """
         ).fetchall()
@@ -840,6 +1143,8 @@ def _current_text_summary_rows() -> list[dict[str, Any]]:
             "root_label": row[11],
             "source_high_watermark": row[9],
             "updated_at": row[10],
+            "media_kind": row[12],
+            "container_kind": row[13],
         }
         result.append(
             {
@@ -872,6 +1177,310 @@ def _root_source_item_id(root_id: str) -> str | None:
             (root_id,),
         ).fetchone()
     return row[0] if row else None
+
+
+def _media_assets_for_root(root_id: str) -> list[dict[str, Any]]:
+    sql = """
+        SELECT a.asset_id, a.source_item_id, a.media_class, a.inspect_status,
+               a.attrs_json, a.updated_at, si.relative_path, si.media_type,
+               si.source_sha256, si.size_bytes,
+               img.format AS image_format, img.width AS image_width,
+               img.height AS image_height, img.megapixels AS image_megapixels,
+               img.color_mode AS image_color_mode,
+               img.captured_at AS image_captured_at,
+               vid.container AS video_container,
+               vid.video_codec AS video_codec, vid.audio_codec AS audio_codec,
+               vid.width AS video_width, vid.height AS video_height,
+               vid.duration_seconds AS video_duration_seconds,
+               vid.frame_rate AS video_frame_rate,
+               vid.captured_at AS video_captured_at,
+               mdl.format AS model_format, mdl.vertex_count AS model_vertex_count,
+               mdl.face_count AS model_face_count, mdl.units AS model_units,
+               (
+                   SELECT value_text
+                   FROM "media_observations"
+                   WHERE asset_id = a.asset_id
+                     AND observation_kind = 'caption'
+                   ORDER BY created_at DESC, observation_id DESC
+                   LIMIT 1
+               ) AS caption,
+               (
+                   SELECT value_text
+                   FROM "media_observations"
+                   WHERE asset_id = a.asset_id
+                     AND observation_kind = 'media_kind'
+                   ORDER BY created_at DESC, observation_id DESC
+                   LIMIT 1
+               ) AS media_kind
+        FROM "media_assets" a
+        JOIN "source_items" si ON si.source_item_id = a.source_item_id
+        LEFT JOIN "image_metadata" img ON img.asset_id = a.asset_id
+        LEFT JOIN "video_metadata" vid ON vid.asset_id = a.asset_id
+        LEFT JOIN "model3d_metadata" mdl ON mdl.asset_id = a.asset_id
+        WHERE si.root_id = ?
+          AND si.inventory_status IN ('current', 'unchanged', 'changed')
+        ORDER BY si.relative_path, a.asset_id
+    """
+    with sqlite3.connect(catalog_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(sql, (root_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _sample_media_assets(
+    assets: list[dict[str, Any]], *, max_assets: int
+) -> list[dict[str, Any]]:
+    limit = max(1, int(max_assets or 1))
+    ordered = sorted(
+        assets,
+        key=lambda item: (
+            str(item.get("media_class") or ""),
+            str(item.get("relative_path") or ""),
+            str(item.get("asset_id") or ""),
+        ),
+    )
+    by_class: dict[str, list[dict[str, Any]]] = {}
+    for asset in ordered:
+        by_class.setdefault(str(asset.get("media_class") or "other"), []).append(asset)
+
+    samples: list[dict[str, Any]] = []
+    for media_class in sorted(by_class):
+        if len(samples) >= limit:
+            break
+        samples.append(by_class[media_class][0])
+    if len(samples) < limit:
+        seen = {str(sample.get("asset_id")) for sample in samples}
+        for asset in ordered:
+            if len(samples) >= limit:
+                break
+            if str(asset.get("asset_id")) not in seen:
+                samples.append(asset)
+    return samples
+
+
+def _media_summary_prompt(
+    *,
+    root_label: str,
+    samples: list[dict[str, Any]],
+    max_chars: int,
+    per_asset_chars: int,
+) -> str:
+    rows = []
+    for index, asset in enumerate(samples, start=1):
+        caption = " ".join(str(asset.get("caption") or "").split())[:per_asset_chars]
+        rows.append(
+            {
+                "n": index,
+                "path": asset.get("relative_path") or "",
+                "media_class": asset.get("media_class") or "",
+                "media_type": asset.get("media_type") or "",
+                "media_kind": asset.get("media_kind") or "",
+                "caption": caption,
+                "metadata": _media_metadata_facets(asset),
+            }
+        )
+    prompt = (
+        "Write a concise routing summary for a local media root. "
+        "Use only sampled filenames, existing captions, media-kind labels, "
+        "and safe metadata. Do not infer unseen visual content. Do not claim "
+        "complete coverage. Return 2-4 plain sentences focused on visual "
+        "topics, media types, and terms that would help route future search "
+        "queries.\n\n"
+        f"Root label: {root_label}\n\n"
+        f"Sampled media assets:\n{json.dumps(rows, ensure_ascii=True, indent=2)}"
+    )
+    return prompt[:max_chars]
+
+
+def _media_metadata_facets(asset: dict[str, Any]) -> dict[str, Any]:
+    facets: dict[str, Any] = {}
+    if asset.get("size_bytes") is not None:
+        facets["size_bytes"] = asset["size_bytes"]
+    if asset.get("image_width") and asset.get("image_height"):
+        facets["dimensions"] = f"{asset['image_width']}x{asset['image_height']}"
+    if asset.get("image_format"):
+        facets["image_format"] = asset["image_format"]
+    if asset.get("image_color_mode"):
+        facets["image_color_mode"] = asset["image_color_mode"]
+    if asset.get("image_captured_at"):
+        facets["captured_at"] = asset["image_captured_at"]
+    if asset.get("video_width") and asset.get("video_height"):
+        facets["video_dimensions"] = f"{asset['video_width']}x{asset['video_height']}"
+    if asset.get("video_container"):
+        facets["video_container"] = asset["video_container"]
+    if asset.get("video_codec"):
+        facets["video_codec"] = asset["video_codec"]
+    if asset.get("audio_codec"):
+        facets["audio_codec"] = asset["audio_codec"]
+    if asset.get("video_duration_seconds") is not None:
+        facets["duration_seconds"] = asset["video_duration_seconds"]
+    if asset.get("video_frame_rate") is not None:
+        facets["frame_rate"] = asset["video_frame_rate"]
+    if asset.get("video_captured_at"):
+        facets["captured_at"] = asset["video_captured_at"]
+    if asset.get("model_format"):
+        facets["model_format"] = asset["model_format"]
+    if asset.get("model_vertex_count") is not None:
+        facets["vertex_count"] = asset["model_vertex_count"]
+    if asset.get("model_face_count") is not None:
+        facets["face_count"] = asset["model_face_count"]
+    if asset.get("model_units"):
+        facets["units"] = asset["model_units"]
+    return facets
+
+
+def _media_routing_text(
+    root_label: str,
+    samples: list[dict[str, Any]],
+    summary_text: str,
+) -> str:
+    paths: set[str] = set()
+    filenames: set[str] = set()
+    captions: set[str] = set()
+    media_classes: set[str] = set()
+    media_types: set[str] = set()
+    media_kinds: set[str] = set()
+    dimensions: set[str] = set()
+    durations: set[str] = set()
+    model_formats: set[str] = set()
+
+    for asset in samples:
+        relative_path = str(asset.get("relative_path") or "")
+        if relative_path:
+            paths.add(relative_path)
+            filenames.add(Path(relative_path).stem.replace("_", " ").replace("-", " "))
+        if asset.get("caption"):
+            captions.add(" ".join(str(asset["caption"]).split())[:160])
+        if asset.get("media_class"):
+            media_classes.add(str(asset["media_class"]))
+        if asset.get("media_type"):
+            media_types.add(str(asset["media_type"]))
+        if asset.get("media_kind"):
+            media_kinds.add(str(asset["media_kind"]))
+        if asset.get("image_width") and asset.get("image_height"):
+            dimensions.add(f"{asset['image_width']}x{asset['image_height']}")
+        if asset.get("video_width") and asset.get("video_height"):
+            dimensions.add(f"{asset['video_width']}x{asset['video_height']}")
+        if asset.get("video_duration_seconds") is not None:
+            durations.add(str(asset["video_duration_seconds"]))
+        if asset.get("model_format"):
+            model_formats.add(str(asset["model_format"]))
+
+    parts = [
+        f"Root: {root_label}",
+        f"Summary: {summary_text}",
+        "Paths: " + " | ".join(sorted(paths)[:25]),
+        "Filenames: " + " | ".join(sorted(filenames)[:25]),
+        "Captions: " + " | ".join(sorted(captions)[:20]),
+        "Media kinds: " + " | ".join(sorted(media_kinds)[:10]),
+        "Media classes: " + " | ".join(sorted(media_classes)[:10]),
+        "Media types: " + " | ".join(sorted(media_types)[:10]),
+        "Dimensions: " + " | ".join(sorted(dimensions)[:10]),
+        "Durations seconds: " + " | ".join(sorted(durations)[:10]),
+        "3D formats: " + " | ".join(sorted(model_formats)[:10]),
+    ]
+    return "\n".join(part for part in parts if part.strip())
+
+
+def _media_source_refs(samples: list[dict[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            evidence_ref("media_assets", str(asset["asset_id"]))
+            for asset in samples
+            if asset.get("asset_id")
+        }
+    )
+
+
+def _media_high_watermark(assets: list[dict[str, Any]], *extra: str) -> str:
+    digest = hashlib.sha256()
+    for value in extra:
+        digest.update(str(value or "").encode("utf-8"))
+        digest.update(b"\0")
+    fields = (
+        "asset_id",
+        "source_item_id",
+        "media_class",
+        "inspect_status",
+        "updated_at",
+        "relative_path",
+        "media_type",
+        "source_sha256",
+        "caption",
+        "media_kind",
+        "image_format",
+        "image_width",
+        "image_height",
+        "image_captured_at",
+        "video_container",
+        "video_codec",
+        "audio_codec",
+        "video_width",
+        "video_height",
+        "video_duration_seconds",
+        "video_captured_at",
+        "model_format",
+        "model_vertex_count",
+        "model_face_count",
+        "model_units",
+    )
+    for asset in sorted(
+        assets,
+        key=lambda item: (
+            str(item.get("relative_path") or ""),
+            str(item.get("asset_id") or ""),
+        ),
+    ):
+        for field in fields:
+            digest.update(str(asset.get(field) or "").encode("utf-8"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _media_modality(assets: list[dict[str, Any]]) -> str:
+    valid = {"image", "video", "audio", "model3d"}
+    classes = {str(asset.get("media_class") or "") for asset in assets}
+    known = {media_class for media_class in classes if media_class in valid}
+    if len(known) == 1 and len(classes) == 1:
+        return next(iter(known))
+    return "mixed"
+
+
+def _dominant_media_kind(assets: list[dict[str, Any]]) -> str | None:
+    counts: dict[str, int] = {}
+    for asset in assets:
+        media_kind = str(asset.get("media_kind") or "").strip()
+        if media_kind:
+            counts[media_kind] = counts.get(media_kind, 0) + 1
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _media_summary_attrs(
+    assets: list[dict[str, Any]],
+    samples: list[dict[str, Any]],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    attrs = dict(extra)
+    attrs.update(
+        {
+            "asset_count": len(assets),
+            "sampled_asset_count": len(samples),
+            "media_classes": _value_counts(assets, "media_class"),
+            "media_kinds": _value_counts(assets, "media_kind"),
+        }
+    )
+    return attrs
+
+
+def _value_counts(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(field) or "").strip()
+        if value:
+            counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _sample_chunks(chunks: list[dict[str, Any]], *, max_chunks: int) -> list[dict[str, Any]]:
@@ -1149,6 +1758,10 @@ def _global_fts_uri(fts_profile: str) -> str:
 
 def _summary_id(scope_id: str) -> str:
     return stable_id("sum", scope_id, "root_summary", "text")
+
+
+def _media_summary_id(scope_id: str) -> str:
+    return stable_id("sum", scope_id, "album_summary", "media")
 
 
 def _empty_watermark(root_id: str, scope_id: str, sample_policy: str) -> str:

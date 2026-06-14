@@ -79,8 +79,8 @@ Implemented today:
 - visual search (image→image and text→image) via SigLIP 2 image embeddings;
 - media captions/metadata indexed into text/semantic search so media is findable by words;
 - text, semantic, and hybrid search/index plumbing;
-- document root summaries and fixed-path global representative FTS routing for
-  `search text`;
+- document root summaries, media album summaries, and fixed-path global
+  representative FTS routing for `search text`;
 - JSON-first command stdout;
 - persisted result JSON, events, summaries, and optional HTML reports.
 
@@ -147,7 +147,7 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `index` | `scope <path>` | `path` | Build or refresh the text index for a source scope. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images (needs `image-search` extra). |
-| `index` | `routing <path>` | `path` | Build or refresh document root summaries and the global representative FTS map. |
+| `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. |
 | `search` | `text <query>` | `query` | Search current text indexes. |
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
@@ -193,11 +193,13 @@ source path but does not silently parse/OCR missing documents. Run `docs parse`
 and/or `media inspect`/`describe` first. Add `--semantic` for the semantic
 index or `--image` for the image-embedding store.
 
-`index routing` builds lossy document root summaries into `summary_nodes`, then
-projects current summaries into a fixed global representative FTS map. Summary
-generation uses a local Ollama endpoint and is explicit so ordinary
-`index scope` stays model-free. The global map is a routing hint only; evidence
-still comes from root-scoped FTS hits.
+`index routing` builds lossy document root summaries and media album summaries
+into `summary_nodes`, then projects current summaries into a fixed global
+representative FTS map. Media summaries use existing filenames, media metadata,
+and caption/kind observations; they do not add OCR, transcripts, keyframes, or
+object detection. Summary generation uses a local Ollama endpoint and is
+explicit so ordinary `index scope` stays model-free. The global map is a routing
+hint only; evidence still comes from root-scoped FTS hits.
 
 `search text`, `search semantic`, and `search hybrid` are the public search
 surface. Higher layers should not know which physical search engine backs

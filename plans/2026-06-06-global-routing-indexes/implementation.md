@@ -1,7 +1,8 @@
 # Implementation Log: Global Routing Indexes
 
 Date: 2026-06-06
-Status: D0 implemented. Media representative routing remains a follow-on slice.
+Status: D0 and D1 implemented. Document and media representatives route through
+the global representative FTS map.
 
 ## Changes Made
 
@@ -90,8 +91,26 @@ Status: D0 implemented. Media representative routing remains a follow-on slice.
   fake-summary indexing, media exclusion from D0 summaries, and routed search
   over a multi-root fixture.
 
+## 2026-06-14: D1 media representative routing
+
+- Extended `index_routing` to attempt both document `root_summary` generation
+  and media `album_summary` generation for the same active root scope.
+- Added media summary inputs from existing `media_assets`, source filenames,
+  typed image/video/3D metadata, and current caption/media-kind observations.
+- Kept document summary prompts document-only; media summaries have a separate
+  prompt, profile, watermark, deterministic routing-text facets, and
+  `corpus_cache.media_assets.<asset_id>` refs.
+- Changed the global representative FTS projection to include all current
+  `summary_nodes` with non-empty `routing_text`, not only `modality=text` rows.
+- Preserved the explicit local-Ollama build path. There is no deterministic
+  summary fallback and no remote API fallback in the minimal laptop scope.
+- Updated README, the durable CLI spec, config notes, `plan.md`, and routing
+  tests for the implemented media slice.
+
 ## Follow-Up Risks
 
-- Media representatives are not implemented in D0.
-- Manual Ollama proof was not run; automated tests use a fake summary generator
-  so CI does not require a local model.
+- Media cluster summaries, global semantic representative stores, and SigLIP
+  representative routing remain future work.
+- D1 automated tests use a fake summary generator so CI does not require a
+  local model; a manual Ollama proof should be recorded before relying on media
+  summaries with a real personal corpus.

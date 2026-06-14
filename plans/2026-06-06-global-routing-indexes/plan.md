@@ -1,9 +1,8 @@
 # Plan: Global Routing Indexes
 
 Date: 2026-06-14
-Status: D0 implemented. Document-only routing is in place; media routing
-decisions are recorded for the follow-on slice, but media representative
-generation is not part of D0.
+Status: D0 and D1 implemented. Document root summaries, media album summaries,
+and the global representative FTS route map are in place.
 
 ## Problem Summary
 
@@ -28,32 +27,37 @@ index internals or storing generated chunk/vector rows in SQLite.
   rows.
 - Global representative FTS/semantic stores are derived projections at fixed
   cache paths. They are not catalog-registered and do not add registry tables.
-- D0 builds document-only root summaries and a global representative FTS
-  projection. Media representative generation follows later.
-- D0 adds an explicit build command, `even index routing <path>`, so normal
+- D0 built document-only root summaries and a global representative FTS
+  projection. D1 adds root-level media `album_summary` rows from existing media
+  catalog facts.
+- `even index routing <path>` is the explicit build command, so normal
   `index scope` behavior does not become model-bound.
 - `search text` uses routed search when a current global representative FTS
   projection exists. If the projection is missing, stale, weak, or empty, it
   falls back to the existing all-current-FTS behavior and records that status.
-- Cross-route candidate merging remains rank-based. D0 has one global route
+- Cross-route candidate merging remains rank-based. The implemented path has
+  one global route
   (representative FTS); later text-vector and SigLIP routes merge by RRF.
 - Raw per-route scores stay visible in the route trace. Scores from different
   spaces are never treated as calibrated.
 
-## D0 Goal And Objectives
+## Implemented Goal And Objectives
 
-Goal: route broad text queries to likely document roots/scopes before searching
-root-scoped FTS indexes, while preserving the existing search contract and
-fallback behavior.
+Goal: route broad text queries to likely document and media roots/scopes before
+searching root-scoped FTS indexes, while preserving the existing search contract
+and fallback behavior.
 
 Objectives:
 
 - add `summary_nodes` to `catalog.yaml` and bump catalog schema/user versions;
 - add a representative FTS row template and fixed global FTS cache path;
 - build one current `root_summary` row per active root scope from parsed
-  document chunks only;
-- write local-LLM summaries from bounded sampled chunks, with deterministic
-  facets concatenated into `routing_text`;
+  document chunks when document chunks exist;
+- build one current `album_summary` row per active root scope from existing
+  media assets, inspect metadata, captions, media-kind labels, and filenames
+  when media catalog facts exist;
+- write local-LLM summaries from bounded sampled chunks/assets, with
+  deterministic facets concatenated into `routing_text`;
 - build the derived global representative FTS projection from current
   `summary_nodes`;
 - make `search text` route through the global representative FTS when available,
@@ -61,13 +65,15 @@ Objectives:
 - record route trace, selected scopes, widening/fallback status, and hydrated
   evidence refs in result JSON.
 
-## D0 Scope
+## Implemented Scope
 
 In scope:
 
-- document-only routing from `document_objects` through existing
-  `chunks_for_root`;
-- `root_summary` rows only, one per active root scope;
+- document routing from `document_objects` through existing `chunks_for_root`;
+- media routing from `media_assets`, typed metadata tables, and
+  `media_observations`;
+- `root_summary` and root-level `album_summary` rows, one per active root scope
+  when each input family exists;
 - global representative FTS only;
 - local Ollama summary generation using configured localhost settings;
 - deterministic rebuild watermarks and stale/deferred status;
@@ -76,7 +82,7 @@ In scope:
 
 Non-goals:
 
-- media `album_summary` or `media_cluster_summary` generation;
+- `media_cluster_summary` generation;
 - global semantic representative stores;
 - SigLIP representative routing;
 - OCR, object detection, labels, audio transcript, or video keyframe pipelines;
@@ -85,7 +91,7 @@ Non-goals:
 - materialized collection indexes;
 - replacing root-scoped FTS as the evidence/proof layer.
 
-## D0 Implementation Phases
+## Implementation Phases
 
 ### Phase 1: Schema And Contract
 
@@ -119,18 +125,21 @@ Deliverables:
 - add `even index routing <path> [--force] [--limit]`;
 - auto-run catalog ensure and source scan for the requested path, following the
   existing `index scope` pattern;
-- use `chunks_for_root`, not `media_chunks_for_root`, for D0 inputs;
+- use `chunks_for_root` for document summary inputs and existing media catalog
+  rows for media summary inputs;
 - sample bounded document chunks with policy `text_stratified_v1`;
 - call a local Ollama text-generation endpoint using
   `EVEN_SUMMARY_MODEL` / `EVEN_SUMMARY_OLLAMA_URL` defaults;
 - concatenate deterministic facets into `routing_text`: root label, relative
-  paths, document titles, headings, object types, and the LLM `summary_text`;
+  paths, document titles, headings, object types, filenames, captions,
+  media-kind labels, safe media metadata, and the LLM `summary_text`;
 - upsert current `summary_nodes` rows and mark affected stale/deferred/failed
   rows predictably.
 
 Exit:
 
 - a parsed fixture root can produce one current `root_summary`;
+- a media fixture root can produce one current `album_summary`;
 - an unparsed root returns `deferred` with `no_summary_inputs`;
 - unavailable Ollama returns `deferred` and does not create a current routing
   projection from deterministic facets alone;
@@ -141,8 +150,8 @@ Exit:
 
 Deliverables:
 
-- build `fts/global_representatives/{fts_profile}/` from current text
-  `summary_nodes`;
+- build `fts/global_representatives/{fts_profile}/` from current
+  `summary_nodes` with non-empty `routing_text`;
 - write a sidecar manifest next to the FTS store, not a catalog registry row;
 - include manifest fields: `built_at`, `fts_profile`, `template_name`,
   `summary_watermark`, `row_count`, and `schema_version`;
@@ -169,7 +178,7 @@ Deliverables:
   indexes if hit count, score gap, or hydration checks are weak;
 - preserve current all-current-FTS behavior when routing is unavailable.
 
-D0 default thresholds:
+Current default thresholds:
 
 | Setting | Default |
 | --- | --- |
@@ -195,7 +204,9 @@ Deliverables:
 - summary builder unit test using fake chunks and fake local LLM output;
 - global representative FTS build/search test with a small multi-root fixture;
 - routed search test proving selected-scope search and fallback-all behavior;
-- regression test that media chunks are excluded from D0 summaries;
+- regression test that document summary prompts remain document-only while
+  media summaries use media catalog inputs;
+- media summary and media-routed text search tests;
 - route trace shape test.
 
 Exit:
@@ -258,14 +269,15 @@ catalog scopes and is a source for derived search projections.
 Notes:
 
 - `source_refs_json` stores canonical refs such as
-  `corpus_cache.document_objects.<object_id>` and, in later media work,
+  `corpus_cache.document_objects.<object_id>` and
   `corpus_cache.media_assets.<asset_id>`. This is more precise than raw ID JSON
   because the same column can represent document objects, media assets, or
   mixed future source types without inventing a new addressing scheme.
-- D0 writes `kind=root_summary`, `modality=text`, `container_kind=root`, and
-  `summary_level=0`.
-- Media columns are nullable in D0 but included now so the single table supports
-  the follow-on media slice without another schema fork.
+- Document summaries write `kind=root_summary`, `modality=text`,
+  `container_kind=root`, and `summary_level=0`.
+- Media summaries write `kind=album_summary`, `container_kind=root`,
+  `summary_level=0`, a dominant `modality` (`image`, `video`, `audio`,
+  `model3d`, or `mixed`), and a dominant `media_kind` when available.
 - `routing_text` is indexed; `summary_text` is the LLM-written lossy summary.
   Keeping both lets deterministic facets participate in routing without
   pretending they are the model's summary.
@@ -309,11 +321,12 @@ Add fixed derived paths to `config/exposures.yaml`:
   description: Future derived SigLIP map over summary medoid asset refs. Not catalog-registered.
 ```
 
-Only `global_representative_fts` is implemented in D0.
+Only `global_representative_fts` is implemented. Semantic and SigLIP
+representative projections remain future work.
 
 ## Decisions
 
-Status: all items below are decided. No item blocks D0 implementation.
+Status: all items below are decided. No item blocks the implemented D0/D1 path.
 
 ### Foundational
 
@@ -323,7 +336,7 @@ Status: all items below are decided. No item blocks D0 implementation.
 | F2 | Does the global representative index need catalog registration? | No. The only catalog addition is `summary_nodes`; global stores are derived fixed-path projections with sidecar manifests. | High |
 | F3 | How are lossy summaries generated? | Sample bounded representative chunks/images, feed only those to a local Ollama model, then concatenate deterministic facets into `routing_text`. No remote model by default. | High |
 | F4 | How are cross-index scores handled? | Do not calibrate scores across indexes or embedding spaces. Merge cross-route candidates with RRF; keep raw per-route scores in trace. | High |
-| D0 | Sequencing | Ship document-only root-summary routing first; add media representatives second. | High |
+| D0/D1 | Sequencing | Ship document-only root-summary routing first, then add root-level media album summaries from existing media catalog facts. | High |
 
 ### Schema / Registry
 
@@ -356,7 +369,7 @@ Status: all items below are decided. No item blocks D0 implementation.
 | OP-014 | Scope suggestions are review output only; never auto-create scopes. |
 | OP-015 | Default excludes remain excluded; use `negative_summary` only for included-but-low-value folders. |
 | OP-016 | Archives route by manifest-level representative first; deep unpack/index only on opt-in or strong manifest hit. |
-| OP-017 | Widening is based on hit count, representative score gap, and hydrated-evidence availability. D0 defaults are listed above. |
+| OP-017 | Widening is based on hit count, representative score gap, and hydrated-evidence availability. Current defaults are listed above. |
 | OP-020 | Materialized collection indexes require explicit manual promotion; not V1 and never automatic. |
 
 ## Decision Traceability
@@ -370,24 +383,25 @@ Status: all items below are decided. No item blocks D0 implementation.
 | OP-005 | F2 and fixed cache paths |
 | OP-006 | S2 |
 | OP-007 | Carried decision table |
-| OP-008 | D0: global representative FTS routes to root-scoped FTS |
+| OP-008 | Global representative FTS routes to root-scoped FTS |
 | OP-009 | V1 ordering: text-to-media stays FTS-first; image-to-media gets SigLIP representative routing in the media slice |
 | OP-010 | F3: local LLM summary generation is intrinsic |
-| OP-011 | F3, S4, and remote-model policy |
+| OP-011 | F3, S4, and local-only model policy |
 | OP-012 | S2 and `summary_nodes` provenance/coverage/confidence fields |
 | OP-013 | Carried decision table |
 | OP-014 | Carried decision table |
 | OP-015 | Carried decision table |
 | OP-016 | Carried decision table |
-| OP-017 | Carried decision table and D0 thresholds |
+| OP-017 | Carried decision table and current thresholds |
 | OP-018 | F4 |
-| OP-019 | F4 and D0 route trace |
+| OP-019 | F4 and route trace |
 | OP-020 | Carried decision table |
 
 ## Current Implementation Anchors
 
-- `src/even/chunks.py`: D0 summary inputs come from `chunks_for_root`.
-- `src/even/fts.py`: D0 can reuse Tantivy schema/build/search patterns but must
+- `src/even/chunks.py`: document summary inputs come from `chunks_for_root`;
+  media proof chunks still come from `media_chunks_for_root` in scoped FTS.
+- `src/even/fts.py`: routing can reuse Tantivy schema/build/search patterns but must
   not register the global representative index in `fts_indexes`.
 - `src/even/hybrid.py`: existing RRF implementation is the model for later
   cross-route fusion.
@@ -400,7 +414,7 @@ Status: all items below are decided. No item blocks D0 implementation.
 
 ## Search And Route Trace Contract
 
-D0 adds `route_trace` to `search text` payloads when routing is attempted.
+Routed `search text` adds `route_trace` when routing is attempted.
 Existing top-level hit fields remain stable.
 
 Expected shape:
@@ -450,51 +464,56 @@ If routing is unavailable, use:
 }
 ```
 
-## Media Mapping For Follow-On Work
+## Media Mapping
 
-Media follows the same shape as document routing, one level up:
+Media follows the same shape as document routing, one level up. D1 implements
+the text-routable part of this shape; visual vector routing remains future work.
 
 | Text world | Media world |
 | --- | --- |
-| chunk text plus text embedding | image pixels plus SigLIP vector |
-| document made of chunks | image container made of images |
-| sampled chunks summarized into text | sampled medoid images summarized into routing text |
-| document/root summary routes to deep FTS | album/container summary routes to per-scope image evidence |
+| chunk text plus text embedding | image/media metadata plus future SigLIP vector |
+| document made of chunks | image container made of media assets |
+| sampled chunks summarized into text | sampled media assets summarized into routing text |
+| document/root summary routes to deep FTS | album/container summary routes to per-scope media text evidence |
 
 An image container can be a folder/album, a media-bearing document, or the media
-inside a folder. A single important image is the n=1 case: its own vector and
-routing text become the representative.
+inside a folder. D1 implements root-level albums only. A single important image
+is the n=1 case: its filename, observations, metadata, and routing text become
+the representative.
 
 Routing text for media is a fusion of available facets:
 
 ```text
 path tokens
 filename tokens
+caption text          existing media_observations facet
+generated album summary
 OCR text              future facet
-generated caption     opt-in, expensive
-generated cluster summary
+generated cluster summary future facet
 detected labels       future facet
 selected metadata     media_kind, capture date, duration, etc.
 ```
 
-Facets disabled or unavailable under current config are skipped deterministically
-and recorded in sampling/widening metadata.
+D1 consumes only existing media observations; it does not invoke OCR, object
+detection, video keyframes, audio transcription, or SigLIP representative
+routing. Facets disabled or unavailable under current config are skipped
+deterministically and recorded in sampling/widening metadata.
 
 ## Privacy And Policy
 
 - Visual media representatives have a higher privacy surface than text. EXIF
   GPS, OCR, captions, labels, and route traces can expose sensitive data.
 - `EVEN_GLOBAL_INCLUDE_EXIF_LOCATION` defaults to off.
-- Captions and summaries stay local-only unless the caller explicitly provides a
-  remote-model policy in a later design.
+- Captions and summaries stay local-only. Remote model policy is out of scope
+  for the minimal laptop setup.
 - Raw query text is never persisted in SQLite.
 - Summary text and route traces must avoid copying full source content; they are
   routing hints and diagnostics, not evidence.
 
 ## Configuration
 
-All new flags use the `EVEN_` prefix. D0 implementation should document these
-in `config/README.md` and keep non-env defaults in one routing config file.
+All new flags use the `EVEN_` prefix. Implementation should document these in
+`config/README.md` and keep non-env defaults in one routing config file.
 
 | Flag / setting | Type | Default | Controls |
 | --- | --- | --- | --- |
@@ -505,7 +524,7 @@ in `config/README.md` and keep non-env defaults in one routing config file.
 | `EVEN_GLOBAL_INCLUDE_EXIF_LOCATION` | env bool | `0` | Allow GPS in global representatives. |
 | `EVEN_OLLAMA_RERANK_MODEL` | env | unset | Existing optional local rerank model. |
 | RRF route weights | config | uniform | Future cross-route fusion weights. |
-| D0 routing thresholds | config | listed above | Hit count, score gap, and hydration widening thresholds. |
+| Routing thresholds | config | listed above | Hit count, score gap, and hydration widening thresholds. |
 | Remote models | policy | disabled | No remote model by default. |
 
 ## Dependencies And Risks
@@ -533,14 +552,14 @@ Risks:
 
 ## Exit Criteria
 
-D0 is done when:
+D0/D1 is done when:
 
 - `plan.md`, `implementation.md`, and `test.md` reflect the implemented scope;
 - `catalog.yaml`, `store_templates.yaml`, configs, and durable spec are updated;
 - `summary_nodes` exists with the schema above or a documented compatible
   equivalent;
-- `even index routing <path>` can build current root summaries and a global
-  representative FTS projection for a parsed multi-root fixture;
+- `even index routing <path>` can build current document root summaries, media
+  album summaries, and a global representative FTS projection for small fixtures;
 - `even search text <query>` routes through global representatives when current
   and falls back to all current FTS when unavailable or weak;
 - result JSON includes hydrated refs and route trace/widening status;

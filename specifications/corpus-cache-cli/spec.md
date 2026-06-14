@@ -219,7 +219,7 @@ Public commands:
 | `index` | `scope <path>` | `path` | Build or refresh the text index. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
-| `index` | `routing <path>` | `path` | Build or refresh document root summaries and the global representative FTS map. |
+| `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. |
 | `search` | `text <query>` | `query` | Search text projections. |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
