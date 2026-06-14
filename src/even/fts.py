@@ -31,6 +31,7 @@ class IndexOptions:
 @dataclass(frozen=True)
 class SearchOptions:
     limit: int = 30
+    routed: bool = True
 
 
 def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:
@@ -180,11 +181,27 @@ def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:
 def search_text_indexes(query: str, options: SearchOptions) -> dict[str, Any]:
     """Search all current FTS islands and hydrate stored provenance."""
 
+    if options.routed:
+        from even.routing import search_text_with_routing
+
+        return search_text_with_routing(query, options)
+
+    return search_all_text_indexes(query, options)
+
+
+def search_all_text_indexes(
+    query: str,
+    options: SearchOptions,
+    *,
+    scope_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Search current FTS islands, optionally restricted to specific scopes."""
+
     runtime = _tantivy_runtime_status()
     if runtime["status"] != "ok":
         return runtime
 
-    indexes = _current_fts_indexes()
+    indexes = _current_fts_indexes(scope_ids=scope_ids)
     if not indexes:
         return {
             "status": "ok",
@@ -375,17 +392,27 @@ def _fts_registry_state(fts_index_id: str) -> dict[str, Any] | None:
     return {"source_high_watermark": row[0], "status": row[1]}
 
 
-def _current_fts_indexes() -> list[dict[str, Any]]:
+def _current_fts_indexes(
+    *, scope_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
+    scope_filter = sorted({scope_id for scope_id in scope_ids or [] if scope_id})
     with sqlite3.connect(catalog_path()) as conn:
+        params: list[Any] = []
+        where = "WHERE status = 'current'"
+        if scope_filter:
+            placeholders = ", ".join("?" for _ in scope_filter)
+            where += f" AND scope_id IN ({placeholders})"
+            params.extend(scope_filter)
         rows = conn.execute(
-            """
+            f"""
             SELECT fts_index_id, scope_id, fts_profile, chunk_profile,
                    template_name, index_uri, indexed_chunk_count,
                    source_high_watermark
             FROM "fts_indexes"
-            WHERE status = 'current'
+            {where}
             ORDER BY updated_at DESC, fts_index_id
-            """
+            """,
+            params,
         ).fetchall()
     return [
         {

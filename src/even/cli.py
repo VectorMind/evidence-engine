@@ -39,6 +39,7 @@ from even.parse import ParseOptions, parse_folder_to_catalog
 from even.paths import catalog_path, reports_root, results_root, workspace_root
 from even.references import attach_hit_refs
 from even.results import CommandRun
+from even.routing import RoutingIndexOptions, index_routing
 from even.semantic import (
     SemanticIndexOptions,
     SemanticSearchOptions,
@@ -373,6 +374,33 @@ def index_scope(args: argparse.Namespace) -> int:
                 Path(args.path),
                 IndexOptions(force=args.force),
             )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def index_routing_command(args: argparse.Namespace) -> int:
+    run = CommandRun.start("index routing")
+    payload = _base_payload("index routing")
+    try:
+        result = index_routing(
+            Path(args.path),
+            RoutingIndexOptions(
+                force=args.force,
+                limit=args.limit,
+                summary_model=args.summary_model,
+                summary_ollama_url=args.summary_ollama_url,
+            ),
+        )
         payload.update(result)
     except Exception as exc:  # pragma: no cover - final defensive boundary.
         payload.update(
@@ -731,6 +759,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --image, embed at most this many image assets.",
     )
     index_scope_parser.set_defaults(handler=index_scope)
+
+    index_routing_parser = index_sub.add_parser(
+        "routing",
+        help="Build or refresh global representative routing indexes.",
+    )
+    index_routing_parser.add_argument("path", help="Folder path to summarize.")
+    index_routing_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force summary and representative index rebuild.",
+    )
+    index_routing_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum document chunks sampled into the summary prompt.",
+    )
+    index_routing_parser.add_argument(
+        "--summary-model",
+        default=None,
+        help="Local Ollama model for lossy routing summaries.",
+    )
+    index_routing_parser.add_argument(
+        "--summary-ollama-url",
+        default=None,
+        help="Local Ollama base URL for routing summaries.",
+    )
+    index_routing_parser.set_defaults(handler=index_routing_command)
 
     search = subparsers.add_parser("search", help="Search built indexes.")
     search_sub = search.add_subparsers(dest="search_command")

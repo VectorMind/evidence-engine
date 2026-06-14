@@ -97,6 +97,8 @@ packages = ["src/even"]
 "config/embeddings.yaml" = "even/contracts/config/embeddings.yaml"
 "config/exposures.yaml" = "even/contracts/config/exposures.yaml"
 "config/parser.yaml" = "even/contracts/config/parser.yaml"
+"config/routing.yaml" = "even/contracts/config/routing.yaml"
+"config/README.md" = "even/contracts/config/README.md"
 "store_templates.yaml" = "even/contracts/store_templates.yaml"
 
 [tool.ruff]

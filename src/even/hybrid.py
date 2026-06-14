@@ -33,7 +33,10 @@ def search_hybrid_indexes(
     candidate_limit = max(limit, int(options.candidate_limit or 60))
     rrf_k = max(1, int(options.rrf_k or 60))
 
-    fts_result = search_text_indexes(query, SearchOptions(limit=candidate_limit))
+    fts_result = search_text_indexes(
+        query,
+        SearchOptions(limit=candidate_limit, routed=False),
+    )
     semantic_result = search_semantic_indexes(
         query, SemanticSearchOptions(limit=candidate_limit)
     )

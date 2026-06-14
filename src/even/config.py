@@ -32,6 +32,18 @@ def load_embedding_config() -> dict[str, Any]:
     return yaml.safe_load(text)
 
 
+def load_routing_config() -> dict[str, Any]:
+    """Load global routing defaults from config/routing.yaml."""
+
+    text = read_contract_text("config/routing.yaml")
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        return _load_routing_config_fallback()
+
+    return yaml.safe_load(text)
+
+
 def embedding_profile(name: str) -> dict[str, Any] | None:
     config = load_embedding_config()
     for profile in config.get("profiles", []):
@@ -62,6 +74,24 @@ def _load_embedding_config_fallback() -> dict[str, Any]:
                 "dimension": 768,
             },
         ]
+    }
+
+
+def _load_routing_config_fallback() -> dict[str, Any]:
+    return {
+        "defaults": {
+            "representative_top_k": 12,
+            "max_routed_scopes": 4,
+            "min_hydrated_deep_hits": 3,
+            "min_representative_score_gap": 0.10,
+            "summary_sample_chunks_default": 12,
+            "summary_sample_chars_per_chunk": 700,
+            "summary_prompt_max_chars": 12000,
+            "summary_model": "granite3.2-vision",
+            "summary_ollama_url": "http://localhost:11434",
+            "summary_timeout_seconds": 120,
+            "sample_policy": "text_stratified_v1",
+        }
     }
 
 

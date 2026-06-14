@@ -1,4 +1,4 @@
-spec_version: "0.6"
+spec_version: "0.7"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -226,6 +226,50 @@ datasets:
             unique: true
           - name: idx_index_scopes_root_path
             columns: [root_id, relative_path]
+
+      - name: summary_nodes
+        description: Current lossy representative nodes used only for routing.
+        exposures: [sqlite]
+        columns:
+          - {name: summary_id, type: text, description: "Stable summary node ID."}
+          - {name: root_id, type: text, description: "Summarized source root.", ref: corpus_cache.source_roots.root_id}
+          - {name: scope_id, type: text, description: "Summarized index scope.", ref: corpus_cache.index_scopes.scope_id}
+          - {name: parent_summary_id, type: text, description: "Parent summary node when a hierarchy exists.", ref: corpus_cache.summary_nodes.summary_id}
+          - {name: source_item_id, type: text, description: "Folder, file, or container item summarized when applicable.", ref: corpus_cache.source_items.source_item_id}
+          - {name: doc_id, type: text, description: "Document summarized when applicable.", ref: corpus_cache.documents.doc_id}
+          - {name: kind, type: enum, description: "Representative kind.", values: [root_summary, folder_summary, document_summary, album_summary, media_cluster_summary, negative_summary]}
+          - {name: modality, type: enum, description: "Dominant modality represented.", values: [text, image, video, audio, model3d, mixed]}
+          - {name: media_kind, type: text, description: "Closed media-kind label when applicable."}
+          - {name: container_kind, type: enum, description: "Container shape when applicable.", values: [none, root, folder, document, item, cluster]}
+          - {name: summary_level, type: integer, description: "Routing level, with 0 for root-level representatives."}
+          - {name: title, type: text, description: "Short display title for the representative."}
+          - {name: summary_text, type: text, description: "Local lossy LLM summary of sampled inputs."}
+          - {name: routing_text, type: text, description: "Searchable routing text: summary plus deterministic facets."}
+          - {name: source_refs_json, type: json, description: "Canonical refs sampled or represented by this node."}
+          - {name: source_count, type: integer, description: "Total lower items considered for this representative."}
+          - {name: sample_count, type: integer, description: "Lower items sampled into the summary prompt."}
+          - {name: coverage_estimate, type: real, description: "sample_count divided by source_count when known."}
+          - {name: sample_policy, type: text, description: "Sampling policy name."}
+          - {name: producer, type: text, description: "Producer implementation or local model family."}
+          - {name: profile, type: text, description: "Summary/profile configuration used."}
+          - {name: source_high_watermark, type: text, description: "Hash of source inputs, config, and producer profile."}
+          - {name: summary_status, type: enum, description: "Current summary state.", values: [current, stale, deferred, failed, deleted]}
+          - {name: confidence, type: real, description: "Optional producer confidence or quality estimate."}
+          - {name: attrs_json, type: json, description: "Additional routing metadata and diagnostics."}
+          - {name: created_at, type: timestamp, description: "UTC timestamp when first generated."}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when last refreshed."}
+        indexes:
+          - name: pk_summary_nodes
+            columns: [summary_id]
+            unique: true
+          - name: idx_summary_nodes_root_kind
+            columns: [root_id, kind]
+          - name: idx_summary_nodes_scope_kind
+            columns: [scope_id, kind]
+          - name: idx_summary_nodes_parent
+            columns: [parent_summary_id]
+          - name: idx_summary_nodes_status
+            columns: [summary_status]
 
       - name: fts_indexes
         description: Current registry of physical full-text index islands.

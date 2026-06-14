@@ -37,10 +37,22 @@ workspace_root_layout:
     exposure: fts
     path_template: "fts/{fts_profile}/{scope_id}/"
     description: Full-text index island for one scope/profile.
+  - name: global_representative_fts
+    exposure: fts
+    path_template: "fts/global_representatives/{fts_profile}/"
+    description: Derived global FTS map over current summary_nodes. Not catalog-registered.
   - name: semantic
     exposure: semantic
     path_template: "semantic/{embedding_profile}/{scope_id}.lancedb/"
     description: Vector store island for one scope/profile.
+  - name: global_representative_semantic
+    exposure: semantic
+    path_template: "semantic/global_representatives/{embedding_profile}.lancedb/"
+    description: Future derived semantic map over current summary_nodes. Not catalog-registered.
+  - name: global_representative_siglip
+    exposure: semantic
+    path_template: "semantic/global_representatives/siglip/{image_profile}.lancedb/"
+    description: Future derived SigLIP map over summary medoid asset refs. Not catalog-registered.
   - name: embedding_models
     exposure: file
     path_template: "models/fastembed/"

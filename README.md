@@ -37,7 +37,7 @@ layers know lower ones, never the reverse.
 | --- | --- | --- | --- | --- |
 | 1 | **Source authority** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots` | `sources scan` |
 | 2 | **Evidence** | Everything machine-produced and **rebuildable**: source inventory, parsed typed objects (documents, pages, tables, figures, images, blobs), and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `source_items`, `source_root_stats`, `source_extension_stats`, `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items` | `docs parse` |
-| 3 | **Search projections** | Fast rebuildable retrieval indexes: text (FTS), semantic (vector), hybrid fusion; global routing later. | `index_scopes`, `fts_indexes`, `semantic_stores` | `index scope`, `search` |
+| 3 | **Search projections** | Fast rebuildable retrieval indexes: text (FTS), semantic (vector), hybrid fusion, and global routing. | `index_scopes`, `summary_nodes`, `fts_indexes`, `semantic_stores` | `index scope`, `index routing`, `search` |
 | 4 | **Reviewed facts** | Meaning a human or agent **decided**: entities, classifications, identities, relationships, promotion choices. Durable; carries judgment. | *(upper catalog)* | workspaces on top |
 | 5 | **Curated knowledge** | Human-readable Markdown: conventions, decisions, selected facts, topic handoff slices. | *(markdown)* | workspaces on top |
 
@@ -79,6 +79,8 @@ Implemented today:
 - visual search (image→image and text→image) via SigLIP 2 image embeddings;
 - media captions/metadata indexed into text/semantic search so media is findable by words;
 - text, semantic, and hybrid search/index plumbing;
+- document root summaries and fixed-path global representative FTS routing for
+  `search text`;
 - JSON-first command stdout;
 - persisted result JSON, events, summaries, and optional HTML reports.
 
@@ -145,6 +147,7 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `index` | `scope <path>` | `path` | Build or refresh the text index for a source scope. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images (needs `image-search` extra). |
+| `index` | `routing <path>` | `path` | Build or refresh document root summaries and the global representative FTS map. |
 | `search` | `text <query>` | `query` | Search current text indexes. |
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
@@ -161,6 +164,7 @@ even docs parse "C:\docs\example-folder"
 even media inspect "C:\docs\example-folder"
 even index scope "C:\docs\example-folder"
 even index scope "C:\docs\example-folder" --semantic
+even index routing "C:\docs\example-folder"
 even search text "contract renewal clause"
 even search semantic "contract renewal clause"
 even search hybrid "contract renewal clause"
@@ -189,9 +193,17 @@ source path but does not silently parse/OCR missing documents. Run `docs parse`
 and/or `media inspect`/`describe` first. Add `--semantic` for the semantic
 index or `--image` for the image-embedding store.
 
+`index routing` builds lossy document root summaries into `summary_nodes`, then
+projects current summaries into a fixed global representative FTS map. Summary
+generation uses a local Ollama endpoint and is explicit so ordinary
+`index scope` stays model-free. The global map is a routing hint only; evidence
+still comes from root-scoped FTS hits.
+
 `search text`, `search semantic`, and `search hybrid` are the public search
 surface. Higher layers should not know which physical search engine backs
-those projections.
+those projections. When a current global representative map exists,
+`search text` routes to likely root scopes first and falls back to all current
+FTS indexes when routing is unavailable or weak.
 
 ## Public Data Contract
 
@@ -205,6 +217,7 @@ The public contract is open local data plus search access:
 | [config/exposures.yaml](./config/exposures.yaml) | Workspace storage layout. |
 | [config/parser.yaml](./config/parser.yaml) | Parser, traversal, indexing, and safeguard defaults. |
 | [config/embeddings.yaml](./config/embeddings.yaml) | Embedding profile config. |
+| [config/routing.yaml](./config/routing.yaml) | Global representative routing defaults. |
 | `results/` | Run proof: JSON, JSONL events, and Markdown summaries. |
 | `reports/` | Optional human HTML reports. |
 | Search CLI | Hydrated text/semantic/hybrid retrieval without exposing projection internals. |

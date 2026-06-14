@@ -1,0 +1,19 @@
+spec_version: "0.1"
+name: evidence_engine_routing
+status: draft
+description: >
+  Defaults for global representative routing. These settings control derived
+  route maps and routed search behavior; they are not SQLite catalog tables.
+
+defaults:
+  representative_top_k: 12
+  max_routed_scopes: 4
+  min_hydrated_deep_hits: 3
+  min_representative_score_gap: 0.10
+  summary_sample_chunks_default: 12
+  summary_sample_chars_per_chunk: 700
+  summary_prompt_max_chars: 12000
+  summary_model: "granite3.2-vision"
+  summary_ollama_url: "http://localhost:11434"
+  summary_timeout_seconds: 120
+  sample_policy: "text_stratified_v1"

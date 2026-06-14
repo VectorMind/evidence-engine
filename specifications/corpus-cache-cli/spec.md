@@ -69,6 +69,7 @@ The catalog stores:
 - normalized document object records;
 - valuable item records;
 - index scopes;
+- lossy summary nodes used only for routing;
 - text index registry rows;
 - semantic store registry rows;
 - media assets and typed image/video/3D metadata;
@@ -81,6 +82,7 @@ The catalog does not store:
 - generated chunk tables;
 - text-index internal documents;
 - vector-store internal rows;
+- global representative FTS or semantic registry rows;
 - private review decisions;
 - private semantic facts;
 - private knowledge.
@@ -181,6 +183,14 @@ distinct query-by-example mode: it takes an image path, embeds it with the media
 image-embedding model, and returns visually similar assets. Visual similarity is
 a separate retrieval mode, not a text search over generated captions.
 
+`search text` may use global representative routing when a current derived
+representative FTS map exists. Routing first searches lossy `summary_nodes`,
+selects likely root scopes, then searches the root-scoped FTS indexes that
+remain the evidence layer. If routing is unavailable or weak, `search text`
+falls back to all current FTS indexes and records the fallback in
+`route_trace`. Global representative stores are fixed-path derived projections,
+not catalog registry rows.
+
 Search results hydrate back to catalog identities such as `source_item_id`,
 `doc_id`, `object_id`, `scope_id`, and index/store registry IDs. Every hit also
 carries a `ref` field holding its canonical evidence coordinate
@@ -209,6 +219,7 @@ Public commands:
 | `index` | `scope <path>` | `path` | Build or refresh the text index. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
+| `index` | `routing <path>` | `path` | Build or refresh document root summaries and the global representative FTS map. |
 | `search` | `text <query>` | `query` | Search text projections. |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
@@ -247,5 +258,3 @@ knowledge.
 - No direct public access to text/vector projection internals.
 - No topic-manager abstraction in this repo.
 - No handoff/export packaging in V1.
-- No global routing implementation in this packet; that remains a separate
-  plan.

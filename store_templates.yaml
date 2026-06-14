@@ -24,6 +24,21 @@ templates:
       - {name: body, type: text, description: "Main searchable text."}
       - {name: metadata_json, type: json, description: "Compact filter and provenance metadata."}
 
+  - name: fts_summary_node
+    backend: fts
+    description: One generated FTS document per current summary node.
+    columns:
+      - {name: summary_id, type: text, description: "Catalog summary node ID."}
+      - {name: root_id, type: text, description: "Summarized source root."}
+      - {name: scope_id, type: text, description: "Summarized index scope."}
+      - {name: kind, type: enum, description: "Summary node kind."}
+      - {name: modality, type: enum, description: "Dominant modality."}
+      - {name: title, type: text, description: "Display title."}
+      - {name: summary_text, type: text, description: "Lossy summary text."}
+      - {name: routing_text, type: text, description: "Primary searchable routing text."}
+      - {name: source_refs_json, type: json, description: "Represented lower evidence refs."}
+      - {name: metadata_json, type: json, description: "Compact route metadata."}
+
   - name: semantic_chunk_row
     backend: semantic
     description: One generated semantic row per indexing chunk.
