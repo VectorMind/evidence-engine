@@ -110,8 +110,21 @@ Once implementation starts, facts about what actually landed belong in
 
 Create `implementation.md` only once implementation work has actually
 happened; it logs facts really implemented, never planned intent. A packet
-that is still in planning or review has no `implementation.md`. Use it as the
-running trace of work:
+that is still in planning or review has no `implementation.md`.
+
+Every `implementation.md` opens with a **Progress** section — the first
+section after the title — and it is updated on every change to the file. It is
+a one-glance progress bar, not prose:
+
+- one line with a bar of filled/empty blocks plus the current phase, e.g.
+  `` `▰▰▰▱▱▱ Phase 3/6` ``, using the plan's own phase or milestone names;
+- one short clause naming the phase in progress and what comes next;
+- when the packet is fully implemented and proven, the bar is full and the
+  line reads `Done`, e.g. `` `▰▰▰▰▰▰ Done` `` with a one-clause summary and any
+  non-blocking follow-ups.
+
+Keep the Progress section to two lines at most; the running detail belongs in
+the log below. Use the rest of the file as the running trace of work:
 
 - files changed;
 - implementation facts;

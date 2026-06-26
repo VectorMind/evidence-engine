@@ -18,7 +18,9 @@ time-bounded planning packets.
 - Keep `plan.md` focused on approved scope, milestones, dependencies, and exit
   criteria. Do not turn unreviewed survey notes into committed scope.
 - Keep `implementation.md` as a running log of changes made, important
-  decisions, deviations from the plan, and follow-up risks.
+  decisions, deviations from the plan, and follow-up risks. Open it with a
+  short **Progress** section (a filled/empty-block bar plus current phase, or
+  `Done` when finished) and keep that bar current on every change.
 - Keep `test.md` as proof of working behavior: commands run, fixtures used,
   expected and actual results, and any gaps that remain untested.
 

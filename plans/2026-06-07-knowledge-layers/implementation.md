@@ -3,6 +3,11 @@
 Date: 2026-06-07
 Status: First public-engine slice implemented.
 
+## Progress
+
+`▰▰▰▰ Done` — evidence/memory knowledge-layer consolidation implemented;
+packet closed in plans/closed.md.
+
 ## Changes
 
 - Reviewed the existing knowledge-layer inputs:

@@ -337,6 +337,39 @@ Status: all items below are decided. No item blocks the implemented D0/D1 path.
 | F3 | How are lossy summaries generated? | Sample bounded representative chunks/images, feed only those to a local Ollama model, then concatenate deterministic facets into `routing_text`. No remote model by default. | High |
 | F4 | How are cross-index scores handled? | Do not calibrate scores across indexes or embedding spaces. Merge cross-route candidates with RRF; keep raw per-route scores in trace. | High |
 | D0/D1 | Sequencing | Ship document-only root-summary routing first, then add root-level media album summaries from existing media catalog facts. | High |
+| F5 | Is the global index per-root volume-budgeted? | Yes. The routing layer is built under a typed per-root budget envelope; the proof layer stays exhaustive and unbudgeted. | High |
+| F6 | Does representation carry importance? | Yes. Every unit carries an importance signal in `[0, 1]` that drives hierarchical summarization; less important sources surface less in the next layer. | High |
+
+### Global Representation Budget And Importance (O1)
+
+Resolves open point O1 (implicit per-root budget). The global representative
+layer must not let one large root flood the index; representation volume is a
+function of the budget, not the file count. Hardened in the spec's
+`Global Representation Contract`.
+
+| ID | Point | Decision | Confidence |
+| --- | --- | --- | --- |
+| B1 | Budget shape | A typed per-root envelope, not a single count. Two decisive dimensions — `max_build_seconds` (cost) and `max_entries` (volume) — plus advisory/derived `embedding_units`, `local_llm_tokens`, `remote_llm_tokens`. | High |
+| B2 | Entry ceiling | `1 ≤ entries(root) ≤ max_entries`, log-scaled vs source size. Default `max_entries = 20`; proposed curve `clamp(round(1 + 2·log10(source_items)), 1, max_entries)`. | High |
+| B3 | Mandatory floor | At least one `root_summary` when inputs exist; it alone is a sufficient global representation. Companions are optional refinements added only while budget allows. | High |
+| B4 | Embedding budget | Explicit `embedding_units` dimension; model selectable, default a fast model. Reuse current proof-layer vectors when available, so marginal embedding cost is usually ~0. | High |
+| B5 | Remote spend | `remote_llm_tokens` default `0` (local-only), matching existing policy. | High |
+| B6 | Soft budgets | Budgets are soft and configurable: exhausting a dimension stops adding companions; it does not fail the build. | High |
+| B7 | Lossy by budget | Large sources are sampled, or fully embedded then clustered down to the entry budget; loss recorded as `coverage_estimate`. | High |
+| B8 | Importance | Per-unit importance in `[0, 1]`, emitted as a structured side output of the summary call alongside `summary_text` (no separate rationale field; the prompt surfaces the reason inside the summary only for extreme cases). Allocates entry/time budget and next-layer detail; advisory only, never suppresses proof. Generalizes OP-015 `negative_summary`. | Med-High |
+| B9 | Layer scope | Budget and lossiness apply to the routing layer only. Root-scoped FTS/semantic/image stay exhaustive. | High |
+| B10 | Versioning | `representation_policy_version` covers budget/importance/precedence; projection manifest watermark covers it so policy changes force a rebuild. | High |
+| B11 | Time-primary budget (O3) | Wall-clock `max_build_seconds` per root, default `300` (5 min), is the primary cost limit. Token/embedding budgets derive from `max_build_seconds × tokens_per_sec`; `tokens_per_sec` is measured-and-cached on first summarization and self-corrected. | High |
+| B12 | Selection precedence (O5) | When candidates exceed `max_entries`: reserve `root_summary`, then `album_summary`, then companions by importance desc → `coverage_estimate` desc → `summary_id`. Overflow is dropped but counted in manifest/`route_trace`; low-importance overflow may roll up into one `negative_summary`. | High |
+| B13 | Importance priors (O7) | A deterministic low-importance prior list (`node_modules`, `.git`, `.venv`/`venv`, git-ignored paths, OS folders such as `Program Files`) seeds importance; the list is dynamic and is demoted/extended from model importance feedback over time. | Med-High |
+| B14 | Importance source (O7) | Importance comes from the summarization side output, reusing the existing model call. The media `media_kind` describe step is the existing classifier; a general per-document classifier is a future option. | Med-High |
+
+Schema and code follow-ups (not yet landed): add a `real` `summary_nodes.importance`
+column; enforce the per-root budget at projection-selection time so FTS and the
+future semantic map consume the identical trimmed unit set; measure-and-cache
+`tokens_per_sec` per machine; rename the sampling policy `text_stratified_v1` →
+`doc_roundrobin_v1` (O6 — honest naming, `text_stratified_v1` reserved for a real
+stratified sampler). Precedence (O5) is now decided above.
 
 ### Schema / Registry
 
@@ -521,6 +554,14 @@ All new flags use the `EVEN_` prefix. Implementation should document these in
 | `EVEN_SUMMARY_OLLAMA_URL` | env/config | existing `DEFAULT_URL` | Local Ollama endpoint for summary generation. |
 | `EVEN_MEDIA_OCR` | env bool | `0` | Future media OCR facet. |
 | `EVEN_MEDIA_CLUSTER_K_MAX` | config | `16` | Future media medoid clamp. |
+| `representation_budget.max_build_seconds` | config (dynamic) | `300` | **Primary** cost budget: wall-clock build time per root. |
+| `representation_budget.max_entries` | config | `20` | **Volume** ceiling per root (log-scaled vs source size). |
+| `representation_budget.tokens_per_sec` | calibrated | measured + cached | Machine throughput; derives token/embedding budgets from time. |
+| `representation_budget.embedding_units` | derived | reuse proof-layer vectors | Items embedded for routing; model selectable, default fast. |
+| `representation_budget.local_llm_tokens` | derived | from time × throughput | Local summarization token budget (advisory). |
+| `representation_budget.remote_llm_tokens` | config | `0` | Remote summarization token budget (local-only default). |
+| `importance_priors` | config (dynamic) | seed list, feedback-updated | Low-importance path priors (`node_modules`, `.git`, `.venv`, OS folders…). |
+| `representation_policy_version` | config | bumped on rule change | Versions budget/importance/precedence; forces projection rebuild. |
 | `EVEN_GLOBAL_INCLUDE_EXIF_LOCATION` | env bool | `0` | Allow GPS in global representatives. |
 | `EVEN_OLLAMA_RERANK_MODEL` | env | unset | Existing optional local rerank model. |
 | RRF route weights | config | uniform | Future cross-route fusion weights. |

@@ -1,5 +1,11 @@
 # Implementation
 
+## Progress
+
+`▰▰▰▰ Done` — Docling runtime defaults, failure classification, parse
+failure/partial reporting in summary + HTML, and parse progress/quiet logging
+implemented; `uv run pytest` 4 passed and Ruff clean (see test.md).
+
 ## Changes
 
 - Added `parser_runtime` defaults in `config/parser.yaml`:

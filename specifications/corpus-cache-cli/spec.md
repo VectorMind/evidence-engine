@@ -198,6 +198,90 @@ carries a `ref` field holding its canonical evidence coordinate
 layers can store the hit as a plain reference without copying lower rows. Result
 payloads use public labels: `text`, `semantic`, and `hybrid`.
 
+## Global Representation Contract
+
+The global representative layer is a lossy routing map, not evidence. It is built
+under an explicit per-root budget so that one large root cannot dominate the
+global index, and so that a 10-file root and a 10,000-file root differ by
+content, not by volume.
+
+Representation unit. The global index is built only from `summary_nodes` rows
+("representation units"). No lower row — chunk, asset, or object — is ever
+projected directly into the global index.
+
+Two layers, opposite contracts. Root-scoped FTS, semantic, and image indexes are
+the proof layer: they are exhaustive and are never budget-limited or sampled. The
+global representative layer is the routing layer: it is lossy and
+budget-constrained. Only the routing layer is budgeted.
+
+Representation budget. Each root's global representation is produced under a typed
+budget envelope. Two dimensions are decisive; the rest are advisory for now and
+derived from them:
+
+- `max_build_seconds` — decisive cost budget: wall-clock build time per root,
+  default `300` (5 minutes). Time is the primary cost limit; the builder stops
+  adding companion units when it is reached.
+- `max_entries` — decisive volume budget: representation-unit count on a
+  logarithmic scale versus source size, floor `1` and ceiling `max_entries`
+  (default `20`).
+- `embedding_units`, `local_llm_tokens`, `remote_llm_tokens` — advisory and
+  derived. Token and embedding budgets follow from `max_build_seconds` times a
+  calibrated machine throughput (`tokens_per_sec`). `remote_llm_tokens` defaults
+  to `0` (local-only). The embedding model is selectable and defaults to a fast
+  model; current proof-layer vectors are reused when available, so the marginal
+  embedding cost is usually near zero.
+
+Dynamic configuration. `tokens_per_sec` is measured on first summarization,
+cached, and self-corrected as builds run, so the time budget stays meaningful per
+machine without manual tuning. Budgets are soft: exhausting a dimension stops
+companion expansion; it never fails the build.
+
+Mandatory floor. Whenever a root has any routable inputs, it produces at least one
+`root_summary` unit, indexed into the mandatory FTS map. A single `root_summary`
+is a valid, sufficient global representation; routing into the root's local
+indexes can proceed on it alone. Companion units (folder, album, document, or
+cluster summaries) are optional refinements added only while the budget allows.
+
+Lossy by budget. Large sources are sampled, or fully embedded and then clustered
+down to the entry budget. The loss is recorded per unit as
+`coverage_estimate = sample_count / source_count`.
+
+Importance. Every representation unit carries an importance signal in `[0, 1]`,
+emitted as a structured side output of the summary call alongside `summary_text`.
+There is no separate rationale field — the summary itself should make the
+importance clear, and the prompt asks the model to surface the reason inside the
+summary only for extreme cases. Importance drives hierarchical summarization: more
+important sources receive more of the entry and time budget and finer
+representation in the next layer; less important sources are compressed, clustered
+together, or represented by a single low-detail companion or a `negative_summary`
+unit (generalizing OP-015). Importance is advisory for routing only and never
+suppresses evidence in the proof layer.
+
+Importance priors. Deterministic priors seed importance before the model refines
+it. A maintained low-importance prior list covers build, tooling, and system paths
+such as `node_modules`, `.git`, `.venv`/`venv`, git-ignored paths, and OS folders
+(for example `Program Files`). The prior list is dynamic: model importance
+feedback can lower or skip entries over time, so a path the priors missed but the
+model consistently rates low is demoted on later builds.
+
+Selection precedence. When candidate units exceed `max_entries`, units are kept in
+a deterministic order: the mandatory `root_summary` is always reserved, then
+root-level `album_summary` units, then companion units ranked by importance
+descending, then `coverage_estimate` descending, then `summary_id`. Overflow units
+are dropped but counted in the manifest and `route_trace`, never silently;
+low-importance overflow may be rolled up into a single `negative_summary` instead
+of dropped.
+
+Backend parity. The FTS and semantic global projections are built from the
+identical current unit set and index or embed the same payload field
+(`routing_text`). FTS is mandatory and built first; the semantic projection is
+optional and built second over the same units. Neither backend may add, drop, or
+reweight units relative to the other.
+
+Versioned and deterministic. A `representation_policy_version` covers the budget,
+importance, and precedence rules; the projection manifest watermark covers unit
+identity, payload, and this policy version, so a policy change forces a rebuild.
+
 ## Command Contract
 
 The CLI returns JSON on stdout. Commands that perform larger work also persist

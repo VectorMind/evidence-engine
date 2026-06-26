@@ -3,6 +3,12 @@
 Date: 2026-06-04
 Status: Phase 7 hybrid search implemented.
 
+## Progress
+
+`▰▰▰▰▰▰▰▰ Done` — Phases 0–7 implemented and proven in test.md. Optional
+follow-ups (index health/rebuild/refresh/delete, manager handoff export,
+search-hit fixtures) remain nice-to-have, not blocking.
+
 ## Notes
 
 - Created the dated planning packet.
