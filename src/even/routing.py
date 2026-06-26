@@ -25,13 +25,15 @@ from urllib.request import Request, urlopen
 
 from even.catalog import CATALOG_SCHEMA_VERSION, ensure_catalog
 from even.chunks import chunks_for_root, high_watermark, stable_id
-from even.config import load_parser_config, load_routing_config
+from even.config import embedding_profile, load_parser_config, load_routing_config
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.paths import calibration_path, catalog_path, workspace_root
 from even.references import evidence_ref
 
 
 GLOBAL_FTS_TEMPLATE = "fts_summary_node"
+GLOBAL_SEMANTIC_TEMPLATE = "semantic_summary_node"
+GLOBAL_SEMANTIC_TABLE = "summary_nodes"
 GLOBAL_FTS_MANIFEST = "manifest.json"
 PROMPT_VERSION = "summary_prompt_v2"
 MEDIA_PROMPT_VERSION = "media_summary_prompt_v2"
@@ -52,6 +54,7 @@ class RoutingIndexOptions:
     summary_model: str | None = None
     summary_ollama_url: str | None = None
     max_build_seconds: float | None = None
+    build_semantic: bool = False
 
 
 class SummaryGenerationError(Exception):
@@ -175,6 +178,10 @@ def index_routing(
             "counts": _combined_summary_counts(summaries),
         }
 
+    semantic_projection = None
+    if options.build_semantic:
+        semantic_projection = build_global_representative_semantic(force=options.force)
+
     counts = _combined_summary_counts(summaries)
     counts.update(
         {
@@ -186,7 +193,7 @@ def index_routing(
             "max_routed_scopes": int(config["max_routed_scopes"]),
         }
     )
-    return {
+    result = {
         "status": "ok",
         "index_backend": "routing",
         "root_id": scan_result["root_id"],
@@ -202,6 +209,9 @@ def index_routing(
         "representation_budget": _build_budget_report(max_build_seconds, build_started),
         "counts": counts,
     }
+    if semantic_projection is not None:
+        result["global_representative_semantic"] = semantic_projection
+    return result
 
 
 def _primary_summary(summaries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -320,6 +330,266 @@ def build_global_representative_fts(
     }
 
 
+def _embedding_profile_name() -> str:
+    defaults = load_parser_config().get("defaults", {})
+    return str(defaults.get("embedding_profile") or "fastembed_bge_small_en_v1_5")
+
+
+def _global_semantic_uri(profile_name: str) -> str:
+    return f"semantic/global_representatives/{profile_name}.lancedb"
+
+
+def build_global_representative_semantic(
+    *,
+    embedding_profile_name: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Build the fixed-path global semantic projection from current summary nodes.
+
+    Embeds each selected unit's derived `routing_payload` fresh (DP1), over the
+    identical budgeted unit set the FTS projection uses (backend parity)."""
+
+    from even import semantic
+
+    runtime = semantic._semantic_runtime_status()
+    if runtime["status"] != "ok":
+        return runtime
+
+    profile_name = embedding_profile_name or _embedding_profile_name()
+    profile = embedding_profile(profile_name)
+    if profile is None or profile.get("provider") != "fastembed":
+        return {
+            "status": "failed",
+            "error_kind": "unsupported_embedding_profile",
+            "embedding_profile": profile_name,
+        }
+
+    rows, overflow = _select_budgeted_rows(_current_summary_rows())
+    index_uri = _global_semantic_uri(profile_name)
+    store_dir = workspace_root() / index_uri
+    manifest_path = store_dir / GLOBAL_FTS_MANIFEST
+    watermark = _representative_watermark(rows, profile_name, GLOBAL_SEMANTIC_TEMPLATE)
+
+    if not rows:
+        return {
+            "status": "deferred",
+            "error_kind": "no_current_summary_nodes",
+            "index_uri": index_uri,
+            "template_name": GLOBAL_SEMANTIC_TEMPLATE,
+            "counts": {"summary_nodes_planned": 0, "summary_nodes_indexed": 0},
+        }
+
+    if (
+        not force
+        and _semantic_manifest_current(manifest_path, watermark)
+        and semantic._lancedb_store_exists(store_dir, GLOBAL_SEMANTIC_TABLE)
+    ):
+        return {
+            "status": "ok",
+            "index_backend": "routing",
+            "index_status": "current",
+            "index_uri": index_uri,
+            "embedding_profile": profile_name,
+            "template_name": GLOBAL_SEMANTIC_TEMPLATE,
+            "source_high_watermark": watermark,
+            "counts": {
+                "summary_nodes_planned": len(rows),
+                "summary_nodes_indexed": 0,
+                "summary_nodes_unchanged": len(rows),
+                "summary_nodes_overflow": len(overflow),
+            },
+        }
+
+    build = _write_global_semantic_index(store_dir, rows, profile, profile_name)
+    if build["status"] != "ok":
+        return {
+            "status": "failed",
+            "error_kind": build["error_kind"],
+            "index_uri": index_uri,
+            "template_name": GLOBAL_SEMANTIC_TEMPLATE,
+            "redacted_detail": build.get("redacted_detail"),
+            "counts": {"summary_nodes_planned": len(rows), "summary_nodes_indexed": 0},
+        }
+
+    _write_semantic_manifest(manifest_path, profile_name, watermark, len(rows), len(overflow))
+    return {
+        "status": "ok",
+        "index_backend": "routing",
+        "index_status": "rebuilt" if force else "refreshed",
+        "index_uri": index_uri,
+        "embedding_profile": profile_name,
+        "template_name": GLOBAL_SEMANTIC_TEMPLATE,
+        "source_high_watermark": watermark,
+        "counts": {
+            "summary_nodes_planned": len(rows),
+            "summary_nodes_indexed": len(rows),
+            "summary_nodes_unchanged": 0,
+            "summary_nodes_overflow": len(overflow),
+        },
+    }
+
+
+def _write_global_semantic_index(
+    store_dir: Path,
+    rows: list[dict[str, Any]],
+    profile: dict[str, Any],
+    profile_name: str,
+) -> dict[str, Any]:
+    from even import semantic
+
+    try:
+        import lancedb  # type: ignore[import-not-found]
+
+        payloads = [str(row.get("routing_payload") or "") for row in rows]
+        vectors = semantic._embed_passages(profile, payloads)
+        data = [
+            _semantic_row(row, vector, profile_name)
+            for row, vector in zip(rows, vectors)
+        ]
+        store_dir.mkdir(parents=True, exist_ok=True)
+        with semantic._quiet_output():
+            db = lancedb.connect(str(store_dir))
+            db.create_table(GLOBAL_SEMANTIC_TABLE, data=data, mode="overwrite")
+    except Exception as exc:  # noqa: BLE001 - backend boundary.
+        return {
+            "status": "failed",
+            "error_kind": "global_semantic_write_failed",
+            "redacted_detail": exc.__class__.__name__,
+        }
+    return {"status": "ok"}
+
+
+def _semantic_row(
+    row: dict[str, Any], vector: list[float], profile_name: str
+) -> dict[str, Any]:
+    return {
+        "summary_id": row["summary_id"],
+        "root_id": row["root_id"],
+        "scope_id": row["scope_id"],
+        "kind": str(row.get("kind") or ""),
+        "modality": str(row.get("modality") or ""),
+        "embedding_profile": profile_name,
+        "vector": vector,
+        "title": str(row.get("title") or ""),
+        "routing_payload": str(row.get("routing_payload") or ""),
+        "source_refs_json": row.get("source_refs_json") or "[]",
+        "metadata_json": row.get("metadata_json") or "{}",
+    }
+
+
+def _semantic_manifest_current(manifest_path: Path, watermark: str) -> bool:
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        manifest.get("summary_watermark") == watermark
+        and manifest.get("template_name") == GLOBAL_SEMANTIC_TEMPLATE
+    )
+
+
+def _write_semantic_manifest(
+    manifest_path: Path,
+    embedding_profile_name: str,
+    watermark: str,
+    row_count: int,
+    overflow_count: int = 0,
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "built_at": _iso(_utc_now()),
+                "embedding_profile": embedding_profile_name,
+                "template_name": GLOBAL_SEMANTIC_TEMPLATE,
+                "summary_watermark": watermark,
+                "row_count": row_count,
+                "overflow_count": overflow_count,
+                "representation_policy_version": _representation_policy_version(),
+                "schema_version": CATALOG_SCHEMA_VERSION,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _search_global_representatives_semantic(
+    query: str,
+    *,
+    embedding_profile_name: str,
+    limit: int,
+) -> dict[str, Any]:
+    from even import semantic
+
+    runtime = semantic._semantic_runtime_status()
+    if runtime["status"] != "ok":
+        return {"status": "unavailable", "reasons": [runtime["error_kind"]]}
+
+    try:
+        rows, _ = _select_budgeted_rows(_current_summary_rows())
+    except sqlite3.Error:
+        return {"status": "unavailable", "reasons": ["summary_nodes_unavailable"]}
+    if not rows:
+        return {"status": "unavailable", "reasons": ["no_current_summary_nodes"]}
+
+    profile = embedding_profile(embedding_profile_name)
+    if profile is None:
+        return {"status": "unavailable", "reasons": ["unknown_embedding_profile"]}
+
+    index_uri = _global_semantic_uri(embedding_profile_name)
+    store_dir = workspace_root() / index_uri
+    manifest_path = store_dir / GLOBAL_FTS_MANIFEST
+    watermark = _representative_watermark(rows, embedding_profile_name, GLOBAL_SEMANTIC_TEMPLATE)
+    if not _semantic_manifest_current(manifest_path, watermark):
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_index_stale"],
+            "representative_index_uri": index_uri,
+        }
+    if not semantic._lancedb_store_exists(store_dir, GLOBAL_SEMANTIC_TABLE):
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_index_missing"],
+            "representative_index_uri": index_uri,
+        }
+
+    try:
+        import lancedb  # type: ignore[import-not-found]
+
+        query_vector = semantic._embed_query(profile, query)
+        db = lancedb.connect(str(store_dir))
+        table = db.open_table(GLOBAL_SEMANTIC_TABLE)
+        results = table.search(query_vector).limit(max(1, limit)).to_list()
+        hits = []
+        for rank, row in enumerate(results, start=1):
+            distance = float(row.get("_distance", 0.0) or 0.0)
+            metadata = _json_object(row.get("metadata_json"))
+            hits.append(
+                {
+                    "rank": rank,
+                    "score": 1.0 / (1.0 + distance),
+                    "summary_id": row.get("summary_id"),
+                    "root_id": row.get("root_id"),
+                    "scope_id": row.get("scope_id"),
+                    "kind": row.get("kind"),
+                    "modality": row.get("modality"),
+                    "title": row.get("title"),
+                    "root_label": metadata.get("root_label"),
+                }
+            )
+    except Exception:  # noqa: BLE001 - backend boundary.
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_search_failed"],
+            "representative_index_uri": index_uri,
+        }
+    return {"status": "ok", "representative_index_uri": index_uri, "hits": hits}
+
+
 def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
     """Route text search through global representatives when they are current.
 
@@ -333,35 +603,113 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
 
     config = _routing_defaults()
     budget = _query_budget(options)
-    route = _search_global_representatives(
-        query,
-        fts_profile=_fts_profile(),
-        limit=int(config["representative_top_k"]),
+    top_k = int(config["representative_top_k"])
+    max_scopes = _budget_max_scopes(budget, int(config["max_routed_scopes"]))
+
+    fts_route = _search_global_representatives(query, fts_profile=_fts_profile(), limit=top_k)
+    semantic_route = _search_global_representatives_semantic(
+        query, embedding_profile_name=_embedding_profile_name(), limit=top_k
     )
-    if route["status"] != "ok":
+    fts_ok = fts_route.get("status") == "ok"
+    semantic_ok = semantic_route.get("status") == "ok"
+
+    # Single-route FTS path (semantic store absent) keeps the original shape.
+    if fts_ok and not semantic_ok:
+        return _routed_fts_only(query, options, fts_route, max_scopes, budget, config)
+
+    if not (fts_ok or semantic_ok):
         fallback = fts.search_all_text_indexes(query, options)
-        fallback["route_trace"] = _fallback_trace(route.get("reasons", []))
+        fallback["route_trace"] = _fallback_trace(
+            fts_route.get("reasons", []) or semantic_route.get("reasons", [])
+        )
         return _finalize_route(fallback, budget)
 
-    suggestions = route["hits"]
-    selected_scopes = _selected_scopes(
-        route["hits"],
-        max_scopes=_budget_max_scopes(budget, int(config["max_routed_scopes"])),
+    # Fused multi-route path (semantic representative store is current).
+    routes: list[dict[str, Any]] = []
+    hit_lists: list[tuple[str, list[dict[str, Any]]]] = []
+    for mode, route in (
+        ("global_representative_fts", fts_route),
+        ("global_representative_semantic", semantic_route),
+    ):
+        if route.get("status") == "ok":
+            routes.append(
+                {
+                    "mode": mode,
+                    "status": "used",
+                    "representative_index_uri": route.get("representative_index_uri"),
+                    "representative_hits": route.get("hits", [])[:12],
+                }
+            )
+            hit_lists.append((mode, route.get("hits", [])))
+        else:
+            routes.append(
+                {"mode": mode, "status": "unavailable", "reasons": route.get("reasons", [])}
+            )
+
+    fused = _fuse_representative_hits(hit_lists)
+    selected_scopes = _selected_scopes(fused, max_scopes=max_scopes)
+    if not selected_scopes:
+        fallback = fts.search_all_text_indexes(query, options)
+        fallback["route_trace"] = _multi_route_trace(
+            routes, selected_scopes, None, budget,
+            status="fallback_all_scopes",
+            widening_status={
+                "status": "fallback_all_scopes",
+                "reasons": ["no_representative_scopes"],
+                "skipped_rungs": [],
+            },
+        )
+        return _finalize_route(fallback, budget, fused)
+
+    scoped = fts.search_all_text_indexes(
+        query, options, scope_ids=[scope["scope_id"] for scope in selected_scopes]
     )
+    weak_reasons = _weak_route_reasons(
+        representative_hits=fused, deep_hits=scoped.get("hits", []), config=config
+    )
+    if weak_reasons:
+        fallback = fts.search_all_text_indexes(query, options)
+        fallback["route_trace"] = _multi_route_trace(
+            routes, selected_scopes, scoped, budget,
+            status="fallback_all_scopes",
+            widening_status={
+                "status": "fallback_all_scopes",
+                "reasons": weak_reasons,
+                "skipped_rungs": [],
+            },
+        )
+        return _finalize_route(fallback, budget, fused)
+
+    scoped["route_trace"] = _multi_route_trace(
+        routes, selected_scopes, scoped, budget,
+        status="used",
+        widening_status={"status": "not_needed", "reasons": [], "skipped_rungs": []},
+    )
+    return _finalize_route(scoped, budget, fused)
+
+
+def _routed_fts_only(
+    query: str,
+    options: Any,
+    route: dict[str, Any],
+    max_scopes: int,
+    budget: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    from even import fts
+
+    suggestions = route["hits"]
+    selected_scopes = _selected_scopes(route["hits"], max_scopes=max_scopes)
     if not selected_scopes:
         fallback = fts.search_all_text_indexes(query, options)
         fallback["route_trace"] = _fallback_trace(["no_representative_scopes"])
         return _finalize_route(fallback, budget, suggestions)
 
     scoped = fts.search_all_text_indexes(
-        query,
-        options,
-        scope_ids=[scope["scope_id"] for scope in selected_scopes],
+        query, options, scope_ids=[scope["scope_id"] for scope in selected_scopes]
     )
     weak_reasons = _weak_route_reasons(
-        representative_hits=route["hits"],
-        deep_hits=scoped.get("hits", []),
-        config=config,
+        representative_hits=route["hits"], deep_hits=scoped.get("hits", []), config=config
     )
     if weak_reasons:
         fallback = fts.search_all_text_indexes(query, options)
@@ -386,6 +734,69 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
         widening_status={"status": "not_needed", "reasons": [], "skipped_rungs": []},
     )
     return _finalize_route(scoped, budget, suggestions)
+
+
+def _fuse_representative_hits(
+    hit_lists: list[tuple[str, list[dict[str, Any]]]], k: int = 60
+) -> list[dict[str, Any]]:
+    """Reciprocal-rank fusion of representative hit lists into one ranking (F4)."""
+
+    entries: dict[str, dict[str, Any]] = {}
+    for mode, hits in hit_lists:
+        for hit in hits:
+            summary_id = hit.get("summary_id")
+            rank = int(hit.get("rank") or 0)
+            if not summary_id or rank <= 0:
+                continue
+            entry = entries.setdefault(
+                str(summary_id),
+                {"score": 0.0, "hit": hit, "modes": set(), "best_rank": rank},
+            )
+            entry["score"] += 1.0 / (k + rank)
+            entry["modes"].add(mode)
+            if rank < entry["best_rank"]:
+                entry["best_rank"] = rank
+                entry["hit"] = hit
+    ordered = sorted(
+        entries.values(),
+        key=lambda entry: (-entry["score"], str(entry["hit"].get("summary_id"))),
+    )
+    fused = []
+    for rank, entry in enumerate(ordered, start=1):
+        hit = dict(entry["hit"])
+        hit["rank"] = rank
+        hit["rrf_score"] = round(entry["score"], 6)
+        hit["contributing_modes"] = sorted(entry["modes"])
+        fused.append(hit)
+    return fused
+
+
+def _multi_route_trace(
+    routes: list[dict[str, Any]],
+    selected_scopes: list[dict[str, Any]],
+    deep_result: dict[str, Any] | None,
+    budget: str,
+    *,
+    status: str,
+    widening_status: dict[str, Any],
+) -> dict[str, Any]:
+    hits = deep_result.get("hits", []) if deep_result else []
+    return {
+        "budget": budget,
+        "status": status,
+        "routes": routes,
+        "fused_selection": [
+            {
+                "scope_id": scope["scope_id"],
+                "rank": scope.get("rank"),
+                "rrf_score": scope.get("rrf_score"),
+                "contributing_modes": scope.get("contributing_modes"),
+            }
+            for scope in selected_scopes
+        ],
+        "deep_searches": _deep_searches(selected_scopes, hits, deep_result or {}),
+        "widening_status": widening_status,
+    }
 
 
 def _query_budget(options: Any) -> str:
@@ -2056,11 +2467,13 @@ def _budget_skipped_summary(summary_id: str) -> dict[str, Any]:
     }
 
 
-def _representative_watermark(rows: list[dict[str, Any]], fts_profile: str) -> str:
+def _representative_watermark(
+    rows: list[dict[str, Any]], profile: str, template: str = GLOBAL_FTS_TEMPLATE
+) -> str:
     digest = hashlib.sha256()
-    digest.update(fts_profile.encode("utf-8"))
+    digest.update(profile.encode("utf-8"))
     digest.update(b"\0")
-    digest.update(GLOBAL_FTS_TEMPLATE.encode("utf-8"))
+    digest.update(template.encode("utf-8"))
     digest.update(b"\0")
     digest.update(_representation_policy_version().encode("utf-8"))
     digest.update(b"\0")
@@ -2140,6 +2553,8 @@ def _selected_scopes(
                 "reason": "representative_hit",
                 "rank": hit.get("rank"),
                 "summary_id": hit.get("summary_id"),
+                "rrf_score": hit.get("rrf_score"),
+                "contributing_modes": hit.get("contributing_modes"),
             }
         )
         if len(selected) >= max(1, max_scopes):

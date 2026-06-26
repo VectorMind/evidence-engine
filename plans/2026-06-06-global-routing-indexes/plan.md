@@ -461,6 +461,14 @@ over the identical budgeted unit set. Decisions:
 `route_trace` generalizes from a single `mode` to a `routes` list (one entry per
 representative route) plus a `fused_selection` block; see the contract section.
 
+Implemented (2026-06-26): DP1–DP5 are built. `build_global_representative_semantic`
+embeds `routing_payload` fresh into `semantic/global_representatives/{profile}.lancedb/`
+over the same budgeted unit set; `search_text_with_routing` fuses the FTS and
+semantic representative routes with RRF and emits the multi-route trace; semantic
+build is opt-in via `index routing --semantic`. Tests cover the RRF fusion and the
+FTS/semantic parity count. The single-route trace shape is preserved when only the
+FTS route is current.
+
 ## Retrieval Strategy / Auto Mode
 
 A query-planning layer above the routes. Simple v1, expected to mature with real

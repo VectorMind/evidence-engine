@@ -98,7 +98,17 @@ Implemented and tested (Retrieval Strategy v1, 2026-06-26):
 - `search text --budget low|mid|high` drives routed-scope fanout and stamps the
   budget into `route_trace` — `test_search_text_low_budget_limits_fanout`.
 
-Run: `uv run pytest` → 44 passed; `uv run ruff check .` → clean.
+Implemented and tested (D2 semantic representative store, 2026-06-26):
+
+- `build_global_representative_semantic` embeds `routing_payload` fresh into a
+  LanceDB store over the identical budgeted unit set (DP1/DP2/DP5);
+- fused FTS+semantic representative route with RRF and the multi-route
+  `routes`/`fused_selection` trace (DP4), opt-in via `index routing --semantic` —
+  `test_fuse_representative_hits_ranks_shared_unit_first`,
+  `test_semantic_representative_route_fuses_with_fts` (monkeypatched embedder, real
+  LanceDB, no model download; asserts FTS/semantic parity count + fused trace).
+
+Run: `uv run pytest` → 46 passed; `uv run ruff check .` → clean.
 
 D0 representation contract (O1–O7) plus RP1 is fully implemented and tested. The
 only remaining contract item is the **derived embedding budget**, intentionally

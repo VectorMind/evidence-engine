@@ -16,6 +16,7 @@ from even.routing import (
     _blend_tokens_per_sec,
     _entry_budget,
     _estimate_tokens,
+    _fuse_representative_hits,
     _importance_prior,
     _parse_importance,
     _select_budgeted_rows,
@@ -470,6 +471,83 @@ def test_search_text_low_budget_limits_fanout(
 
     assert result["route_trace"]["budget"] == "low"
     assert len(result["route_trace"].get("selected_scopes", [])) <= 1
+
+
+def test_fuse_representative_hits_ranks_shared_unit_first() -> None:
+    fused = _fuse_representative_hits(
+        [
+            ("global_representative_fts", [
+                {"summary_id": "a", "scope_id": "sa", "rank": 1},
+                {"summary_id": "b", "scope_id": "sb", "rank": 2},
+            ]),
+            ("global_representative_semantic", [
+                {"summary_id": "b", "scope_id": "sb", "rank": 1},
+                {"summary_id": "c", "scope_id": "sc", "rank": 2},
+            ]),
+        ]
+    )
+
+    # `b` is hit by both routes, so RRF ranks it first.
+    assert fused[0]["summary_id"] == "b"
+    assert fused[0]["contributing_modes"] == [
+        "global_representative_fts",
+        "global_representative_semantic",
+    ]
+    assert fused[0]["rank"] == 1
+
+
+_FAKE_VOCAB = ("alpha", "beta", "renewal", "contract", "invoice", "receipt")
+
+
+def _fake_vector(text: str) -> list[float]:
+    lowered = str(text).lower()
+    raw = [1.0 if word in lowered else 0.0 for word in _FAKE_VOCAB]
+    norm = sum(value * value for value in raw) ** 0.5 or 1.0
+    return [value / norm for value in raw]
+
+
+def test_semantic_representative_route_fuses_with_fts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    monkeypatch.chdir(tmp_path)
+    from even import semantic
+
+    monkeypatch.setattr(
+        semantic, "_embed_passages", lambda profile, texts: [_fake_vector(t) for t in texts]
+    )
+    monkeypatch.setattr(semantic, "_embed_query", lambda profile, text: _fake_vector(text))
+
+    alpha = _make_root(tmp_path, "alpha", "alpha contract")
+    beta = _make_root(tmp_path, "beta", "beta invoice")
+    (alpha / "alpha.txt").write_text("alpha renewal contract", encoding="utf-8")
+    (beta / "beta.txt").write_text("beta invoice receipt", encoding="utf-8")
+    _scan_and_seed_document(alpha, "alpha.txt", "alpha renewal contract", repeat=3)
+    _scan_and_seed_document(beta, "beta.txt", "beta invoice receipt", repeat=3)
+    assert index_scope_to_fts(alpha, IndexOptions(force=True))["status"] == "ok"
+    assert index_scope_to_fts(beta, IndexOptions(force=True))["status"] == "ok"
+    index_routing(
+        alpha, RoutingIndexOptions(force=True, build_semantic=True), summary_generator=_fake_summary
+    )
+    built = index_routing(
+        beta, RoutingIndexOptions(force=True, build_semantic=True), summary_generator=_fake_summary
+    )
+
+    # DP5 parity: FTS and semantic projections cover the identical unit set.
+    assert built["global_representative_semantic"]["status"] == "ok"
+    assert (
+        built["global_representative_semantic"]["counts"]["summary_nodes_planned"]
+        == built["global_representative_fts"]["counts"]["summary_nodes_planned"]
+    )
+
+    result = search_text_indexes("alpha renewal", SearchOptions(limit=10))
+    trace = result["route_trace"]
+    modes = {route["mode"]: route["status"] for route in trace["routes"]}
+    assert modes["global_representative_fts"] == "used"
+    assert modes["global_representative_semantic"] == "used"
+    assert trace["fused_selection"]
+    assert all("alpha" in hit["relative_path"] for hit in result["hits"])
 
 
 def _make_root(tmp_path: Path, name: str, text: str) -> Path:

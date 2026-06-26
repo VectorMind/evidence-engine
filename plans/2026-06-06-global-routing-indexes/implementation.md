@@ -309,6 +309,38 @@ representatives, and SigLIP routing remain future slices.
   `test_search_text_low_budget_limits_fanout`. `uv run pytest` 44 passed;
   `uv run ruff check .` clean.
 
+## 2026-06-26: D2 semantic representative store + fused route (DP1–DP5)
+
+- `build_global_representative_semantic` embeds each selected unit's derived
+  `routing_payload` fresh (DP1) into a LanceDB store at
+  `semantic/global_representatives/{embedding_profile}.lancedb/`, over the
+  identical `_select_budgeted_rows(_current_summary_rows())` set the FTS projection
+  uses (DP2/DP5 parity). Sidecar manifest carries `embedding_profile`,
+  `representation_policy_version`, `summary_watermark`, `row_count`. Reuses
+  `semantic._embed_passages/_quiet_output/_lancedb_store_exists`.
+- `_search_global_representatives_semantic` embeds the query and searches the
+  store (only when the manifest is current and the store exists — no query embed
+  when absent).
+- `search_text_with_routing` now runs both representative routes and, when the
+  semantic store is current, **fuses them with RRF** (`_fuse_representative_hits`,
+  k=60) and selects scopes from the fused ranking (DP4). Deep search stays FTS.
+  The trace generalizes to `routes` + `fused_selection` (`_multi_route_trace`);
+  the original single-route shape is preserved when only FTS is current, so prior
+  tests and the FTS-only contract are unchanged.
+- Semantic build is **opt-in**: `RoutingIndexOptions.build_semantic` /
+  `even index routing <path> --semantic`. Default builds FTS only, so search stays
+  single-route until a user opts into the semantic store (matches "semantic
+  optional by cost").
+- `_representative_watermark` now takes a `template` arg so FTS and semantic
+  stores hash distinctly; `_selected_scopes` carries `rrf_score`/`contributing_modes`.
+- Tests: `test_fuse_representative_hits_ranks_shared_unit_first` (pure RRF) and
+  `test_semantic_representative_route_fuses_with_fts` (monkeypatched embedder so
+  LanceDB runs locally with no model download; asserts FTS/semantic parity count
+  and the fused multi-route trace). `uv run pytest` 46 passed; `uv run ruff check .`
+  clean.
+- DP3 confirmed in code: one embedding unit = one selected `summary_node`; the set
+  is budget-bounded, so all selected units are embedded.
+
 ## Follow-Up Risks
 
 - Media cluster summaries, global semantic representative stores, and SigLIP

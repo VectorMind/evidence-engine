@@ -320,7 +320,7 @@ Public commands:
 | `index` | `scope <path>` | `path` | Build or refresh the text index. |
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
-| `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. |
+| `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. `--semantic` also builds the optional semantic representative store. |
 | `list` | `[path]` | none | List the representative `summary_nodes` hierarchy (bypass; no query, no model). |
 | `search` | `text <query>` | `query` | Search text projections. Accepts `--budget low\|mid\|high` (default `mid`). |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |

@@ -399,6 +399,7 @@ def index_routing_command(args: argparse.Namespace) -> int:
                 limit=args.limit,
                 summary_model=args.summary_model,
                 summary_ollama_url=args.summary_ollama_url,
+                build_semantic=args.semantic,
             ),
         )
         payload.update(result)
@@ -804,6 +805,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary-ollama-url",
         default=None,
         help="Local Ollama base URL for routing summaries.",
+    )
+    index_routing_parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="Also build the optional global semantic representative store.",
     )
     index_routing_parser.set_defaults(handler=index_routing_command)
 
