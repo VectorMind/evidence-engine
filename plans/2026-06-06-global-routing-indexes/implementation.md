@@ -164,6 +164,102 @@ representatives, and SigLIP routing remain future slices.
 - All D0 representation open points (O1–O7) are now closed at the contract level.
   Still spec/plan only — no code or schema changes landed.
 
+## 2026-06-26: D0 hardening step 1+2 implemented (schema + importance)
+
+- Schema foundation: added `summary_nodes.importance` (`real`, `[0,1]`) to
+  `catalog.yaml`, bumped `spec_version` to `0.8`, and bumped
+  `CATALOG_SCHEMA_VERSION`/`CATALOG_USER_VERSION` to `0.8`/`8`. Beta catalogs
+  reset-and-rebuild on this bump (existing behavior).
+- Config: added `representation_policy_version`, `max_build_seconds` (300),
+  `max_entries` (20), and importance settings (`importance_default`,
+  `importance_low_prior`, `importance_priors` list) to `config/routing.yaml`.
+- Importance side output: bumped the summary/media prompts to v2 to request a
+  trailing `IMPORTANCE: <0..1>` line, parsed and stripped by `_parse_importance`,
+  with deterministic `_importance_prior` (low for `node_modules`, `.git`,
+  `.venv`/`venv`, etc.) as fallback via `_resolve_importance`. Importance is now
+  written by `_upsert_summary_row` for document and media root summaries.
+- Wired `representation_policy_version` into the global FTS watermark and manifest
+  (manifest `schema_version` now tracks `CATALOG_SCHEMA_VERSION`), so policy or
+  schema changes force a projection rebuild.
+- Tests: bumped the catalog-version assertion to 8 and added `importance` column,
+  `_parse_importance`, `_importance_prior`, stored-model-importance, and
+  prior-fallback tests. `uv run pytest` 36 passed; `uv run ruff check .` clean.
+- Not yet implemented (later steps): projection-time budget enforcement and
+  selection precedence, `tokens_per_sec` calibration and derived token budgets,
+  dynamic prior-list feedback updates, and the `text_stratified_v1` →
+  `doc_roundrobin_v1` rename.
+
+## 2026-06-26: D0 hardening step 3 implemented (budget + precedence)
+
+- Added projection-time per-root budget enforcement. `_select_budgeted_rows`
+  groups current units by root, always keeps reserved L0 units (`root_summary`,
+  `album_summary`), and fills the remaining log-scaled budget with companions
+  ranked by importance desc → coverage desc → summary_id. `_entry_budget` is
+  `clamp(round(1 + 2·log10(source_total)), 1, max_entries)` (default
+  `max_entries=20`).
+- Applied selection in both `build_global_representative_fts` and
+  `_search_global_representatives`, so the FTS projection and the staleness
+  watermark use the identical trimmed unit set (parity-ready for the future
+  semantic projection).
+- Overflow units are dropped from the projection but counted: build result
+  `counts.summary_nodes_overflow` and manifest `overflow_count`.
+- `_current_summary_rows` now also returns `source_count`, `coverage_estimate`,
+  and `importance` for selection.
+- For D0/D1 (only reserved L0 units exist) selection is a no-op, so shipped
+  behavior is unchanged; the guard activates when D2 companions land.
+- Tests: `test_entry_budget_is_log_scaled_and_capped` and
+  `test_select_budgeted_rows_reserves_l0_and_ranks_companions`. `uv run pytest`
+  38 passed; `uv run ruff check .` clean.
+- Still not implemented: `tokens_per_sec` calibration + derived token budgets,
+  dynamic prior-list feedback, `negative_summary` overflow rollup, and the
+  `text_stratified_v1` → `doc_roundrobin_v1` rename.
+
+## 2026-06-26: D0 hardening step 4 implemented (time budget + calibration)
+
+- Made wall-clock time the decisive build budget. `RoutingIndexOptions` gained
+  `max_build_seconds` (default from `config/routing.yaml`, 300). In `index_routing`
+  the mandatory `root_summary` always runs; the media album companion is skipped
+  with `error_kind="build_budget_exhausted"` once the per-root budget is reached.
+- Added `tokens_per_sec` measure-and-cache calibration. `_generate_and_calibrate`
+  times each summary call, estimates tokens (~4 chars/token), and EMA-updates a
+  workspace-local `calibration.json` (`even/paths.py:calibration_path`).
+  Near-instant (fake/cached) generations below 50 ms are ignored so they do not
+  skew the value; absent calibration falls back to `CALIBRATION_DEFAULT_TPS=50`.
+- Derived an advisory `_token_budget = max_build_seconds × tokens_per_sec`, and
+  surfaced a `representation_budget` block (`max_build_seconds`, `tokens_per_sec`,
+  `derived_token_budget`, `elapsed_seconds`) on the `index routing` result.
+- Tests: `test_tokens_per_sec_calibration_math` (pure) and
+  `test_index_routing_skips_media_when_build_budget_exhausted` (budget=0 skips the
+  companion, keeps the mandatory root_summary). `uv run pytest` 40 passed;
+  `uv run ruff check .` clean.
+- Still not implemented: derived embedding budget (no semantic projection yet),
+  dynamic prior-list feedback, `negative_summary` overflow rollup, and the
+  `text_stratified_v1` → `doc_roundrobin_v1` rename.
+
+## 2026-06-26: D0 closed (step 5 — rollup, dynamic priors, O6 rename)
+
+- `negative_summary` overflow rollup: `_select_budgeted_rows` now collapses each
+  root's dropped low-importance overflow into one synthesized `negative_summary`
+  projection unit (`neg_<root_id>`, importance 0.05, routing_text listing the
+  dropped titles), so deprioritized content stays visible to the router instead of
+  vanishing. The rollup is a projection artifact, never stored in `summary_nodes`.
+- Dynamic importance priors: when the model rates a root below
+  `importance_learn_threshold` (default 0.2), `_learn_low_prior` records the path
+  basename into `calibration.json`; `_importance_prior` now consults both the
+  configured priors and this learned list, so a missed folder gets demoted on
+  later builds (the node_modules-style feedback loop).
+- O6 rename: sampling policy `text_stratified_v1` → `doc_roundrobin_v1` in
+  `config/routing.yaml` and the `config.py` fallback (kept in sync, and the
+  fallback now also carries the budget/importance keys). `text_stratified_v1`
+  stays reserved for a real stratified sampler.
+- Tests: rollup assertions folded into the budget test, plus
+  `test_index_routing_learns_low_importance_prior`. `uv run pytest` 41 passed;
+  `uv run ruff check .` clean.
+- D0 representation contract (O1–O7) is now fully implemented and tested. The only
+  contract item left is the derived embedding budget, which is intentionally
+  deferred to the D2 semantic-representative slice (no semantic projection exists
+  to budget yet).
+
 ## Follow-Up Risks
 
 - Media cluster summaries, global semantic representative stores, and SigLIP

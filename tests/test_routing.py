@@ -11,7 +11,17 @@ from even.cli import build_parser
 from even.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.paths import catalog_path
-from even.routing import RoutingIndexOptions, index_routing
+from even.routing import (
+    RoutingIndexOptions,
+    _blend_tokens_per_sec,
+    _entry_budget,
+    _estimate_tokens,
+    _importance_prior,
+    _parse_importance,
+    _select_budgeted_rows,
+    _token_budget,
+    index_routing,
+)
 
 
 def test_summary_nodes_catalog_contract(
@@ -21,7 +31,7 @@ def test_summary_nodes_catalog_contract(
 
     tables = {table.name for table in load_catalog_tables()}
     assert "summary_nodes" in tables
-    assert CATALOG_USER_VERSION == 7
+    assert CATALOG_USER_VERSION == 8
 
     assert create_catalog()["status"] == "created"
     with sqlite3.connect(catalog_path()) as conn:
@@ -30,9 +40,14 @@ def test_summary_nodes_catalog_contract(
             "SELECT name FROM sqlite_master WHERE type = 'table' "
             "AND name = 'summary_nodes'"
         ).fetchone()
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(summary_nodes)").fetchall()
+        }
 
-    assert user_version == 7
+    assert user_version == 8
     assert summary_table == ("summary_nodes",)
+    assert "importance" in columns
 
 
 def test_parser_exposes_index_routing() -> None:
@@ -215,6 +230,194 @@ def test_search_text_uses_global_routing_when_current(
     selected = result["route_trace"]["selected_scopes"]
     assert len(selected) == 1
     assert all("alpha" in hit["relative_path"] for hit in result["hits"])
+
+
+def test_parse_importance_extracts_and_strips_marker() -> None:
+    cleaned, value = _parse_importance("alpha renewal contract root\nIMPORTANCE: 0.9")
+    assert value == 0.9
+    assert "IMPORTANCE" not in cleaned
+    assert cleaned == "alpha renewal contract root"
+
+    cleaned_none, value_none = _parse_importance("no marker here")
+    assert value_none is None
+    assert cleaned_none == "no marker here"
+
+    _, clamped = _parse_importance("text\nimportance = 1.5")
+    assert clamped == 1.0
+
+
+def test_importance_prior_low_for_tooling_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert _importance_prior("alpha") == 0.5
+    assert _importance_prior("repo/node_modules/pkg") == 0.1
+    assert _importance_prior("project/.venv") == 0.1
+
+
+def test_index_routing_stores_model_importance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "alpha", "alpha contract renewal clause")
+    _scan_and_seed_document(data, "report.txt", "alpha contract renewal clause")
+
+    def importance_generator(prompt: str, **_: object) -> str:
+        return "alpha renewal contract root\nIMPORTANCE: 0.9"
+
+    result = index_routing(
+        data,
+        RoutingIndexOptions(force=True),
+        summary_generator=importance_generator,
+    )
+
+    assert result["status"] == "ok"
+    with sqlite3.connect(catalog_path()) as conn:
+        row = conn.execute(
+            "SELECT importance, summary_text FROM summary_nodes "
+            "WHERE kind = 'root_summary'"
+        ).fetchone()
+
+    assert row[0] == 0.9
+    assert "IMPORTANCE" not in row[1]
+
+
+def test_index_routing_falls_back_to_importance_prior(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "alpha", "alpha contract renewal clause")
+    _scan_and_seed_document(data, "report.txt", "alpha contract renewal clause")
+
+    result = index_routing(
+        data,
+        RoutingIndexOptions(force=True),
+        summary_generator=_fake_summary,
+    )
+
+    assert result["status"] == "ok"
+    with sqlite3.connect(catalog_path()) as conn:
+        importance = conn.execute(
+            "SELECT importance FROM summary_nodes WHERE kind = 'root_summary'"
+        ).fetchone()[0]
+
+    assert importance == 0.5
+
+
+def test_entry_budget_is_log_scaled_and_capped() -> None:
+    assert _entry_budget(1, 20) == 1
+    assert _entry_budget(10, 20) == 3
+    assert _entry_budget(100, 20) == 5
+    assert _entry_budget(10_000, 20) == 9
+    # Very large roots stay capped at max_entries.
+    assert _entry_budget(10**12, 20) == 20
+    assert _entry_budget(10**12, 5) == 5
+
+
+def test_select_budgeted_rows_reserves_l0_and_ranks_companions() -> None:
+    rows = [
+        _unit("root", "root_summary", source_count=6, importance=0.4),
+        _unit("album", "album_summary", source_count=1, importance=0.4),
+        _unit("c_high", "folder_summary", source_count=1, importance=0.9),
+        _unit("c_mid", "folder_summary", source_count=1, importance=0.5),
+        _unit("c_low", "folder_summary", source_count=1, importance=0.1),
+    ]
+
+    selected, overflow = _select_budgeted_rows(rows)
+
+    kept = {row["summary_id"] for row in selected if row["kind"] != "negative_summary"}
+    overflow_ids = {row["summary_id"] for row in overflow}
+    rollups = [row for row in selected if row["kind"] == "negative_summary"]
+    # source_total=10 -> budget=3; root+album reserved, leaving 1 companion slot
+    # for the highest-importance companion. The rest roll up into a negative_summary.
+    assert kept == {"root", "album", "c_high"}
+    assert overflow_ids == {"c_mid", "c_low"}
+    assert len(rollups) == 1
+    assert rollups[0]["summary_id"] == "neg_r"
+    assert rollups[0]["importance"] == 0.05
+    assert "c_mid" in rollups[0]["routing_text"]
+    assert "c_low" in rollups[0]["routing_text"]
+
+
+def test_index_routing_learns_low_importance_prior(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "junkdir", "throwaway scratch notes")
+    _scan_and_seed_document(data, "report.txt", "throwaway scratch notes")
+
+    # An unseen folder name starts at the neutral prior.
+    assert _importance_prior("junkdir") == 0.5
+
+    def low_importance_generator(prompt: str, **_: object) -> str:
+        return "scratch throwaway notes\nIMPORTANCE: 0.05"
+
+    result = index_routing(
+        data,
+        RoutingIndexOptions(force=True),
+        summary_generator=low_importance_generator,
+    )
+
+    assert result["status"] == "ok"
+    # The model rated it clearly unimportant, so the dynamic prior list learned it.
+    assert _importance_prior("junkdir") == 0.1
+
+
+def test_tokens_per_sec_calibration_math() -> None:
+    assert _estimate_tokens("a" * 40) == 10
+    assert _estimate_tokens("") == 1
+    # First sample seeds the value; later samples blend toward it.
+    assert _blend_tokens_per_sec(None, 100.0) == 100.0
+    assert _blend_tokens_per_sec(100.0, 200.0, alpha=0.5) == 150.0
+    assert _token_budget(300, 50) == 15000
+    assert _token_budget(0, 50) == 0
+
+
+def test_index_routing_skips_media_when_build_budget_exhausted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "mixed", "document alpha text")
+    (data / "photo.png").write_bytes(b"\x89PNG\r\n")
+    scan = _scan_and_seed_document(data, "report.txt", "document alpha text")
+    _seed_media_caption(scan["root_id"], "photo.png", "lamp wiring diagram")
+
+    result = index_routing(
+        data,
+        RoutingIndexOptions(force=True, max_build_seconds=0.0),
+        summary_generator=_fake_summary,
+    )
+
+    assert result["status"] == "ok"
+    assert result["summaries"]["media"]["error_kind"] == "build_budget_exhausted"
+    assert result["representation_budget"]["max_build_seconds"] == 0.0
+    with sqlite3.connect(catalog_path()) as conn:
+        album = conn.execute(
+            "SELECT 1 FROM summary_nodes WHERE kind = 'album_summary'"
+        ).fetchone()
+        root = conn.execute(
+            "SELECT summary_status FROM summary_nodes WHERE kind = 'root_summary'"
+        ).fetchone()
+
+    # The mandatory root_summary still ran; the media companion was skipped.
+    assert root == ("current",)
+    assert album is None
+
+
+def _unit(summary_id: str, kind: str, *, source_count: int, importance: float) -> dict:
+    return {
+        "root_id": "r",
+        "scope_id": "s",
+        "summary_id": summary_id,
+        "kind": kind,
+        "source_count": source_count,
+        "coverage_estimate": 0.5,
+        "importance": importance,
+    }
 
 
 def _make_root(tmp_path: Path, name: str, text: str) -> Path:

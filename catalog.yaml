@@ -1,4 +1,4 @@
-spec_version: "0.7"
+spec_version: "0.8"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -255,6 +255,7 @@ datasets:
           - {name: source_high_watermark, type: text, description: "Hash of source inputs, config, and producer profile."}
           - {name: summary_status, type: enum, description: "Current summary state.", values: [current, stale, deferred, failed, deleted]}
           - {name: confidence, type: real, description: "Optional producer confidence or quality estimate."}
+          - {name: importance, type: real, description: "Routing importance in [0,1]; higher earns more representation budget in the next layer."}
           - {name: attrs_json, type: json, description: "Additional routing metadata and diagnostics."}
           - {name: created_at, type: timestamp, description: "UTC timestamp when first generated."}
           - {name: updated_at, type: timestamp, description: "UTC timestamp when last refreshed."}

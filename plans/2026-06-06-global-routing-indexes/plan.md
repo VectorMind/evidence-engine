@@ -364,12 +364,21 @@ function of the budget, not the file count. Hardened in the spec's
 | B13 | Importance priors (O7) | A deterministic low-importance prior list (`node_modules`, `.git`, `.venv`/`venv`, git-ignored paths, OS folders such as `Program Files`) seeds importance; the list is dynamic and is demoted/extended from model importance feedback over time. | Med-High |
 | B14 | Importance source (O7) | Importance comes from the summarization side output, reusing the existing model call. The media `media_kind` describe step is the existing classifier; a general per-document classifier is a future option. | Med-High |
 
-Schema and code follow-ups (not yet landed): add a `real` `summary_nodes.importance`
-column; enforce the per-root budget at projection-selection time so FTS and the
-future semantic map consume the identical trimmed unit set; measure-and-cache
-`tokens_per_sec` per machine; rename the sampling policy `text_stratified_v1` →
-`doc_roundrobin_v1` (O6 — honest naming, `text_stratified_v1` reserved for a real
-stratified sampler). Precedence (O5) is now decided above.
+Implemented (steps 1–5, 2026-06-26 — D0 representation contract closed): the `real`
+`summary_nodes.importance` column (catalog `0.8`/`8`); importance as a structured
+summary side output with deterministic prior fallback and dynamic learned-prior
+feedback; `representation_policy_version` in the global FTS watermark/manifest;
+projection-time per-root budget enforcement (`_select_budgeted_rows`/`_entry_budget`)
+with reserved L0 units, importance precedence, overflow counting, the identical
+trimmed unit set feeding FTS and the staleness watermark, and `negative_summary`
+overflow rollup; the decisive `max_build_seconds` time budget (skips companions,
+keeps the mandatory root_summary) with measure-and-cache `tokens_per_sec`
+calibration and a derived advisory token budget; and the O6 sampling-policy rename
+`text_stratified_v1` → `doc_roundrobin_v1`.
+
+Deferred to D2 (not a D0 gap): the derived embedding budget and the FTS/semantic
+backend parity it exercises require an actual semantic representative projection,
+which is the D2 slice.
 
 ### Schema / Registry
 

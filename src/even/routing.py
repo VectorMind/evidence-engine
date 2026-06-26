@@ -12,27 +12,37 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
+import re
 import sqlite3
+import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from even.catalog import ensure_catalog
+from even.catalog import CATALOG_SCHEMA_VERSION, ensure_catalog
 from even.chunks import chunks_for_root, high_watermark, stable_id
 from even.config import load_parser_config, load_routing_config
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import catalog_path, workspace_root
+from even.paths import calibration_path, catalog_path, workspace_root
 from even.references import evidence_ref
 
 
 GLOBAL_FTS_TEMPLATE = "fts_summary_node"
 GLOBAL_FTS_MANIFEST = "manifest.json"
-PROMPT_VERSION = "summary_prompt_v1"
-MEDIA_PROMPT_VERSION = "media_summary_prompt_v1"
+PROMPT_VERSION = "summary_prompt_v2"
+MEDIA_PROMPT_VERSION = "media_summary_prompt_v2"
 MEDIA_SUMMARY_PROFILE = "media_album_summary_v1"
+
+# Trailing structured importance marker emitted as a summary side output, e.g.
+# "IMPORTANCE: 0.8" on its own line. Parsed out of the model text and stored in
+# summary_nodes.importance.
+_IMPORTANCE_RE = re.compile(
+    r"(?im)^\s*importance\s*[:=]\s*(\d+(?:\.\d+)?|\.\d+)\s*$"
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,7 @@ class RoutingIndexOptions:
     limit: int | None = None
     summary_model: str | None = None
     summary_ollama_url: str | None = None
+    max_build_seconds: float | None = None
 
 
 class SummaryGenerationError(Exception):
@@ -87,6 +98,15 @@ def index_routing(
         }
 
     generator = summary_generator or _generate_summary_text
+    max_build_seconds = (
+        options.max_build_seconds
+        if options.max_build_seconds is not None
+        else float(_routing_defaults()["max_build_seconds"])
+    )
+    build_started = time.monotonic()
+
+    # root_summary is the mandatory floor; it always runs. The media album is a
+    # companion, so it is skipped once the per-root build budget is exhausted.
     document_summary = _upsert_root_summary(
         root_id=scan_result["root_id"],
         root_label=str(scan_result.get("root_label") or ""),
@@ -94,13 +114,18 @@ def index_routing(
         options=options,
         summary_generator=generator,
     )
-    media_summary = _upsert_media_summary(
-        root_id=scan_result["root_id"],
-        root_label=str(scan_result.get("root_label") or ""),
-        scope_id=scan_result["scope_id"],
-        options=options,
-        summary_generator=generator,
-    )
+    if time.monotonic() - build_started >= max_build_seconds:
+        media_summary = _budget_skipped_summary(
+            _media_summary_id(scan_result["scope_id"])
+        )
+    else:
+        media_summary = _upsert_media_summary(
+            root_id=scan_result["root_id"],
+            root_label=str(scan_result.get("root_label") or ""),
+            scope_id=scan_result["scope_id"],
+            options=options,
+            summary_generator=generator,
+        )
     document_summary["summary_type"] = "document"
     media_summary["summary_type"] = "media"
     summaries = [document_summary, media_summary]
@@ -174,6 +199,7 @@ def index_routing(
         "global_representative_fts": projection,
         "auto_scan_status": scan_result["status"],
         "summaries": _summary_payloads(summaries),
+        "representation_budget": _build_budget_report(max_build_seconds, build_started),
         "counts": counts,
     }
 
@@ -222,7 +248,7 @@ def build_global_representative_fts(
         return runtime
 
     profile = fts_profile or _fts_profile()
-    rows = _current_summary_rows()
+    rows, overflow = _select_budgeted_rows(_current_summary_rows())
     index_uri = _global_fts_uri(profile)
     index_dir = workspace_root() / index_uri
     manifest_path = index_dir / GLOBAL_FTS_MANIFEST
@@ -253,6 +279,7 @@ def build_global_representative_fts(
                 "summary_nodes_planned": len(rows),
                 "summary_nodes_indexed": 0,
                 "summary_nodes_unchanged": len(rows),
+                "summary_nodes_overflow": len(overflow),
             },
         }
 
@@ -275,6 +302,7 @@ def build_global_representative_fts(
         fts_profile=profile,
         source_high_watermark=watermark,
         row_count=len(rows),
+        overflow_count=len(overflow),
     )
     return {
         "status": "ok",
@@ -287,6 +315,7 @@ def build_global_representative_fts(
             "summary_nodes_planned": len(rows),
             "summary_nodes_indexed": len(rows),
             "summary_nodes_unchanged": 0,
+            "summary_nodes_overflow": len(overflow),
         },
     }
 
@@ -448,7 +477,9 @@ def _upsert_root_summary(
         per_chunk_chars=int(config["summary_sample_chars_per_chunk"]),
     )
     try:
-        summary_text = summary_generator(prompt, model=model, url=url, timeout=timeout)
+        summary_text = _generate_and_calibrate(
+            summary_generator, prompt, model=model, url=url, timeout=timeout
+        )
     except SummaryGenerationError as exc:
         _upsert_summary_row(
             summary_id=summary_id,
@@ -470,6 +501,7 @@ def _upsert_root_summary(
             attrs={"error_kind": exc.error_kind, "message": exc.message},
             now=now,
             created_at=state.get("created_at") if state else None,
+            importance=_importance_prior(root_label, scope_id),
         )
         return {
             "status": exc.status,
@@ -485,7 +517,11 @@ def _upsert_root_summary(
             },
         }
 
-    summary_text = " ".join(str(summary_text or "").split())
+    summary_text, parsed_importance = _parse_importance(str(summary_text or ""))
+    summary_text = " ".join(summary_text.split())
+    importance = _resolve_importance(parsed_importance, root_label, scope_id)
+    if parsed_importance is not None and parsed_importance < _importance_learn_threshold():
+        _learn_low_prior(root_label)
     if not summary_text:
         _upsert_summary_row(
             summary_id=summary_id,
@@ -507,6 +543,7 @@ def _upsert_root_summary(
             attrs={"error_kind": "empty_summary"},
             now=now,
             created_at=state.get("created_at") if state else None,
+            importance=importance,
         )
         return {
             "status": "failed",
@@ -542,6 +579,7 @@ def _upsert_root_summary(
         attrs={"prompt_version": PROMPT_VERSION, "model": model, "ollama_url": url},
         now=now,
         created_at=state.get("created_at") if state else None,
+        importance=importance,
     )
     return {
         "status": "ok",
@@ -662,7 +700,9 @@ def _upsert_media_summary(
     title = f"{root_label or scope_id} media"
 
     try:
-        summary_text = summary_generator(prompt, model=model, url=url, timeout=timeout)
+        summary_text = _generate_and_calibrate(
+            summary_generator, prompt, model=model, url=url, timeout=timeout
+        )
     except SummaryGenerationError as exc:
         _upsert_summary_row(
             summary_id=summary_id,
@@ -692,6 +732,7 @@ def _upsert_media_summary(
             modality=modality,
             media_kind=media_kind,
             container_kind="root",
+            importance=_importance_prior(root_label, scope_id),
         )
         return {
             "status": exc.status,
@@ -707,7 +748,11 @@ def _upsert_media_summary(
             },
         }
 
-    summary_text = " ".join(str(summary_text or "").split())
+    summary_text, parsed_importance = _parse_importance(str(summary_text or ""))
+    summary_text = " ".join(summary_text.split())
+    importance = _resolve_importance(parsed_importance, root_label, scope_id)
+    if parsed_importance is not None and parsed_importance < _importance_learn_threshold():
+        _learn_low_prior(root_label)
     if not summary_text:
         _upsert_summary_row(
             summary_id=summary_id,
@@ -733,6 +778,7 @@ def _upsert_media_summary(
             modality=modality,
             media_kind=media_kind,
             container_kind="root",
+            importance=importance,
         )
         return {
             "status": "failed",
@@ -780,6 +826,7 @@ def _upsert_media_summary(
         modality=modality,
         media_kind=media_kind,
         container_kind="root",
+        importance=importance,
     )
     return {
         "status": "ok",
@@ -934,7 +981,7 @@ def _search_global_representatives(
         return {"status": "unavailable", "reasons": [runtime["error_kind"]]}
 
     try:
-        rows = _current_summary_rows()
+        rows, _ = _select_budgeted_rows(_current_summary_rows())
     except sqlite3.Error:
         return {"status": "unavailable", "reasons": ["summary_nodes_unavailable"]}
 
@@ -1028,6 +1075,7 @@ def _upsert_summary_row(
     media_kind: str | None = None,
     container_kind: str = "root",
     summary_level: int = 0,
+    importance: float | None = None,
 ) -> None:
     with sqlite3.connect(catalog_path()) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -1038,10 +1086,10 @@ def _upsert_summary_row(
              doc_id, kind, modality, media_kind, container_kind, summary_level,
              title, summary_text, routing_text, source_refs_json, source_count,
              sample_count, coverage_estimate, sample_policy, producer, profile,
-             source_high_watermark, summary_status, confidence, attrs_json,
-             created_at, updated_at)
+             source_high_watermark, summary_status, confidence, importance,
+             attrs_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(summary_id) DO UPDATE SET
                 root_id = excluded.root_id,
                 scope_id = excluded.scope_id,
@@ -1066,6 +1114,7 @@ def _upsert_summary_row(
                 source_high_watermark = excluded.source_high_watermark,
                 summary_status = excluded.summary_status,
                 confidence = excluded.confidence,
+                importance = excluded.importance,
                 attrs_json = excluded.attrs_json,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at
@@ -1095,6 +1144,7 @@ def _upsert_summary_row(
                 watermark,
                 status,
                 None,
+                importance,
                 json.dumps(attrs, sort_keys=True),
                 created_at or now,
                 now,
@@ -1129,7 +1179,8 @@ def _current_summary_rows() -> list[dict[str, Any]]:
             SELECT s.summary_id, s.root_id, s.scope_id, s.kind, s.modality,
                    s.title, s.summary_text, s.routing_text, s.source_refs_json,
                    s.source_high_watermark, s.updated_at, sr.root_label,
-                   s.media_kind, s.container_kind
+                   s.media_kind, s.container_kind, s.source_count,
+                   s.coverage_estimate, s.importance
             FROM "summary_nodes" s
             JOIN "source_roots" sr ON sr.root_id = s.root_id
             WHERE s.summary_status = 'current'
@@ -1158,10 +1209,104 @@ def _current_summary_rows() -> list[dict[str, Any]]:
                 "routing_text": row[7] or "",
                 "source_refs_json": row[8] or "[]",
                 "source_high_watermark": row[9] or "",
+                "source_count": int(row[14] or 0),
+                "coverage_estimate": float(row[15] or 0.0),
+                "importance": row[16],
                 "metadata_json": json.dumps(metadata, sort_keys=True),
             }
         )
     return result
+
+
+RESERVED_KINDS = ("root_summary", "album_summary")
+
+
+def _entry_budget(source_total: int, max_entries: int) -> int:
+    """Log-scaled per-root entry ceiling, so a 10-file root and a 10k-file root
+    differ by a few entries, never by volume."""
+
+    items = max(int(source_total), 1)
+    scaled = int(round(1 + 2 * math.log10(items)))
+    return max(1, min(scaled, max(1, int(max_entries))))
+
+
+def _precedence_key(row: dict[str, Any]) -> tuple[float, float, str]:
+    importance = row.get("importance")
+    importance = float(importance) if importance is not None else 0.0
+    coverage = float(row.get("coverage_estimate") or 0.0)
+    return (-importance, -coverage, str(row.get("summary_id") or ""))
+
+
+_NEGATIVE_ROLLUP_IMPORTANCE = 0.05
+
+
+def _negative_rollup(root_id: str, dropped: list[dict[str, Any]]) -> dict[str, Any]:
+    """Collapse low-importance overflow into one negative_summary, so dropped units
+    stay visible to the router as deprioritized rather than vanishing silently."""
+
+    titles = sorted(
+        {str(unit.get("title") or unit.get("summary_id") or "") for unit in dropped}
+    )
+    titles = [title for title in titles if title][:25]
+    return {
+        "summary_id": f"neg_{root_id}",
+        "root_id": root_id,
+        "scope_id": str(dropped[0].get("scope_id") or ""),
+        "kind": "negative_summary",
+        "modality": "mixed",
+        "title": "Low-value content",
+        "summary_text": "",
+        "routing_text": "Low-value or deprioritized content: " + " | ".join(titles),
+        "source_refs_json": "[]",
+        "source_high_watermark": "",
+        "source_count": sum(int(unit.get("source_count") or 0) for unit in dropped),
+        "coverage_estimate": 0.0,
+        "importance": _NEGATIVE_ROLLUP_IMPORTANCE,
+        "metadata_json": json.dumps({"rolled_up_count": len(dropped)}, sort_keys=True),
+    }
+
+
+def _select_budgeted_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Trim each root's representation units to its budget.
+
+    Reserved L0 units (root_summary, album_summary) are always kept; remaining
+    companions compete for the leftover budget by importance, then coverage, then
+    id. Low-importance overflow is rolled up into a single negative_summary.
+    Returns (selected, overflow) in a deterministic order so the FTS and the
+    future semantic projection consume the identical unit set.
+    """
+
+    max_entries = int(_routing_defaults().get("max_entries", 20))
+    by_root: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_root.setdefault(str(row.get("root_id") or ""), []).append(row)
+
+    selected: list[dict[str, Any]] = []
+    overflow: list[dict[str, Any]] = []
+    for root_id, units in by_root.items():
+        reserved = [u for u in units if str(u.get("kind")) in RESERVED_KINDS]
+        companions = [u for u in units if str(u.get("kind")) not in RESERVED_KINDS]
+        source_total = sum(int(u.get("source_count") or 0) for u in units)
+        budget = _entry_budget(source_total, max_entries)
+        remaining = max(0, budget - len(reserved))
+        companions.sort(key=_precedence_key)
+        dropped = companions[remaining:]
+        selected.extend(reserved)
+        selected.extend(companions[:remaining])
+        overflow.extend(dropped)
+        if dropped:
+            selected.append(_negative_rollup(root_id, dropped))
+
+    selected.sort(
+        key=lambda r: (
+            str(r.get("root_id") or ""),
+            str(r.get("scope_id") or ""),
+            str(r.get("summary_id") or ""),
+        )
+    )
+    return selected, overflow
 
 
 def _root_source_item_id(root_id: str) -> str | None:
@@ -1285,7 +1430,10 @@ def _media_summary_prompt(
         "and safe metadata. Do not infer unseen visual content. Do not claim "
         "complete coverage. Return 2-4 plain sentences focused on visual "
         "topics, media types, and terms that would help route future search "
-        "queries.\n\n"
+        "queries. Then, on a final separate line, rate how important this root "
+        "is to represent for search routing as 'IMPORTANCE: <value>' with value "
+        "between 0 and 1. State the reason inside the summary itself only for "
+        "extreme cases (clearly trivial or clearly central).\n\n"
         f"Root label: {root_label}\n\n"
         f"Sampled media assets:\n{json.dumps(rows, ensure_ascii=True, indent=2)}"
     )
@@ -1537,7 +1685,11 @@ def _summary_prompt(
         "Write a concise routing summary for a local document root. "
         "Use only the sampled excerpts. Do not claim complete coverage. "
         "Return 2-4 plain sentences focused on topics, document types, and "
-        "terms that would help route future search queries.\n\n"
+        "terms that would help route future search queries. "
+        "Then, on a final separate line, rate how important this root is to "
+        "represent for search routing as 'IMPORTANCE: <value>' with value "
+        "between 0 and 1. State the reason inside the summary itself only for "
+        "extreme cases (clearly trivial or clearly central).\n\n"
         f"Root label: {root_label}\n\n"
         f"Sampled chunks:\n{json.dumps(rows, ensure_ascii=True, indent=2)}"
     )
@@ -1585,11 +1737,207 @@ def _coverage(sample_count: int, source_count: int) -> float:
     return round(sample_count / source_count, 6)
 
 
+def _parse_importance(text: str) -> tuple[str, float | None]:
+    """Split a trailing ``IMPORTANCE: <0..1>`` marker out of model text.
+
+    Returns the summary text with the marker removed and the parsed importance,
+    or ``None`` when the model did not emit a usable marker.
+    """
+
+    if not text:
+        return text, None
+    match = None
+    for match in _IMPORTANCE_RE.finditer(text):
+        pass
+    if match is None:
+        return text, None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return text, None
+    value = max(0.0, min(1.0, value))
+    cleaned = (text[: match.start()] + text[match.end() :]).strip()
+    return cleaned, value
+
+
+def _importance_prior(*tokens: str) -> float:
+    """Seed importance from deterministic path priors before the model refines it.
+
+    Paths matching the configured low-importance prior list (build/tooling/system
+    folders) or the learned low-importance list start low; everything else starts
+    at the neutral default.
+    """
+
+    config = _routing_defaults()
+    default = float(config.get("importance_default", 0.5))
+    low = float(config.get("importance_low_prior", 0.1))
+    priors = [str(prior).lower() for prior in config.get("importance_priors", [])]
+    priors += _learned_low_priors()
+    haystack = " ".join(token for token in tokens if token).lower().replace("\\", "/")
+    for prior in priors:
+        if prior and prior in haystack:
+            return low
+    return default
+
+
+def _importance_learn_threshold() -> float:
+    return float(_routing_defaults().get("importance_learn_threshold", 0.2))
+
+
+def _learned_low_priors() -> list[str]:
+    return [
+        str(prior).lower()
+        for prior in _load_calibration().get("learned_low_priors", [])
+        if str(prior).strip()
+    ]
+
+
+def _learn_low_prior(token: str) -> None:
+    """Teach the dynamic prior list a path the model rated clearly unimportant."""
+
+    basename = Path(str(token or "").replace("\\", "/")).name.strip().lower()
+    if not basename:
+        return
+    data = _load_calibration()
+    learned = {str(prior).lower() for prior in data.get("learned_low_priors", [])}
+    if basename in learned:
+        return
+    learned.add(basename)
+    data["learned_low_priors"] = sorted(learned)[:200]
+    _save_calibration(data)
+
+
+def _resolve_importance(parsed: float | None, *prior_tokens: str) -> float:
+    """Use the model importance when present, else the deterministic prior."""
+
+    if parsed is not None:
+        return parsed
+    return _importance_prior(*prior_tokens)
+
+
+def _representation_policy_version() -> str:
+    return str(_routing_defaults().get("representation_policy_version", "1"))
+
+
+CALIBRATION_DEFAULT_TPS = 50.0
+# Ignore near-instant generations (fake/cached) so they do not skew calibration.
+_CALIBRATION_MIN_ELAPSED = 0.05
+
+
+def _estimate_tokens(*texts: str) -> int:
+    """Rough token estimate (~4 chars/token) used only for time budgeting."""
+
+    chars = sum(len(text) for text in texts if text)
+    return max(1, chars // 4)
+
+
+def _blend_tokens_per_sec(
+    previous: float | None, sample: float, alpha: float = 0.3
+) -> float:
+    """Exponential moving average so the calibration self-corrects over builds."""
+
+    if not previous or previous <= 0:
+        return sample
+    return (1 - alpha) * previous + alpha * sample
+
+
+def _token_budget(max_build_seconds: float, tokens_per_sec: float) -> int:
+    """Derive an advisory token budget from the decisive time budget."""
+
+    return max(0, int(max_build_seconds * tokens_per_sec))
+
+
+def _load_calibration() -> dict[str, Any]:
+    try:
+        return dict(json.loads(calibration_path().read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _save_calibration(data: dict[str, Any]) -> None:
+    path = calibration_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _current_tokens_per_sec() -> float:
+    try:
+        tps = float(_load_calibration().get("tokens_per_sec"))
+    except (TypeError, ValueError):
+        return CALIBRATION_DEFAULT_TPS
+    return tps if tps > 0 else CALIBRATION_DEFAULT_TPS
+
+
+def _record_calibration(prompt: str, response: str, elapsed: float) -> None:
+    if elapsed < _CALIBRATION_MIN_ELAPSED:
+        return
+    sample = _estimate_tokens(prompt, response) / elapsed
+    if sample <= 0:
+        return
+    data = _load_calibration()
+    try:
+        previous = float(data["tokens_per_sec"])
+    except (KeyError, TypeError, ValueError):
+        previous = None
+    data["tokens_per_sec"] = round(_blend_tokens_per_sec(previous, sample), 3)
+    data["samples"] = int(data.get("samples", 0)) + 1
+    data["updated_at"] = _iso(_utc_now())
+    _save_calibration(data)
+
+
+def _generate_and_calibrate(
+    generator: SummaryGenerator,
+    prompt: str,
+    *,
+    model: str,
+    url: str,
+    timeout: float,
+) -> str:
+    start = time.monotonic()
+    text = generator(prompt, model=model, url=url, timeout=timeout)
+    try:
+        _record_calibration(prompt, str(text or ""), time.monotonic() - start)
+    except Exception:  # noqa: BLE001 - calibration is best-effort only.
+        pass
+    return text
+
+
+def _build_budget_report(max_build_seconds: float, build_started: float) -> dict[str, Any]:
+    tokens_per_sec = _current_tokens_per_sec()
+    return {
+        "max_build_seconds": max_build_seconds,
+        "tokens_per_sec": round(tokens_per_sec, 3),
+        "derived_token_budget": _token_budget(max_build_seconds, tokens_per_sec),
+        "elapsed_seconds": round(time.monotonic() - build_started, 3),
+    }
+
+
+def _budget_skipped_summary(summary_id: str) -> dict[str, Any]:
+    return {
+        "status": "deferred",
+        "error_kind": "build_budget_exhausted",
+        "message": "Skipped companion generation: per-root build budget reached.",
+        "summary_id": summary_id,
+        "summary_status": "deferred",
+        "index_status": "deferred",
+        "counts": {
+            "media_assets_considered": 0,
+            "media_assets_sampled": 0,
+            "summary_nodes_written": 0,
+        },
+    }
+
+
 def _representative_watermark(rows: list[dict[str, Any]], fts_profile: str) -> str:
     digest = hashlib.sha256()
     digest.update(fts_profile.encode("utf-8"))
     digest.update(b"\0")
     digest.update(GLOBAL_FTS_TEMPLATE.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(_representation_policy_version().encode("utf-8"))
     digest.update(b"\0")
     for row in rows:
         for field in (
@@ -1610,6 +1958,7 @@ def _write_manifest(
     fts_profile: str,
     source_high_watermark: str,
     row_count: int,
+    overflow_count: int = 0,
 ) -> None:
     manifest_path.write_text(
         json.dumps(
@@ -1619,7 +1968,9 @@ def _write_manifest(
                 "template_name": GLOBAL_FTS_TEMPLATE,
                 "summary_watermark": source_high_watermark,
                 "row_count": row_count,
-                "schema_version": "0.7",
+                "overflow_count": overflow_count,
+                "representation_policy_version": _representation_policy_version(),
+                "schema_version": CATALOG_SCHEMA_VERSION,
             },
             indent=2,
             sort_keys=True,

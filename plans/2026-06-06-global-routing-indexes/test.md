@@ -37,3 +37,57 @@ access. Full-suite and ruff checks also used approved cache access.
 Automated tests use a fake summary generator so the suite does not require a
 local model. The D1 media summary path has not yet been manually proven with a
 live Ollama model on a real media folder.
+
+## 2026-06-26: Contract-vs-implementation gap (D0 hardening)
+
+The D0 global-representation contract (O1–O7) is now hardened in the spec and
+plan. Implementation is landing in steps.
+
+Implemented and tested (step 1+2, 2026-06-26):
+
+- `summary_nodes.importance` column (`real`, `[0,1]`) and catalog version bump to
+  `0.8`/`8` — `test_summary_nodes_catalog_contract` checks the column and version;
+- importance as a structured summary side output with deterministic prior
+  fallback — `test_parse_importance_extracts_and_strips_marker`,
+  `test_importance_prior_low_for_tooling_paths`,
+  `test_index_routing_stores_model_importance`,
+  `test_index_routing_falls_back_to_importance_prior`;
+- `representation_policy_version` in the global FTS watermark and manifest.
+
+Implemented and tested (step 3, 2026-06-26):
+
+- projection-time per-root budget enforcement (log-scaled `_entry_budget`,
+  `max_entries` default 20) with reserved L0 units and importance/coverage/id
+  precedence — `test_entry_budget_is_log_scaled_and_capped`,
+  `test_select_budgeted_rows_reserves_l0_and_ranks_companions`;
+- identical trimmed unit set feeds the FTS projection and the staleness
+  watermark (parity-ready), with overflow counted in build counts and manifest.
+
+Implemented and tested (step 4, 2026-06-26):
+
+- `max_build_seconds` decisive time budget skips the media companion when the
+  per-root budget is reached while keeping the mandatory `root_summary` —
+  `test_index_routing_skips_media_when_build_budget_exhausted`;
+- `tokens_per_sec` measure-and-cache calibration (EMA, workspace `calibration.json`)
+  and the derived token budget — `test_tokens_per_sec_calibration_math`.
+
+Implemented and tested (step 5, 2026-06-26 — D0 close):
+
+- `negative_summary` overflow rollup (one synthesized unit per root with dropped
+  companions) — folded into
+  `test_select_budgeted_rows_reserves_l0_and_ranks_companions`;
+- dynamic low-importance prior learning from model feedback —
+  `test_index_routing_learns_low_importance_prior`;
+- O6 sampling-policy rename `text_stratified_v1` → `doc_roundrobin_v1` (configs +
+  `config.py` fallback in sync).
+
+Run: `uv run pytest` → 41 passed; `uv run ruff check .` → clean.
+
+D0 representation contract (O1–O7) is fully implemented and tested. The only
+remaining contract item is the **derived embedding budget**, intentionally
+deferred to the D2 semantic-representative slice (no semantic projection exists to
+budget yet), and the FTS/semantic backend parity it would exercise.
+
+Current behavior (1 `root_summary` + 1 `album_summary` per scope, projected as one
+FTS doc each) stays within the hardened contract, so the shipped D0/D1 tests
+remain valid; the items above extend it.

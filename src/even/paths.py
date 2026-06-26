@@ -42,6 +42,12 @@ def results_root() -> Path:
     return workspace_root() / "results"
 
 
+def calibration_path() -> Path:
+    """Return the workspace-local machine-calibration file (e.g. tokens/sec)."""
+
+    return workspace_root() / "calibration.json"
+
+
 def reports_root() -> Path:
     """Return the workspace-local optional HTML reports directory root."""
 

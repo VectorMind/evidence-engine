@@ -16,4 +16,28 @@ defaults:
   summary_model: "granite3.2-vision"
   summary_ollama_url: "http://localhost:11434"
   summary_timeout_seconds: 120
-  sample_policy: "text_stratified_v1"
+  sample_policy: "doc_roundrobin_v1"
+  # Representation budget and importance (see specifications Global Representation
+  # Contract). Time is the decisive cost dimension; max_entries is the decisive
+  # volume ceiling. Token/embedding budgets derive from time once tokens_per_sec
+  # is calibrated. Importance is a summary side output seeded by path priors.
+  representation_policy_version: "1"
+  max_build_seconds: 300
+  max_entries: 20
+  importance_default: 0.5
+  importance_low_prior: 0.1
+  # Model importance below this threshold teaches the dynamic prior list to demote
+  # the path on later builds (feedback loop on importance_priors).
+  importance_learn_threshold: 0.2
+  importance_priors:
+    - node_modules
+    - .git
+    - .venv
+    - venv
+    - __pycache__
+    - site-packages
+    - dist
+    - build
+    - .cache
+    - "program files"
+    - appdata

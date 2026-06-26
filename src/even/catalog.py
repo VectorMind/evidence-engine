@@ -11,8 +11,8 @@ from even.contracts import read_contract_text
 from even.paths import catalog_path
 
 
-CATALOG_SCHEMA_VERSION = "0.7"
-CATALOG_USER_VERSION = 7
+CATALOG_SCHEMA_VERSION = "0.8"
+CATALOG_USER_VERSION = 8
 
 
 @dataclass(frozen=True)

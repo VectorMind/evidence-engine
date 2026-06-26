@@ -90,7 +90,26 @@ def _load_routing_config_fallback() -> dict[str, Any]:
             "summary_model": "granite3.2-vision",
             "summary_ollama_url": "http://localhost:11434",
             "summary_timeout_seconds": 120,
-            "sample_policy": "text_stratified_v1",
+            "sample_policy": "doc_roundrobin_v1",
+            "representation_policy_version": "1",
+            "max_build_seconds": 300,
+            "max_entries": 20,
+            "importance_default": 0.5,
+            "importance_low_prior": 0.1,
+            "importance_learn_threshold": 0.2,
+            "importance_priors": [
+                "node_modules",
+                ".git",
+                ".venv",
+                "venv",
+                "__pycache__",
+                "site-packages",
+                "dist",
+                "build",
+                ".cache",
+                "program files",
+                "appdata",
+            ],
         }
     }
 
