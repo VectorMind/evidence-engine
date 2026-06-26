@@ -260,6 +260,55 @@ representatives, and SigLIP routing remain future slices.
   deferred to the D2 semantic-representative slice (no semantic projection exists
   to budget yet).
 
+## 2026-06-26: RP1 payload model + DP1 embedding-source correction
+
+- RP1: replaced the flat `summary_nodes.routing_text` blob with structured
+  `routing_meta` (json). `summary_text` keeps the model prose; `routing_meta`
+  holds deterministic facets (paths/titles/headings/captions/metadata). The
+  searchable/embeddable `routing_payload = summary_text + flattened routing_meta`
+  is derived at projection time by one shared `_routing_payload`, so FTS and the
+  future semantic store consume the identical payload (parity by construction) and
+  the summary is no longer stored twice.
+- Code: `_deterministic_routing_text`/`_media_routing_text` → `_document_routing_meta`/
+  `_media_routing_meta` (return dicts); added `_routing_payload` + `_clean_routing_meta`;
+  `_upsert_summary_row` stores `routing_meta` json; `_current_summary_rows` derives
+  and filters on `routing_payload`; FTS schema/writer/search field `routing_text` →
+  `routing_payload`; `_representative_watermark` and `_negative_rollup` updated.
+- Schema: `catalog.yaml` `routing_text` (text) → `routing_meta` (json); catalog
+  bumped `0.8`/`8` → `0.9`/`9`. `store_templates.yaml` `fts_summary_node` field
+  `routing_text` → `routing_payload`.
+- DP1 (D2 prep): corrected B4 and the spec. The text semantic representative store
+  embeds `routing_payload` **fresh** (it is not a proof chunk → no vector to
+  reuse); cost is low because the representative set is budget-bounded, not via
+  reuse. Vector reuse is reserved for the SigLIP medoid route.
+- Tests: catalog-version assertion → 9, asserts `routing_meta` present /
+  `routing_text` absent; doc/media projection tests read `routing_meta`; rollup
+  test reads `routing_payload`. `uv run pytest` 41 passed; `uv run ruff check .`
+  clean.
+
+## 2026-06-26: D2 decisions recorded + Retrieval Strategy v1 (list + budget)
+
+- Hardened the D2 decision record (DP2–DP5) and the Retrieval Strategy / Auto Mode
+  design into `plan.md`; updated the `route_trace` contract with the multi-route
+  (`routes` + `fused_selection`) shape; added the `semantic_summary_node` template
+  to `store_templates.yaml`; updated `spec.md` (multi-route routing paragraph,
+  `list` command, `search --budget`).
+- Implemented the cheap available pieces of the strategy layer:
+  - `even list [path]` — `list_representatives()` walks current `summary_nodes`
+    grouped by root (no query, no model); optional path filter on `source_uri`.
+  - `search text --budget low|mid|high` (default `mid`) — `SearchOptions.budget`
+    drives routed-scope fanout (`low`=1, `mid`=config, `high`=wider); the budget is
+    stamped into `route_trace`. When deep search returns no hits, representative
+    hits are attached as `routing_suggestions` (no-hit → routing fallback).
+  - `high` recursive deepening into companion summaries is deferred until those
+    exist (D2+); for now `high` widens fanout.
+- DP2–DP5 (the semantic-rep store itself, fused RRF route, parity test) remain to
+  build; the payload/template/mechanics are now pinned.
+- Tests: `test_parser_exposes_list_and_search_budget`,
+  `test_list_representatives_lists_current_nodes`,
+  `test_search_text_low_budget_limits_fanout`. `uv run pytest` 44 passed;
+  `uv run ruff check .` clean.
+
 ## Follow-Up Risks
 
 - Media cluster summaries, global semantic representative stores, and SigLIP

@@ -62,6 +62,112 @@ because the physical text/vector internals stay hidden behind `text`,
 > particular touches several layers. They pack the real complexity into
 > something a mind can stack.
 
+## The Evidence Layer — the Novel Core
+
+Most local search tools flatten a corpus into one index and lose the path back
+to the original bytes. Evidence Engine keeps that path. **Layer 2 is the
+engine's center of gravity:** a *typed, provenance-backed* evidence layer where
+every machine-produced observation is
+
+- **typed, not flattened** — a clause, a table cell, an OCR line, and a caption
+  stay distinct objects with reading order, page span, and bbox, instead of
+  being dissolved into anonymous text chunks;
+- **rebuildable and hash-pinned** — each row carries its source `sha256`, so it
+  can always be regenerated from Layer 1 and never drifts from the bytes it
+  describes;
+- **never proof of absence** — a missing observation means "not yet extracted,"
+  not "does not exist";
+- **referenced, not copied** — everything above points *into* this layer by
+  `ref: corpus_cache.table.row_id`, so meaning accrues without duplicating
+  evidence.
+
+The diagram below shows Layer 2 in detail and how it hangs off the read-only
+Layer 1 inventory. Documents and media are two parallel evidence branches that
+share the same blob store and the same freshness contract.
+
+```mermaid
+flowchart TB
+  subgraph L1["Layer 1 · Source authority (read-only)"]
+    SRC["folders · OneDrive · archives · connectors"]
+    ITEMS["source_roots → source_items<br/>path · size · sha256 · status"]
+  end
+
+  subgraph L2["Layer 2 · Evidence (rebuildable · hash-pinned)"]
+    subgraph DOCS["Document evidence"]
+      DOC["documents"]
+      OBJ["document_objects<br/>pages · tables · figures · captions"]
+      VAL["valuable_items"]
+      ART["docling_artifacts → artifact_blobs"]
+    end
+    subgraph MEDIA["Media evidence"]
+      ASSET["media_assets"]
+      META["image / video / model3d metadata"]
+      OBS["media_observations<br/>OCR · captions · kinds · tags"]
+    end
+  end
+
+  SRC --> ITEMS
+  ITEMS -->|"docs parse"| DOC
+  DOC --> ART
+  DOC --> OBJ --> VAL
+  ITEMS -->|"media inspect / describe"| ASSET
+  ASSET --> META
+  ASSET --> OBS
+
+  ITEMS -. "sha256 freshness" .-> DOC
+  ITEMS -. "sha256 freshness" .-> ASSET
+```
+
+## Binding Reviewed Facts to Evidence
+
+The payoff of a typed evidence layer is what Layer 4 can do with it. A single
+**reviewed fact** — an entity, identity, or decision — can gather *many kinds of
+evidence under one identity*. It reaches that evidence two ways:
+
+- **discovery** — find candidate evidence by words (FTS), by meaning (semantic /
+  hybrid), or by narrowing to the right root scope first (routing);
+- **binding** — pin the accepted hits by `ref:` directly to the underlying
+  evidence rows, with no copy, so the entity keeps an exact, regenerable trail.
+
+So one entity can simultaneously hold an OCR line read off a scanned image, a
+clause inside a parsed contract, a row in a spreadsheet table, and a geotagged
+site photo — heterogeneous evidence types, one identity, every link
+provenance-checkable.
+
+```mermaid
+flowchart TB
+  ENT["Layer 4 · Entity: 'Acme Corp'<br/>(decided · durable)"]
+
+  subgraph L3["Layer 3 · Search projections (disposable views)"]
+    FTS["text (FTS)"]
+    SEM["semantic / hybrid"]
+    ROUTE["routing map"]
+  end
+
+  subgraph L2["Layer 2 · Evidence points (typed · provenance-rich)"]
+    OCR["OCR text on scan.jpg<br/>media_observations"]
+    CLAUSE["renewal clause in contract.pdf<br/>valuable_items"]
+    TABLE["vendor row in sheet.xlsx<br/>document_objects (table)"]
+    PHOTO["geotagged site photo<br/>image_metadata"]
+  end
+
+  ENT -->|"discover by words / meaning"| FTS
+  ENT --> SEM
+  ENT -->|"narrow to root scope"| ROUTE
+  FTS --> OCR
+  SEM --> CLAUSE
+  SEM --> TABLE
+  ROUTE --> PHOTO
+
+  ENT -. "ref: corpus_cache.table.row_id — no copy" .-> OCR
+  ENT -. ref .-> CLAUSE
+  ENT -. ref .-> TABLE
+  ENT -. ref .-> PHOTO
+```
+
+Layer 5 (curated Markdown) sits one step further out and belongs mostly to
+workspaces that consume `even`; it is intentionally kept low-profile here.
+
 ## Current Status
 
 This repository is in beta/pre-development. There is no backward-compatibility

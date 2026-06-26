@@ -1,4 +1,4 @@
-spec_version: "0.8"
+spec_version: "0.9"
 name: corpus_cache_catalog
 status: draft
 description: >
@@ -244,7 +244,7 @@ datasets:
           - {name: summary_level, type: integer, description: "Routing level, with 0 for root-level representatives."}
           - {name: title, type: text, description: "Short display title for the representative."}
           - {name: summary_text, type: text, description: "Local lossy LLM summary of sampled inputs."}
-          - {name: routing_text, type: text, description: "Searchable routing text: summary plus deterministic facets."}
+          - {name: routing_meta, type: json, description: "Structured deterministic routing facets (paths, titles, headings, captions, metadata). The searchable/embeddable payload is derived at projection time from summary_text plus these facets."}
           - {name: source_refs_json, type: json, description: "Canonical refs sampled or represented by this node."}
           - {name: source_count, type: integer, description: "Total lower items considered for this representative."}
           - {name: sample_count, type: integer, description: "Lower items sampled into the summary prompt."}

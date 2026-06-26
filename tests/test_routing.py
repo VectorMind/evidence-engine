@@ -21,6 +21,7 @@ from even.routing import (
     _select_budgeted_rows,
     _token_budget,
     index_routing,
+    list_representatives,
 )
 
 
@@ -31,7 +32,7 @@ def test_summary_nodes_catalog_contract(
 
     tables = {table.name for table in load_catalog_tables()}
     assert "summary_nodes" in tables
-    assert CATALOG_USER_VERSION == 8
+    assert CATALOG_USER_VERSION == 9
 
     assert create_catalog()["status"] == "created"
     with sqlite3.connect(catalog_path()) as conn:
@@ -45,9 +46,11 @@ def test_summary_nodes_catalog_contract(
             for row in conn.execute("PRAGMA table_info(summary_nodes)").fetchall()
         }
 
-    assert user_version == 8
+    assert user_version == 9
     assert summary_table == ("summary_nodes",)
     assert "importance" in columns
+    assert "routing_meta" in columns
+    assert "routing_text" not in columns
 
 
 def test_parser_exposes_index_routing() -> None:
@@ -78,7 +81,7 @@ def test_index_routing_writes_document_summary_with_fake_generator(
         row = conn.execute(
             """
             SELECT kind, modality, container_kind, summary_status, summary_text,
-                   routing_text, source_refs_json
+                   routing_meta, source_refs_json
             FROM summary_nodes
             """
         ).fetchone()
@@ -142,7 +145,7 @@ def test_index_routing_writes_media_album_summary_with_fake_generator(
         row = conn.execute(
             """
             SELECT kind, modality, container_kind, summary_status, summary_text,
-                   routing_text, source_refs_json
+                   routing_meta, source_refs_json
             FROM summary_nodes
             WHERE kind = 'album_summary'
             """
@@ -337,8 +340,8 @@ def test_select_budgeted_rows_reserves_l0_and_ranks_companions() -> None:
     assert len(rollups) == 1
     assert rollups[0]["summary_id"] == "neg_r"
     assert rollups[0]["importance"] == 0.05
-    assert "c_mid" in rollups[0]["routing_text"]
-    assert "c_low" in rollups[0]["routing_text"]
+    assert "c_mid" in rollups[0]["routing_payload"]
+    assert "c_low" in rollups[0]["routing_payload"]
 
 
 def test_index_routing_learns_low_importance_prior(
@@ -418,6 +421,55 @@ def _unit(summary_id: str, kind: str, *, source_count: int, importance: float) -
         "coverage_estimate": 0.5,
         "importance": importance,
     }
+
+
+def test_parser_exposes_list_and_search_budget() -> None:
+    parser = build_parser()
+
+    list_args = parser.parse_args(["list"])
+    assert list_args.handler.__name__ == "list_representatives_command"
+
+    budget_args = parser.parse_args(["search", "text", "alpha", "--budget", "high"])
+    assert budget_args.budget == "high"
+
+
+def test_list_representatives_lists_current_nodes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "alpha", "alpha contract renewal clause")
+    _scan_and_seed_document(data, "report.txt", "alpha contract renewal clause")
+    index_routing(data, RoutingIndexOptions(force=True), summary_generator=_fake_summary)
+
+    result = list_representatives()
+
+    assert result["status"] == "ok"
+    assert result["counts"]["roots"] == 1
+    kinds = {node["kind"] for root in result["roots"] for node in root["nodes"]}
+    assert "root_summary" in kinds
+
+
+def test_search_text_low_budget_limits_fanout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    monkeypatch.chdir(tmp_path)
+    alpha = _make_root(tmp_path, "alpha", "alpha contract")
+    beta = _make_root(tmp_path, "beta", "beta invoice")
+    (alpha / "alpha.txt").write_text("alpha renewal contract", encoding="utf-8")
+    (beta / "beta.txt").write_text("beta invoice receipt", encoding="utf-8")
+    _scan_and_seed_document(alpha, "alpha.txt", "alpha renewal contract", repeat=3)
+    _scan_and_seed_document(beta, "beta.txt", "beta invoice receipt", repeat=3)
+    assert index_scope_to_fts(alpha, IndexOptions(force=True))["status"] == "ok"
+    assert index_scope_to_fts(beta, IndexOptions(force=True))["status"] == "ok"
+    index_routing(alpha, RoutingIndexOptions(force=True), summary_generator=_fake_summary)
+    index_routing(beta, RoutingIndexOptions(force=True), summary_generator=_fake_summary)
+
+    result = search_text_indexes("alpha renewal", SearchOptions(limit=10, budget="low"))
+
+    assert result["route_trace"]["budget"] == "low"
+    assert len(result["route_trace"].get("selected_scopes", [])) <= 1
 
 
 def _make_root(tmp_path: Path, name: str, text: str) -> Path:

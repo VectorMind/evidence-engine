@@ -184,12 +184,21 @@ image-embedding model, and returns visually similar assets. Visual similarity is
 a separate retrieval mode, not a text search over generated captions.
 
 `search text` may use global representative routing when a current derived
-representative FTS map exists. Routing first searches lossy `summary_nodes`,
-selects likely root scopes, then searches the root-scoped FTS indexes that
-remain the evidence layer. If routing is unavailable or weak, `search text`
-falls back to all current FTS indexes and records the fallback in
-`route_trace`. Global representative stores are fixed-path derived projections,
-not catalog registry rows.
+representative map exists. Routing searches the lossy `summary_nodes`
+representatives, selects likely root scopes, then searches the root-scoped FTS
+indexes that remain the evidence layer. When both representative routes are
+current, the FTS-representative and semantic-representative hit lists are fused
+with RRF before scope selection; the semantic route is optional by cost.
+Representative routes only select scopes — for `search text` the deep search stays
+FTS. If routing is unavailable or weak, `search text` falls back to all current
+FTS indexes and records the fallback in `route_trace`. A query-time
+`--budget low|mid|high` (default `mid`) governs fanout depth: `low` searches the
+single best scope, `mid` searches the top routed scopes, and `high` adds recursive
+deepening into matched roots plus a listing of the matched region. When deep
+search returns no hits, the result falls back to the routing suggestions rather
+than empty. The separate `list` command walks the representative hierarchy
+directly with no query. Global representative stores are fixed-path derived
+projections, not catalog registry rows.
 
 Search results hydrate back to catalog identities such as `source_item_id`,
 `doc_id`, `object_id`, `scope_id`, and index/store registry IDs. Every hit also
@@ -227,9 +236,13 @@ derived from them:
 - `embedding_units`, `local_llm_tokens`, `remote_llm_tokens` — advisory and
   derived. Token and embedding budgets follow from `max_build_seconds` times a
   calibrated machine throughput (`tokens_per_sec`). `remote_llm_tokens` defaults
-  to `0` (local-only). The embedding model is selectable and defaults to a fast
-  model; current proof-layer vectors are reused when available, so the marginal
-  embedding cost is usually near zero.
+  to `0` (local-only). The text semantic representative store embeds each unit's
+  derived `routing_payload` **fresh** with a selectable fast model — that text is
+  not a proof chunk, so there is no vector to reuse. The marginal cost is low not
+  through reuse but because the representative set is budget-bounded (a handful of
+  units per root). Reuse of existing vectors applies only to the later SigLIP
+  medoid route, where representatives are drawn from image vectors the proof layer
+  already computed.
 
 Dynamic configuration. `tokens_per_sec` is measured on first summarization,
 cached, and self-corrected as builds run, so the time budget stays meaningful per
@@ -272,11 +285,15 @@ are dropped but counted in the manifest and `route_trace`, never silently;
 low-importance overflow may be rolled up into a single `negative_summary` instead
 of dropped.
 
-Backend parity. The FTS and semantic global projections are built from the
-identical current unit set and index or embed the same payload field
-(`routing_text`). FTS is mandatory and built first; the semantic projection is
-optional and built second over the same units. Neither backend may add, drop, or
-reweight units relative to the other.
+Payload and backend parity. Each unit stores the model prose in `summary_text` and
+the deterministic facets (paths, titles, headings, captions, safe metadata) as
+structured `routing_meta`; the searchable/embeddable text is the derived
+`routing_payload = summary_text + flattened routing_meta`, assembled at projection
+time by one shared function. The FTS and semantic global projections are built from
+the identical current unit set and index or embed that same `routing_payload`. FTS
+is mandatory and built first; the semantic projection is optional and built second
+over the same units. Neither backend may add, drop, or reweight units relative to
+the other.
 
 Versioned and deterministic. A `representation_policy_version` covers the budget,
 importance, and precedence rules; the projection manifest watermark covers unit
@@ -304,7 +321,8 @@ Public commands:
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
 | `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. |
-| `search` | `text <query>` | `query` | Search text projections. |
+| `list` | `[path]` | none | List the representative `summary_nodes` hierarchy (bypass; no query, no model). |
+| `search` | `text <query>` | `query` | Search text projections. Accepts `--budget low\|mid\|high` (default `mid`). |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
 | `search` | `image <image-path>` | `image-path` | Query-by-image visual similarity over media image embeddings. |

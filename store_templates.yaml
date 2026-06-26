@@ -35,9 +35,25 @@ templates:
       - {name: modality, type: enum, description: "Dominant modality."}
       - {name: title, type: text, description: "Display title."}
       - {name: summary_text, type: text, description: "Lossy summary text."}
-      - {name: routing_text, type: text, description: "Primary searchable routing text."}
+      - {name: routing_payload, type: text, description: "Primary searchable payload derived from summary_text + routing_meta (RP1)."}
       - {name: source_refs_json, type: json, description: "Represented lower evidence refs."}
       - {name: metadata_json, type: json, description: "Compact route metadata."}
+
+  - name: semantic_summary_node
+    backend: semantic
+    description: One generated semantic row per current summary node (global representative).
+    columns:
+      - {name: summary_id, type: text, description: "Catalog summary node ID."}
+      - {name: root_id, type: text, description: "Summarized source root."}
+      - {name: scope_id, type: text, description: "Summarized index scope."}
+      - {name: kind, type: enum, description: "Summary node kind."}
+      - {name: modality, type: enum, description: "Dominant modality."}
+      - {name: embedding_profile, type: text, description: "Embedding profile used for this row."}
+      - {name: vector, type: vector, description: "Dense embedding of routing_payload."}
+      - {name: title, type: text, description: "Display title."}
+      - {name: routing_payload, type: text, description: "Text embedded for semantic routing (summary_text + routing_meta)."}
+      - {name: source_refs_json, type: json, description: "Represented lower evidence refs."}
+      - {name: metadata_json, type: json, description: "Compact route metadata (root_label, importance)."}
 
   - name: semantic_chunk_row
     backend: semantic

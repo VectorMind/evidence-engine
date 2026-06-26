@@ -32,6 +32,7 @@ class IndexOptions:
 class SearchOptions:
     limit: int = 30
     routed: bool = True
+    budget: str = "mid"
 
 
 def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:

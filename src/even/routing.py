@@ -321,11 +321,18 @@ def build_global_representative_fts(
 
 
 def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
-    """Route text search through global representatives when they are current."""
+    """Route text search through global representatives when they are current.
+
+    The query-time budget controls fanout: ``low`` searches the single best scope,
+    ``mid`` (default) the top routed scopes, ``high`` widens further. When deep
+    search returns no hits, the representative hits are attached as
+    ``routing_suggestions`` instead of an empty result.
+    """
 
     from even import fts
 
     config = _routing_defaults()
+    budget = _query_budget(options)
     route = _search_global_representatives(
         query,
         fts_profile=_fts_profile(),
@@ -334,16 +341,17 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
     if route["status"] != "ok":
         fallback = fts.search_all_text_indexes(query, options)
         fallback["route_trace"] = _fallback_trace(route.get("reasons", []))
-        return fallback
+        return _finalize_route(fallback, budget)
 
+    suggestions = route["hits"]
     selected_scopes = _selected_scopes(
         route["hits"],
-        max_scopes=int(config["max_routed_scopes"]),
+        max_scopes=_budget_max_scopes(budget, int(config["max_routed_scopes"])),
     )
     if not selected_scopes:
         fallback = fts.search_all_text_indexes(query, options)
         fallback["route_trace"] = _fallback_trace(["no_representative_scopes"])
-        return fallback
+        return _finalize_route(fallback, budget, suggestions)
 
     scoped = fts.search_all_text_indexes(
         query,
@@ -368,7 +376,7 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
                 "skipped_rungs": [],
             },
         )
-        return fallback
+        return _finalize_route(fallback, budget, suggestions)
 
     scoped["route_trace"] = _route_trace(
         route=route,
@@ -377,7 +385,86 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
         status="used",
         widening_status={"status": "not_needed", "reasons": [], "skipped_rungs": []},
     )
-    return scoped
+    return _finalize_route(scoped, budget, suggestions)
+
+
+def _query_budget(options: Any) -> str:
+    budget = str(getattr(options, "budget", "mid") or "mid").lower()
+    return budget if budget in {"low", "mid", "high"} else "mid"
+
+
+def _budget_max_scopes(budget: str, base: int) -> int:
+    """Map the query budget to routed-scope fanout. `high` recursive deepening into
+    companion summaries is added once those exist (D2+); for now it widens fanout."""
+
+    if budget == "low":
+        return 1
+    if budget == "high":
+        return max(base, base * 2)
+    return base
+
+
+def _finalize_route(
+    result: dict[str, Any], budget: str, suggestions: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    trace = result.get("route_trace")
+    if isinstance(trace, dict):
+        trace["budget"] = budget
+    if suggestions and not result.get("hits"):
+        result["routing_suggestions"] = suggestions
+    return result
+
+
+def list_representatives(path: Path | None = None) -> dict[str, Any]:
+    """List the current representative summary_nodes hierarchy. No query, no model.
+
+    Optional ``path`` filters to roots whose source URI contains it.
+    """
+
+    sql = """
+        SELECT s.root_id, sr.root_label, s.summary_id, s.kind, s.modality,
+               s.title, s.summary_level, s.importance
+        FROM "summary_nodes" s
+        JOIN "source_roots" sr ON sr.root_id = s.root_id
+        WHERE s.summary_status = 'current'
+    """
+    params: list[Any] = []
+    if path is not None:
+        sql += " AND sr.source_uri LIKE ?"
+        params.append(f"%{path}%")
+    sql += " ORDER BY sr.root_label, s.root_id, s.summary_level, s.kind, s.summary_id"
+    try:
+        with sqlite3.connect(catalog_path()) as conn:
+            rows = conn.execute(sql, params).fetchall()
+    except sqlite3.Error:
+        return {"status": "deferred", "error_kind": "catalog_unavailable", "roots": []}
+
+    roots: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        root_id = row[0]
+        root = roots.setdefault(
+            root_id,
+            {"root_id": root_id, "root_label": row[1], "nodes": []},
+        )
+        root["nodes"].append(
+            {
+                "summary_id": row[2],
+                "kind": row[3],
+                "modality": row[4],
+                "title": row[5] or row[1] or root_id,
+                "summary_level": int(row[6] or 0),
+                "importance": row[7],
+            }
+        )
+    root_list = list(roots.values())
+    return {
+        "status": "ok",
+        "roots": root_list,
+        "counts": {
+            "roots": len(root_list),
+            "summary_nodes": sum(len(root["nodes"]) for root in root_list),
+        },
+    }
 
 
 def _upsert_root_summary(
@@ -416,7 +503,7 @@ def _upsert_root_summary(
             source_item_id=_root_source_item_id(root_id),
             title=root_label or scope_id,
             summary_text="",
-            routing_text="",
+            routing_meta={},
             source_refs=[],
             source_count=0,
             sample_count=0,
@@ -488,7 +575,7 @@ def _upsert_root_summary(
             source_item_id=_root_source_item_id(root_id),
             title=root_label or scope_id,
             summary_text="",
-            routing_text=_deterministic_routing_text(root_label, samples, ""),
+            routing_meta=_document_routing_meta(root_label, samples),
             source_refs=_source_refs(samples),
             source_count=len(chunks),
             sample_count=len(samples),
@@ -530,7 +617,7 @@ def _upsert_root_summary(
             source_item_id=_root_source_item_id(root_id),
             title=root_label or scope_id,
             summary_text="",
-            routing_text=_deterministic_routing_text(root_label, samples, ""),
+            routing_meta=_document_routing_meta(root_label, samples),
             source_refs=_source_refs(samples),
             source_count=len(chunks),
             sample_count=len(samples),
@@ -566,7 +653,7 @@ def _upsert_root_summary(
         source_item_id=_root_source_item_id(root_id),
         title=root_label or scope_id,
         summary_text=summary_text,
-        routing_text=_deterministic_routing_text(root_label, samples, summary_text),
+        routing_meta=_document_routing_meta(root_label, samples),
         source_refs=_source_refs(samples),
         source_count=len(chunks),
         sample_count=len(samples),
@@ -631,7 +718,7 @@ def _upsert_media_summary(
                 source_item_id=_root_source_item_id(root_id),
                 title=f"{root_label or scope_id} media",
                 summary_text="",
-                routing_text="",
+                routing_meta={},
                 source_refs=[],
                 source_count=0,
                 sample_count=0,
@@ -711,7 +798,7 @@ def _upsert_media_summary(
             source_item_id=_root_source_item_id(root_id),
             title=title,
             summary_text="",
-            routing_text=_media_routing_text(root_label, samples, ""),
+            routing_meta=_media_routing_meta(root_label, samples),
             source_refs=_media_source_refs(samples),
             source_count=len(assets),
             sample_count=len(samples),
@@ -761,7 +848,7 @@ def _upsert_media_summary(
             source_item_id=_root_source_item_id(root_id),
             title=title,
             summary_text="",
-            routing_text=_media_routing_text(root_label, samples, ""),
+            routing_meta=_media_routing_meta(root_label, samples),
             source_refs=_media_source_refs(samples),
             source_count=len(assets),
             sample_count=len(samples),
@@ -801,7 +888,7 @@ def _upsert_media_summary(
         source_item_id=_root_source_item_id(root_id),
         title=title,
         summary_text=summary_text,
-        routing_text=_media_routing_text(root_label, samples, summary_text),
+        routing_meta=_media_routing_meta(root_label, samples),
         source_refs=_media_source_refs(samples),
         source_count=len(assets),
         sample_count=len(samples),
@@ -924,7 +1011,7 @@ def _write_global_fts_index(
                 "modality",
                 "title",
                 "summary_text",
-                "routing_text",
+                "routing_payload",
                 "source_refs_json",
                 "metadata_json",
             ):
@@ -954,7 +1041,7 @@ def _global_fts_schema() -> Any:
         )
     builder.add_text_field("title", stored=True, tokenizer_name="default")
     builder.add_text_field("summary_text", stored=True, tokenizer_name="default")
-    builder.add_text_field("routing_text", stored=True, tokenizer_name="default")
+    builder.add_text_field("routing_payload", stored=True, tokenizer_name="default")
     builder.add_text_field(
         "source_refs_json",
         stored=True,
@@ -1011,7 +1098,7 @@ def _search_global_representatives(
         index = tantivy.Index.open(str(index_dir))
         parsed, errors = index.parse_query_lenient(
             query,
-            default_field_names=["title", "summary_text", "routing_text"],
+            default_field_names=["title", "summary_text", "routing_payload"],
         )
         searcher = index.searcher()
         result = searcher.search(parsed, limit=max(1, limit))
@@ -1055,7 +1142,7 @@ def _upsert_summary_row(
     source_item_id: str | None,
     title: str,
     summary_text: str,
-    routing_text: str,
+    routing_meta: dict[str, Any],
     source_refs: list[str],
     source_count: int,
     sample_count: int,
@@ -1084,7 +1171,7 @@ def _upsert_summary_row(
             INSERT INTO "summary_nodes"
             (summary_id, root_id, scope_id, parent_summary_id, source_item_id,
              doc_id, kind, modality, media_kind, container_kind, summary_level,
-             title, summary_text, routing_text, source_refs_json, source_count,
+             title, summary_text, routing_meta, source_refs_json, source_count,
              sample_count, coverage_estimate, sample_policy, producer, profile,
              source_high_watermark, summary_status, confidence, importance,
              attrs_json, created_at, updated_at)
@@ -1103,7 +1190,7 @@ def _upsert_summary_row(
                 summary_level = excluded.summary_level,
                 title = excluded.title,
                 summary_text = excluded.summary_text,
-                routing_text = excluded.routing_text,
+                routing_meta = excluded.routing_meta,
                 source_refs_json = excluded.source_refs_json,
                 source_count = excluded.source_count,
                 sample_count = excluded.sample_count,
@@ -1133,7 +1220,7 @@ def _upsert_summary_row(
                 summary_level,
                 title,
                 summary_text,
-                routing_text,
+                json.dumps(routing_meta, sort_keys=True),
                 json.dumps(source_refs, sort_keys=True),
                 source_count,
                 sample_count,
@@ -1177,19 +1264,23 @@ def _current_summary_rows() -> list[dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT s.summary_id, s.root_id, s.scope_id, s.kind, s.modality,
-                   s.title, s.summary_text, s.routing_text, s.source_refs_json,
+                   s.title, s.summary_text, s.routing_meta, s.source_refs_json,
                    s.source_high_watermark, s.updated_at, sr.root_label,
                    s.media_kind, s.container_kind, s.source_count,
                    s.coverage_estimate, s.importance
             FROM "summary_nodes" s
             JOIN "source_roots" sr ON sr.root_id = s.root_id
             WHERE s.summary_status = 'current'
-              AND COALESCE(s.routing_text, '') <> ''
             ORDER BY s.root_id, s.scope_id, s.summary_id
             """
         ).fetchall()
     result = []
     for row in rows:
+        summary_text = row[6] or ""
+        routing_meta = _json_object(row[7])
+        routing_payload = _routing_payload(summary_text, routing_meta)
+        if not routing_payload.strip():
+            continue
         metadata = {
             "root_label": row[11],
             "source_high_watermark": row[9],
@@ -1205,8 +1296,9 @@ def _current_summary_rows() -> list[dict[str, Any]]:
                 "kind": row[3],
                 "modality": row[4],
                 "title": row[5] or row[11] or row[1],
-                "summary_text": row[6] or "",
-                "routing_text": row[7] or "",
+                "summary_text": summary_text,
+                "routing_meta": routing_meta,
+                "routing_payload": routing_payload,
                 "source_refs_json": row[8] or "[]",
                 "source_high_watermark": row[9] or "",
                 "source_count": int(row[14] or 0),
@@ -1256,7 +1348,8 @@ def _negative_rollup(root_id: str, dropped: list[dict[str, Any]]) -> dict[str, A
         "modality": "mixed",
         "title": "Low-value content",
         "summary_text": "",
-        "routing_text": "Low-value or deprioritized content: " + " | ".join(titles),
+        "routing_meta": {"deprioritized": titles},
+        "routing_payload": "Low-value or deprioritized content: " + " | ".join(titles),
         "source_refs_json": "[]",
         "source_high_watermark": "",
         "source_count": sum(int(unit.get("source_count") or 0) for unit in dropped),
@@ -1477,11 +1570,12 @@ def _media_metadata_facets(asset: dict[str, Any]) -> dict[str, Any]:
     return facets
 
 
-def _media_routing_text(
+def _media_routing_meta(
     root_label: str,
     samples: list[dict[str, Any]],
-    summary_text: str,
-) -> str:
+) -> dict[str, Any]:
+    """Structured deterministic routing facets for a media root."""
+
     paths: set[str] = set()
     filenames: set[str] = set()
     captions: set[str] = set()
@@ -1514,20 +1608,20 @@ def _media_routing_text(
         if asset.get("model_format"):
             model_formats.add(str(asset["model_format"]))
 
-    parts = [
-        f"Root: {root_label}",
-        f"Summary: {summary_text}",
-        "Paths: " + " | ".join(sorted(paths)[:25]),
-        "Filenames: " + " | ".join(sorted(filenames)[:25]),
-        "Captions: " + " | ".join(sorted(captions)[:20]),
-        "Media kinds: " + " | ".join(sorted(media_kinds)[:10]),
-        "Media classes: " + " | ".join(sorted(media_classes)[:10]),
-        "Media types: " + " | ".join(sorted(media_types)[:10]),
-        "Dimensions: " + " | ".join(sorted(dimensions)[:10]),
-        "Durations seconds: " + " | ".join(sorted(durations)[:10]),
-        "3D formats: " + " | ".join(sorted(model_formats)[:10]),
-    ]
-    return "\n".join(part for part in parts if part.strip())
+    return _clean_routing_meta(
+        {
+            "root": root_label,
+            "paths": sorted(paths)[:25],
+            "filenames": sorted(filenames)[:25],
+            "captions": sorted(captions)[:20],
+            "media_kinds": sorted(media_kinds)[:10],
+            "media_classes": sorted(media_classes)[:10],
+            "media_types": sorted(media_types)[:10],
+            "dimensions": sorted(dimensions)[:10],
+            "durations_seconds": sorted(durations)[:10],
+            "model_formats": sorted(model_formats)[:10],
+        }
+    )
 
 
 def _media_source_refs(samples: list[dict[str, Any]]) -> list[str]:
@@ -1696,11 +1790,12 @@ def _summary_prompt(
     return prompt[:max_chars]
 
 
-def _deterministic_routing_text(
+def _document_routing_meta(
     root_label: str,
     samples: list[dict[str, Any]],
-    summary_text: str,
-) -> str:
+) -> dict[str, Any]:
+    """Structured deterministic routing facets for a document root."""
+
     paths: set[str] = set()
     titles: set[str] = set()
     headings: set[str] = set()
@@ -1715,15 +1810,45 @@ def _deterministic_routing_text(
             headings.add(str(chunk["heading_path"]))
         if chunk.get("content_type"):
             content_types.add(str(chunk["content_type"]))
-    parts = [
-        f"Root: {root_label}",
-        f"Summary: {summary_text}",
-        "Paths: " + " | ".join(sorted(paths)[:25]),
-        "Titles: " + " | ".join(sorted(titles)[:25]),
-        "Headings: " + " | ".join(sorted(headings)[:25]),
-        "Content types: " + " | ".join(sorted(content_types)[:10]),
-    ]
-    return "\n".join(part for part in parts if part.strip())
+    return _clean_routing_meta(
+        {
+            "root": root_label,
+            "paths": sorted(paths)[:25],
+            "titles": sorted(titles)[:25],
+            "headings": sorted(headings)[:25],
+            "content_types": sorted(content_types)[:10],
+        }
+    )
+
+
+def _clean_routing_meta(meta: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty facets so routing_meta stays compact and inspectable."""
+
+    return {key: value for key, value in meta.items() if value not in (None, "", [], {})}
+
+
+def _routing_payload(summary_text: str, meta: dict[str, Any]) -> str:
+    """Assemble the flat searchable/embeddable payload from the model summary plus
+    the deterministic facets. Both the FTS and the semantic projection use this so
+    they index/embed the identical text (backend parity)."""
+
+    lines: list[str] = []
+    if meta.get("root"):
+        lines.append(f"Root: {meta['root']}")
+    if summary_text:
+        lines.append(f"Summary: {summary_text}")
+    for key in sorted(key for key in meta if key != "root"):
+        value = meta[key]
+        if isinstance(value, list):
+            text = " | ".join(str(item) for item in value if str(item).strip())
+        elif isinstance(value, dict):
+            text = " | ".join(f"{name}={item}" for name, item in sorted(value.items()))
+        else:
+            text = str(value)
+        if text.strip():
+            label = key.replace("_", " ").capitalize()
+            lines.append(f"{label}: {text}")
+    return "\n".join(lines)
 
 
 def _source_refs(samples: list[dict[str, Any]]) -> list[str]:
@@ -1945,7 +2070,7 @@ def _representative_watermark(rows: list[dict[str, Any]], fts_profile: str) -> s
             "root_id",
             "scope_id",
             "source_high_watermark",
-            "routing_text",
+            "routing_payload",
         ):
             digest.update(str(row.get(field) or "").encode("utf-8"))
             digest.update(b"\0")

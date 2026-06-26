@@ -39,7 +39,7 @@ from even.parse import ParseOptions, parse_folder_to_catalog
 from even.paths import catalog_path, reports_root, results_root, workspace_root
 from even.references import attach_hit_refs
 from even.results import CommandRun
-from even.routing import RoutingIndexOptions, index_routing
+from even.routing import RoutingIndexOptions, index_routing, list_representatives
 from even.semantic import (
     SemanticIndexOptions,
     SemanticSearchOptions,
@@ -421,7 +421,7 @@ def search_text(args: argparse.Namespace) -> int:
     try:
         result = search_text_indexes(
             args.query,
-            SearchOptions(limit=args.limit),
+            SearchOptions(limit=args.limit, budget=args.budget),
         )
         payload.update(result)
         attach_hit_refs(payload)
@@ -436,6 +436,25 @@ def search_text(args: argparse.Namespace) -> int:
     payload = run.finish(payload)
     _emit(payload)
     return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
+def list_representatives_command(args: argparse.Namespace) -> int:
+    run = CommandRun.start("list")
+    payload = _base_payload("list")
+    try:
+        result = list_representatives(Path(args.path) if args.path else None)
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
 
 
 def search_semantic(args: argparse.Namespace) -> int:
@@ -788,6 +807,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     index_routing_parser.set_defaults(handler=index_routing_command)
 
+    list_parser = subparsers.add_parser(
+        "list", help="List the representative summary-node hierarchy (no query)."
+    )
+    list_parser.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Optional path filter; lists only roots whose source URI contains it.",
+    )
+    list_parser.set_defaults(handler=list_representatives_command)
+
     search = subparsers.add_parser("search", help="Search built indexes.")
     search_sub = search.add_subparsers(dest="search_command")
     search_text_parser = search_sub.add_parser("text", help="Search with a text query.")
@@ -797,6 +827,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=30,
         help="Maximum number of FTS hits to return. Defaults to 30.",
+    )
+    search_text_parser.add_argument(
+        "--budget",
+        choices=["low", "mid", "high"],
+        default="mid",
+        help="Query-time fanout budget: low (1 scope), mid (top scopes), high (wider). Defaults to mid.",
     )
     search_text_parser.set_defaults(handler=search_text)
 

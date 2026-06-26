@@ -81,10 +81,27 @@ Implemented and tested (step 5, 2026-06-26 — D0 close):
 - O6 sampling-policy rename `text_stratified_v1` → `doc_roundrobin_v1` (configs +
   `config.py` fallback in sync).
 
-Run: `uv run pytest` → 41 passed; `uv run ruff check .` → clean.
+Implemented and tested (RP1 + DP1, 2026-06-26):
 
-D0 representation contract (O1–O7) is fully implemented and tested. The only
-remaining contract item is the **derived embedding budget**, intentionally
+- `routing_text` blob → structured `routing_meta` (json) with projection-time
+  `routing_payload`; catalog bumped `0.9`/`9`. Verified by the catalog-contract
+  test (`routing_meta` present, `routing_text` absent), the doc/media projection
+  tests (read `routing_meta`), and the rollup test (reads `routing_payload`). The
+  DP1 correction (embed `routing_payload` fresh; reuse is SigLIP-medoid-only) is
+  recorded in spec/plan; the embedding itself lands with the D2 semantic slice.
+
+Implemented and tested (Retrieval Strategy v1, 2026-06-26):
+
+- `even list [path]` lists the current `summary_nodes` hierarchy —
+  `test_parser_exposes_list_and_search_budget`,
+  `test_list_representatives_lists_current_nodes`;
+- `search text --budget low|mid|high` drives routed-scope fanout and stamps the
+  budget into `route_trace` — `test_search_text_low_budget_limits_fanout`.
+
+Run: `uv run pytest` → 44 passed; `uv run ruff check .` → clean.
+
+D0 representation contract (O1–O7) plus RP1 is fully implemented and tested. The
+only remaining contract item is the **derived embedding budget**, intentionally
 deferred to the D2 semantic-representative slice (no semantic projection exists to
 budget yet), and the FTS/semantic backend parity it would exercise.
 

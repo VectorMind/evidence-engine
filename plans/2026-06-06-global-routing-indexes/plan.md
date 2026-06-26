@@ -238,7 +238,7 @@ catalog scopes and is a source for derived search projections.
     - {name: summary_level, type: integer, description: "Routing level, with 0 for root-level representatives."}
     - {name: title, type: text, description: "Short display title for the representative."}
     - {name: summary_text, type: text, description: "Local lossy LLM summary of sampled inputs."}
-    - {name: routing_text, type: text, description: "Searchable routing text: summary plus deterministic facets."}
+    - {name: routing_meta, type: json, description: "Structured deterministic routing facets; the searchable/embeddable payload is derived at projection time from summary_text plus these facets (RP1)."}
     - {name: source_refs_json, type: json, description: "Canonical refs sampled or represented by this node."}
     - {name: source_count, type: integer, description: "Total lower items considered for this representative."}
     - {name: sample_count, type: integer, description: "Lower items sampled into the summary prompt."}
@@ -278,9 +278,11 @@ Notes:
 - Media summaries write `kind=album_summary`, `container_kind=root`,
   `summary_level=0`, a dominant `modality` (`image`, `video`, `audio`,
   `model3d`, or `mixed`), and a dominant `media_kind` when available.
-- `routing_text` is indexed; `summary_text` is the LLM-written lossy summary.
-  Keeping both lets deterministic facets participate in routing without
-  pretending they are the model's summary.
+- `summary_text` is the LLM-written lossy summary; `routing_meta` holds the
+  deterministic facets as structured json. The indexed/embedded `routing_payload`
+  is derived from both at projection time (RP1), so facets participate in routing
+  without pretending they are the model's summary, and the summary is not stored
+  twice.
 - Vectors never enter this table.
 
 ## Representative Store Templates And Paths
@@ -299,7 +301,7 @@ Add `fts_summary_node` to `store_templates.yaml`:
     - {name: modality, type: enum, description: "Dominant modality."}
     - {name: title, type: text, description: "Display title."}
     - {name: summary_text, type: text, description: "Lossy summary text."}
-    - {name: routing_text, type: text, description: "Primary searchable routing text."}
+    - {name: routing_payload, type: text, description: "Primary searchable payload derived from summary_text + routing_meta (RP1)."}
     - {name: source_refs_json, type: json, description: "Represented lower evidence refs."}
     - {name: metadata_json, type: json, description: "Compact route metadata."}
 ```
@@ -352,7 +354,7 @@ function of the budget, not the file count. Hardened in the spec's
 | B1 | Budget shape | A typed per-root envelope, not a single count. Two decisive dimensions — `max_build_seconds` (cost) and `max_entries` (volume) — plus advisory/derived `embedding_units`, `local_llm_tokens`, `remote_llm_tokens`. | High |
 | B2 | Entry ceiling | `1 ≤ entries(root) ≤ max_entries`, log-scaled vs source size. Default `max_entries = 20`; proposed curve `clamp(round(1 + 2·log10(source_items)), 1, max_entries)`. | High |
 | B3 | Mandatory floor | At least one `root_summary` when inputs exist; it alone is a sufficient global representation. Companions are optional refinements added only while budget allows. | High |
-| B4 | Embedding budget | Explicit `embedding_units` dimension; model selectable, default a fast model. Reuse current proof-layer vectors when available, so marginal embedding cost is usually ~0. | High |
+| B4 | Embedding budget (corrected by DP1) | Explicit `embedding_units` dimension; model selectable, default fast. Text reps embed the derived `routing_payload` **fresh** — that text is not a proof chunk, so there is no vector to reuse. Marginal cost is low because the representative set is budget-bounded, not via reuse. Vector reuse applies only to the SigLIP medoid route. | High |
 | B5 | Remote spend | `remote_llm_tokens` default `0` (local-only), matching existing policy. | High |
 | B6 | Soft budgets | Budgets are soft and configurable: exhausting a dimension stops adding companions; it does not fail the build. | High |
 | B7 | Lossy by budget | Large sources are sampled, or fully embedded then clustered down to the entry budget; loss recorded as `coverage_estimate`. | High |
@@ -363,8 +365,9 @@ function of the budget, not the file count. Hardened in the spec's
 | B12 | Selection precedence (O5) | When candidates exceed `max_entries`: reserve `root_summary`, then `album_summary`, then companions by importance desc → `coverage_estimate` desc → `summary_id`. Overflow is dropped but counted in manifest/`route_trace`; low-importance overflow may roll up into one `negative_summary`. | High |
 | B13 | Importance priors (O7) | A deterministic low-importance prior list (`node_modules`, `.git`, `.venv`/`venv`, git-ignored paths, OS folders such as `Program Files`) seeds importance; the list is dynamic and is demoted/extended from model importance feedback over time. | Med-High |
 | B14 | Importance source (O7) | Importance comes from the summarization side output, reusing the existing model call. The media `media_kind` describe step is the existing classifier; a general per-document classifier is a future option. | Med-High |
+| RP1 | Payload model | Store model prose in `summary_text` and structured facets in `routing_meta` (json); the searchable/embeddable `routing_payload = summary_text + flattened routing_meta` is derived at projection time by one shared function (so FTS and the future semantic store consume the identical payload). Replaces the flat `routing_text` blob, removing the summary-stored-twice redundancy. Catalog bumped `0.8`/`8` → `0.9`/`9`. | High |
 
-Implemented (steps 1–5, 2026-06-26 — D0 representation contract closed): the `real`
+Implemented (steps 1–6, 2026-06-26 — D0 representation contract closed): the `real`
 `summary_nodes.importance` column (catalog `0.8`/`8`); importance as a structured
 summary side output with deterministic prior fallback and dynamic learned-prior
 feedback; `representation_policy_version` in the global FTS watermark/manifest;
@@ -373,12 +376,15 @@ with reserved L0 units, importance precedence, overflow counting, the identical
 trimmed unit set feeding FTS and the staleness watermark, and `negative_summary`
 overflow rollup; the decisive `max_build_seconds` time budget (skips companions,
 keeps the mandatory root_summary) with measure-and-cache `tokens_per_sec`
-calibration and a derived advisory token budget; and the O6 sampling-policy rename
-`text_stratified_v1` → `doc_roundrobin_v1`.
+calibration and a derived advisory token budget; the O6 sampling-policy rename
+`text_stratified_v1` → `doc_roundrobin_v1`; and RP1 — the `routing_meta` (json) +
+projection-time `routing_payload` model replacing the flat `routing_text` blob
+(catalog `0.9`/`9`).
 
-Deferred to D2 (not a D0 gap): the derived embedding budget and the FTS/semantic
-backend parity it exercises require an actual semantic representative projection,
-which is the D2 slice.
+DP1 (resolved): the D2 text semantic representative store embeds `routing_payload`
+**fresh** with a fast text model; "reuse existing vectors" is a SigLIP-medoid-only
+concept. This corrects B4. The derived embedding budget itself and the FTS/semantic
+parity it exercises still land with the D2 semantic projection.
 
 ### Schema / Registry
 
@@ -439,6 +445,51 @@ which is the D2 slice.
 | OP-019 | F4 and route trace |
 | OP-020 | Carried decision table |
 
+## D2: Global Semantic Representative Store
+
+The next slice adds a text-vector representative route alongside the FTS route,
+over the identical budgeted unit set. Decisions:
+
+| ID | Point | Decision | Confidence |
+| --- | --- | --- | --- |
+| DP1 | Embedding source | Embed each unit's derived `routing_payload` **fresh** with the existing fast text embedding profile. It is not a proof chunk, so there is no vector to reuse; cost is low because the unit set is budget-bounded. Reuse is reserved for the SigLIP medoid route. Corrects B4. | High |
+| DP2 | Store template | Add `semantic_summary_node` to `store_templates.yaml` (vector + `routing_payload` + provenance), built at `semantic/global_representatives/{embedding_profile}.lancedb/`. | High |
+| DP3 | `embedding_units` mechanics | One embedding unit = one selected `summary_node` = one embedded `routing_payload`. Count is bounded by the per-root entry budget; embed all selected units. The dimension stays informational. | High |
+| DP4 | Multi-route fusion | Run FTS-rep always and semantic-rep when its store is current; **always fuse** the two representative hit lists with RRF (uniform weights, `k=60`, reuse `hybrid._fuse_hits`); select scopes from the fused ranking. Semantic is optional by cost. Representative routes only select scopes; for `search text` deep search stays FTS. | High |
+| DP5 | Manifest + parity | Semantic manifest carries `embedding_profile`, `representation_policy_version`, `summary_watermark`, `row_count`. A parity test asserts the FTS and semantic projections are built from the identical selected unit set. | High |
+
+`route_trace` generalizes from a single `mode` to a `routes` list (one entry per
+representative route) plus a `fused_selection` block; see the contract section.
+
+## Retrieval Strategy / Auto Mode
+
+A query-planning layer above the routes. Simple v1, expected to mature with real
+usage. Two CLI surfaces:
+
+- `list [path]` — bypass: walk the `summary_nodes` hierarchy
+  (`summary_level`/`parent_summary_id`) and print roots → their summaries. No
+  query, no model. Structural overview of the knowledge base.
+- `search <query> [--budget low|mid|high]` (default `mid`) — the planner.
+
+Query-time budget ladder (distinct from the build-time `max_build_seconds`):
+
+| Budget | Behavior |
+| --- | --- |
+| low | Route (fused) → single best scope → deep search → hits. Minimal fanout. |
+| mid (default) | Route → top-k scopes → deep search → fused hits, weak→fallback-all. Current behavior. |
+| high | mid + recursive deepening into matched roots' lower summaries + a listing of the matched region. |
+
+Cross-budget rule: when deep search returns no hits, fall back to the routing
+result (relevant roots/summaries as suggestions) rather than empty.
+
+Notes:
+
+- `high` recursion needs lower summary nodes (folder/cluster companions, D2+); it
+  degrades gracefully to "mid + listing" until those exist.
+- Query budget is a separate concept from the representation build budget.
+- First implementation: `list` (reads `summary_nodes` only) and the `--budget`
+  knob with `mid` mapped to current routed behavior; `low`/`high` are increments.
+
 ## Current Implementation Anchors
 
 - `src/even/chunks.py`: document summary inputs come from `chunks_for_root`;
@@ -459,7 +510,7 @@ which is the D2 slice.
 Routed `search text` adds `route_trace` when routing is attempted.
 Existing top-level hit fields remain stable.
 
-Expected shape:
+Single-route (current) shape — still emitted when only the FTS route is current:
 
 ```json
 {
@@ -468,15 +519,8 @@ Expected shape:
     "status": "used",
     "representative_index_uri": "fts/global_representatives/text_default_en",
     "representative_hits": [
-      {
-        "rank": 1,
-        "score": 3.42,
-        "summary_id": "sum_...",
-        "root_id": "root_...",
-        "scope_id": "scope_...",
-        "kind": "root_summary",
-        "title": "Example root"
-      }
+      {"rank": 1, "score": 3.42, "summary_id": "sum_...", "root_id": "root_...",
+       "scope_id": "scope_...", "kind": "root_summary", "title": "Example root"}
     ],
     "selected_scopes": [
       {"scope_id": "scope_...", "reason": "representative_hit", "rank": 1}
@@ -484,11 +528,29 @@ Expected shape:
     "deep_searches": [
       {"scope_id": "scope_...", "fts_index_id": "fts_...", "status": "ok", "hits_returned": 4}
     ],
-    "widening_status": {
-      "status": "not_needed",
-      "reasons": [],
-      "skipped_rungs": []
-    }
+    "widening_status": {"status": "not_needed", "reasons": [], "skipped_rungs": []}
+  }
+}
+```
+
+Multi-route shape (D2 — DP4) — `mode` generalizes to a `routes` list plus a
+`fused_selection` block:
+
+```json
+{
+  "route_trace": {
+    "budget": "mid",
+    "routes": [
+      {"mode": "global_representative_fts", "status": "used", "hits": [/* rep hits */]},
+      {"mode": "global_representative_semantic", "status": "used", "hits": [/* rep hits */]}
+    ],
+    "fused_selection": [
+      {"scope_id": "scope_...", "rrf_score": 0.031, "contributing_modes": ["fts", "semantic"], "rank": 1}
+    ],
+    "deep_searches": [
+      {"scope_id": "scope_...", "fts_index_id": "fts_...", "status": "ok", "hits_returned": 4}
+    ],
+    "widening_status": {"status": "not_needed", "reasons": [], "skipped_rungs": []}
   }
 }
 ```
