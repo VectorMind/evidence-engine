@@ -93,8 +93,12 @@ class DescribeOptions:
     classify_kind: bool = False
     timeout: float = 300.0
     # Downscale the longest edge before the VLM call. Full-resolution photos are
-    # far slower with no caption-quality gain. 0 disables downscaling.
-    max_edge: int = 1024
+    # far slower with no caption-quality gain, and tiling vision models explode
+    # their image-token count above their single-tile resolution: granite3.2-vision
+    # caps at 16384 ctx and only fits images at ~<=384 px longest edge (1024 px is
+    # ~35k tokens -> HTTP 400). Keep this aligned with the model's tile size. 0
+    # disables downscaling. (`num_ctx` cannot be raised — Ollama ignores it here.)
+    max_edge: int = 384
 
 
 def inspect_folder_to_catalog(path: Path, options: InspectOptions) -> dict[str, Any]:

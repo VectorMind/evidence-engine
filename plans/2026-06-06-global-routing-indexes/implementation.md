@@ -1,18 +1,15 @@
 # Implementation Log: Global Routing Indexes
 
 Date: 2026-06-06
-Status: D0 and D1 implemented. Document and media representatives route through
-the global representative FTS map.
+Status: Done.
 
 ## Progress
 
-`▰▰▰▰▰▰ D0 ✅ · D1 ✅ · D2 ✅ · D3 B1–B4 ✅` — D0 (schema, document summaries,
-global representative FTS, routed search), D1 (media album summaries), D2 (text
-semantic representative store + fused RRF route), and D3 (media SigLIP representative
-routing — medoid selection + persistence, the global SigLIP store, the fusable
-visual route, and the `search text --image` cross-modal probe) are implemented and
-tested. Media-cluster summaries and the planner's `high`-budget recursive deepening
-remain future slices.
+`▰▰▰▰▰▰ Done` — D0 (schema, document summaries, global representative FTS,
+routed search), D1 (media album summaries), D2 (text semantic representative
+store + fused RRF route), D3 (media SigLIP representative routing plus
+deterministic `media_cluster_summary` companions), and `high`-budget recursive
+deepening are implemented and tested.
 
 ## Changes Made
 
@@ -303,8 +300,8 @@ remain future slices.
     drives routed-scope fanout (`low`=1, `mid`=config, `high`=wider); the budget is
     stamped into `route_trace`. When deep search returns no hits, representative
     hits are attached as `routing_suggestions` (no-hit → routing fallback).
-  - `high` recursive deepening into companion summaries is deferred until those
-    exist (D2+); for now `high` widens fanout.
+  - At this point in the log, `high` recursive deepening into companion summaries
+    was still deferred until companion summaries existed.
 - DP2–DP5 (the semantic-rep store itself, fused RRF route, parity test) remain to
   build; the payload/template/mechanics are now pinned.
 - Tests: `test_parser_exposes_list_and_search_budget`,
@@ -412,11 +409,60 @@ remain future slices.
   LanceDB; asserts the `global_representative_siglip` route is `used` and image hits
   are returned alongside text). `uv run pytest` 51 passed; `uv run ruff check .` clean.
 
+## 2026-06-27: real-corpus validation + `media describe` fix
+
+- Ran the full pipeline on 16 real JPEGs with live `siglip2-base` + Ollama
+  `granite3.2-vision`: SigLIP store 16×768-dim, album summary current, **3 medoids**,
+  global SigLIP store 3 rows, and `search text --image` fused all three routes and
+  returned ranked image hits. (Details in `test.md`.)
+- Fixed a D1 bug found during validation: `media describe` failed on every image with
+  HTTP 400 `exceed_context_size_error` — granite3.2-vision's image tokens exceed its
+  16384 ctx above ~384 px (1024 px ≈ 35.7k tokens), and 448–512 px return HTTP 200
+  with an empty body. `num_ctx` is ignored by Ollama, so the lever is image size.
+  - `DescribeOptions.max_edge` and `cli --max-edge` default `1024 → 384` (aligned to
+    granite's single-tile resolution).
+  - `ollama.generate_from_image` now raises `EmptyVlmResponse` on a 200-but-empty
+    body instead of persisting a blank caption.
+  - Re-validated: `media describe --kind` → 16/16 captions + 16 kinds, 0 failures;
+    after re-routing, the caption-matched probe `search text "washing machine"
+    --image <bosch.jpg>` returned both text caption hits and SigLIP image hits.
+  - `uv run pytest` 51 passed; `uv run ruff check .` clean.
+
+## 2026-06-27: media cluster summaries
+
+- Added deterministic `media_cluster_summary` companion rows under each current
+  `album_summary` when a per-scope SigLIP image proof store exists.
+- Cluster rows use the existing k-means medoid selection and nearest-medoid
+  assignment over reused per-scope image vectors. They do not trigger extra model
+  calls: routing text is assembled from the medoid path, member count, captions,
+  filenames, and safe media metadata.
+- Cluster companions are non-reserved budget entries (`summary_level=1`,
+  `container_kind=cluster`), so existing representative selection, overflow, FTS,
+  and semantic projection behavior applies unchanged.
+- Stale cluster rows are marked deleted when the current medoid set changes or the
+  image proof store is absent. If an album is already current, a later unforced
+  `index routing` run can still add missing deterministic cluster companions.
+- Tests: `test_index_routing_writes_media_cluster_summaries`,
+  `test_index_routing_adds_clusters_when_album_is_current`. Focused verification:
+  `uv run pytest tests/test_routing.py` 28 passed. Final verification:
+  `uv run pytest` 53 passed; `uv run ruff check .` clean.
+
+## 2026-06-27: high-budget recursive deepening
+
+- `search text --budget high` now adds a `recursive_deepening` block to
+  `route_trace` for successful routed searches and weak-route fallback traces.
+- Deepening reads current child summary nodes under the routed scopes, ranks
+  representative-hit children first, and includes both `matched_summaries` and a
+  compact `region_listing`.
+- The proof search still runs against root-scoped FTS indexes. Lower summaries are
+  routing/listing material only, not evidence.
+- It degrades to `no_lower_summaries` when a routed scope has no current child
+  summaries and to `unavailable` if `summary_nodes` cannot be read.
+- Test: `test_search_text_high_budget_recurses_into_media_cluster_summaries`.
+  Focused verification: `uv run pytest tests/test_routing.py` 29 passed;
+  final verification: `uv run pytest` 54 passed; `uv run ruff check .` clean.
+
 ## Follow-Up Risks
 
-- `media_cluster_summary` generation and the planner's `high`-budget recursive
-  deepening remain future work.
-- The SigLIP representative store is proven with synthetic vectors only; a manual
-  proof on a real corpus (`index scope --image` then `index routing --semantic` on
-  real photos, plus a real SigLIP query) should be recorded before trusting the
-  visual route. The D1 media-summary path likewise still needs a live-Ollama proof.
+- D3 visual route and the `media describe` fix are now proven on a real corpus; the
+  unit tests still use synthetic vectors / a fake VLM (no model download in CI).

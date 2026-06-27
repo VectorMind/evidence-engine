@@ -728,8 +728,9 @@ def build_parser() -> argparse.ArgumentParser:
     media_describe_parser.add_argument(
         "--max-edge",
         type=int,
-        default=1024,
-        help="Downscale the longest image edge before the VLM call. 0 disables.",
+        default=384,
+        help="Downscale the longest image edge before the VLM call. Default 384 fits "
+        "granite3.2-vision's context; larger values can exceed it. 0 disables.",
     )
     media_describe_parser.set_defaults(handler=media_describe)
 

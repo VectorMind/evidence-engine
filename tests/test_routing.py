@@ -824,6 +824,125 @@ def test_index_routing_persists_album_medoids_in_attrs(
     assert set(attrs["medoids"]).issubset(asset_ids)
 
 
+def test_index_routing_writes_media_cluster_summaries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    _, _root_id, _scope_id = _build_media_root_with_medoids(tmp_path)
+
+    with sqlite3.connect(catalog_path()) as conn:
+        rows = conn.execute(
+            """
+            SELECT kind, container_kind, summary_level, summary_status,
+                   parent_summary_id, source_count, sample_count, summary_text,
+                   routing_meta, attrs_json
+            FROM summary_nodes
+            WHERE kind = 'media_cluster_summary'
+            ORDER BY summary_id
+            """
+        ).fetchall()
+        album_id = conn.execute(
+            "SELECT summary_id FROM summary_nodes WHERE kind = 'album_summary'"
+        ).fetchone()[0]
+
+    assert len(rows) == 2
+    for row in rows:
+        assert row[:4] == ("media_cluster_summary", "cluster", 1, "current")
+        assert row[4] == album_id
+        assert row[5] >= 1
+        assert row[6] == row[5]
+        assert "Visual media cluster centered on" in row[7]
+        assert "lamp scene" in row[8]
+        attrs = json.loads(row[9])
+        assert attrs["medoid_profile"] == "siglip2_base"
+        assert attrs["asset_count"] == row[5]
+        assert attrs["medoid"] in attrs["asset_ids"]
+
+
+def test_index_routing_adds_clusters_when_album_is_current(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    data = _make_root(tmp_path, "album", "ignored text")
+    filenames = ["a1.png", "a2.png", "a3.png", "b1.png", "b2.png"]
+    for filename in filenames:
+        (data / filename).write_bytes(b"\x89PNG\r\n")
+    scan = scan_folder_to_catalog(
+        data, ScanOptions(max_files=None, max_bytes=None, max_depth=None)
+    )
+    for filename in filenames:
+        _seed_media_caption(scan["root_id"], filename, f"{filename} lamp scene")
+
+    assert (
+        index_routing(data, RoutingIndexOptions(force=True), summary_generator=_fake_summary)[
+            "status"
+        ]
+        == "ok"
+    )
+    with sqlite3.connect(catalog_path()) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM summary_nodes WHERE kind = 'media_cluster_summary'"
+            ).fetchone()[0]
+            == 0
+        )
+
+    _seed_image_store(scan["scope_id"], _image_asset_map(scan["root_id"]))
+    result = index_routing(
+        data, RoutingIndexOptions(force=False), summary_generator=_fake_summary
+    )
+
+    assert result["status"] == "ok"
+    assert result["counts"]["media_cluster_summaries_written"] == 2
+    with sqlite3.connect(catalog_path()) as conn:
+        assert (
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM summary_nodes
+                WHERE kind = 'media_cluster_summary'
+                  AND summary_status = 'current'
+                """
+            ).fetchone()[0]
+            == 2
+        )
+
+
+def test_search_text_high_budget_recurses_into_media_cluster_summaries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    data_str, _root_id, _scope_id = _build_media_root_with_medoids(tmp_path)
+    data = Path(data_str)
+    assert index_scope_to_fts(data, IndexOptions(force=True))["status"] == "ok"
+
+    result = search_text_indexes(
+        "lamp scene", SearchOptions(limit=10, budget="high")
+    )
+
+    trace = result["route_trace"]
+    assert trace["budget"] == "high"
+    deepening = trace["recursive_deepening"]
+    assert deepening["status"] == "used"
+    assert any(
+        item["kind"] == "media_cluster_summary"
+        for item in deepening["matched_summaries"]
+    )
+    assert any(
+        item["kind"] == "media_cluster_summary"
+        for item in deepening["region_listing"]
+    )
+
+
 def test_build_global_siglip_store_reuses_medoid_vectors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

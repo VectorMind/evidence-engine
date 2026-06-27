@@ -1,7 +1,7 @@
 # Test Proof: Global Routing Indexes
 
 Date: 2026-06-14
-Status: D0/D1 runtime proof recorded.
+Status: Done.
 
 ## Commands And Checks
 
@@ -123,9 +123,8 @@ only remaining contract item is the **derived embedding budget**, intentionally
 deferred to the D2 semantic-representative slice (no semantic projection exists to
 budget yet), and the FTS/semantic backend parity it would exercise.
 
-Current behavior (1 `root_summary` + 1 `album_summary` per scope, projected as one
-FTS doc each) stays within the hardened contract, so the shipped D0/D1 tests
-remain valid; the items above extend it.
+Current behavior reserves `root_summary` and `album_summary` as L0 units; companion
+rows such as `media_cluster_summary` compete for the remaining per-root budget.
 
 ## 2026-06-27: D3 media SigLIP representative routing (B1–B3)
 
@@ -153,9 +152,96 @@ Implemented and tested:
 
 Tests use real LanceDB with synthetic 3-dim vectors and no model download (torch is
 not needed to build/search the store — medoid vectors are reused; the B4 test fakes
-the query-time SigLIP embedder). The SigLIP representative store has **not** yet been
-built from real SigLIP vectors on a real photo corpus; that end-to-end manual proof
-(`index scope --image` → `index routing --semantic` → `search text --image` with a
-real model) remains open.
+the query-time SigLIP embedder). This automated test proof was followed by the
+live real-corpus validation recorded below.
 
 Run: `uv run pytest` → 51 passed; `uv run ruff check .` → clean.
+
+## 2026-06-27: real-corpus validation (live models)
+
+Ran the full D3 pipeline through the real CLI on a real photo folder (16 JPEGs,
+`OneDrive\Media\test`), live `google/siglip2-base-patch16-224` and local Ollama
+`granite3.2-vision`. (The `even` console-script is blocked by an OS app-control
+policy, so commands were driven via `python -m` runner; the module path is the same
+code.)
+
+| Stage | Command | Result |
+| --- | --- | --- |
+| Inspect | `media inspect` | 16 assets, 16 thumbnails. |
+| SigLIP store | `index scope --image` | 16/16 embedded, **768-dim**, `semantic/image/siglip2_base/{scope}.lancedb`. |
+| Routing | `index routing --semantic` | media `album_summary` **current** (16 considered → 12 sampled, real Ollama text summary), document summary deferred (no docs). `representation_budget` reported `tokens_per_sec≈45.6` calibrated live. |
+| Medoids (B1) | — | **3 medoids** persisted on `album_summary.attrs` (`k=clamp(ceil(√(16/2)),1,16)=3`), `medoid_profile=siglip2_base`, drawn from distinct sessions. |
+| Global SigLIP store (B2) | — | `media_representatives` table, **3 rows × 768-dim**, manifest `album_count=1`, at `semantic/global_representatives/siglip/siglip2_base.lancedb`. |
+| Cross-modal probe (B4) | `search text "images" --image <photo>` | `status=ok`; **all three routes `used`** (fts + semantic + siglip); `fused_selection` = the album scope with all three `contributing_modes`; `image_hits_returned=8`. Top hit = the query image (1.0), then its same-session burst (0.76/0.74), then less-similar frames — sensible visual ranking; refs are `corpus_cache.media_assets.<id>`. |
+
+Conclusion: B1–B4 validated with real SigLIP vectors and real medoids; the visual
+route fuses with the text routes at scope granularity and returns ranked image
+evidence. (`hits_returned=0` text is expected here — only the image store was built,
+no per-scope FTS island, and no captions; the image route carried the result.)
+
+### `media describe` HTTPError — diagnosed and fixed (2026-06-27)
+
+The first validation pass found `media describe` failing on every image
+(`images_failed=16`, `calls=0`, `HTTPError`). Diagnosed: HTTP 400
+`exceed_context_size_error` — granite3.2-vision caps at **16384** ctx and its image
+tokens explode above its single-tile resolution. Measured on a real 4000×2252 photo:
+full-res = 59098 tok, `max_edge=1024` = 35773, `768` = 18279 (all 400); `512`/`448`
+returned HTTP 200 but an **empty** response (no `eval_count`); only **≤384 px**
+produced a clean caption (787 prompt tokens). `num_ctx` is ignored by Ollama here, so
+the lever is image size, not context.
+
+Fix: default `max_edge` lowered `1024 → 384` (`media.py` `DescribeOptions` + `cli.py`
+`--max-edge`), and `ollama.generate_from_image` now raises `EmptyVlmResponse` on an
+HTTP-200-but-empty body so the silent-empty zone is recorded as a failure instead of
+writing a blank caption.
+
+Re-validated live: `media describe --kind` → **16/16 captions, 0 failed**, 16
+media-kinds (avg ~12.4 s/call, e.g. "A white Bosch washing machine with various
+buttons on it."). After re-running `index routing --semantic` (album summary now
+ingests captions) and `index scope` (text FTS island over captions), the
+caption-matched cross-modal probe
+`search text "washing machine" --image <bosch.jpg>` returned **both** modalities:
+2 `media_caption` text hits (the two washing-machine captions, BM25 4.35/3.47) and 8
+SigLIP image hits (query image 1.0, then visually similar appliances) — the two
+washing-machine photos appearing in both lists. All three routes `used`. `uv run
+pytest` 51 passed; `uv run ruff check .` clean.
+
+## 2026-06-27: media cluster summaries
+
+Implemented and tested:
+
+- deterministic `media_cluster_summary` companion rows under current
+  `album_summary` rows, generated from existing per-scope SigLIP image proof
+  vectors with no additional LLM calls;
+- stale cluster deletion when the current medoid set changes or the image proof
+  store is unavailable;
+- unforced `index routing` can add missing cluster companions when an album summary
+  is already current and the image proof store appears later.
+
+Tests:
+
+- `test_index_routing_writes_media_cluster_summaries`;
+- `test_index_routing_adds_clusters_when_album_is_current`.
+
+Run: `uv run pytest tests/test_routing.py` → 28 passed. Final verification:
+`uv run pytest` → 53 passed; `uv run ruff check .` → clean.
+
+## 2026-06-27: high-budget recursive deepening
+
+Implemented and tested:
+
+- `search text --budget high` adds `route_trace.recursive_deepening`;
+- recursive deepening reads current child summaries inside routed scopes and
+  returns `matched_summaries` plus `region_listing`;
+- lower summaries remain routing/listing material while final evidence still comes
+  from root-scoped FTS hits.
+
+Test:
+
+- `test_search_text_high_budget_recurses_into_media_cluster_summaries`.
+
+Run: `uv run pytest tests/test_routing.py` → 29 passed; `uv run ruff check .` →
+clean.
+
+Final verification after documentation updates: `uv run pytest` → 54 passed;
+`uv run ruff check .` → clean.

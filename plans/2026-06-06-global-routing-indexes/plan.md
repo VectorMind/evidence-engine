@@ -1,8 +1,8 @@
 # Plan: Global Routing Indexes
 
 Date: 2026-06-14
-Status: D0 and D1 implemented. Document root summaries, media album summaries,
-and the global representative FTS route map are in place.
+Status: Done. D0, D1, D2, D3, media cluster summaries, and high-budget recursive
+deepening are implemented and tested.
 
 ## Problem Summary
 
@@ -29,15 +29,15 @@ index internals or storing generated chunk/vector rows in SQLite.
   cache paths. They are not catalog-registered and do not add registry tables.
 - D0 built document-only root summaries and a global representative FTS
   projection. D1 adds root-level media `album_summary` rows from existing media
-  catalog facts.
+  catalog facts. D2 adds the global semantic representative store. D3 adds
+  SigLIP media routing and deterministic `media_cluster_summary` companion rows.
 - `even index routing <path>` is the explicit build command, so normal
   `index scope` behavior does not become model-bound.
 - `search text` uses routed search when a current global representative FTS
   projection exists. If the projection is missing, stale, weak, or empty, it
   falls back to the existing all-current-FTS behavior and records that status.
-- Cross-route candidate merging remains rank-based. The implemented path has
-  one global route
-  (representative FTS); later text-vector and SigLIP routes merge by RRF.
+- Cross-route candidate merging remains rank-based. Representative FTS,
+  text-vector representatives, and explicit SigLIP visual probes merge by RRF.
 - Raw per-route scores stay visible in the route trace. Scores from different
   spaces are never treated as calibrated.
 
@@ -56,14 +56,16 @@ Objectives:
 - build one current `album_summary` row per active root scope from existing
   media assets, inspect metadata, captions, media-kind labels, and filenames
   when media catalog facts exist;
+- build deterministic `media_cluster_summary` companion rows from existing
+  per-scope SigLIP image proof vectors when the image store exists;
 - write local-LLM summaries from bounded sampled chunks/assets, with
   deterministic facets concatenated into `routing_text`;
 - build the derived global representative FTS projection from current
   `summary_nodes`;
 - make `search text` route through the global representative FTS when available,
   then search selected root-scoped FTS indexes;
-- record route trace, selected scopes, widening/fallback status, and hydrated
-  evidence refs in result JSON.
+- record route trace, selected scopes, widening/fallback status, high-budget
+  recursive deepening, and hydrated evidence refs in result JSON.
 
 ## Implemented Scope
 
@@ -72,19 +74,18 @@ In scope:
 - document routing from `document_objects` through existing `chunks_for_root`;
 - media routing from `media_assets`, typed metadata tables, and
   `media_observations`;
-- `root_summary` and root-level `album_summary` rows, one per active root scope
-  when each input family exists;
-- global representative FTS only;
+- `root_summary`, root-level `album_summary`, and `media_cluster_summary`
+  companion rows when each input family exists;
+- global representative FTS, text semantic representatives, and SigLIP media
+  representatives;
 - local Ollama summary generation using configured localhost settings;
 - deterministic rebuild watermarks and stale/deferred status;
-- route trace and fallback-all-current-FTS behavior;
+- route trace, high-budget recursive deepening, and fallback-all-current-FTS
+  behavior;
 - tests with a fake summary generator, so CI does not require Ollama.
 
 Non-goals:
 
-- `media_cluster_summary` generation;
-- global semantic representative stores;
-- SigLIP representative routing;
 - OCR, object detection, labels, audio transcript, or video keyframe pipelines;
 - query usage tracking or persisted raw query text;
 - auto-created child scopes;
@@ -323,8 +324,7 @@ Add fixed derived paths to `config/exposures.yaml`:
   description: Future derived SigLIP map over summary medoid asset refs. Not catalog-registered.
 ```
 
-Only `global_representative_fts` is implemented. Semantic and SigLIP
-representative projections remain future work.
+Global representative FTS, semantic, and SigLIP projections are implemented.
 
 ## Decisions
 
@@ -518,11 +518,12 @@ result (relevant roots/summaries as suggestions) rather than empty.
 
 Notes:
 
-- `high` recursion needs lower summary nodes (folder/cluster companions, D2+); it
-  degrades gracefully to "mid + listing" until those exist.
+- `high` recursion reads current lower summary nodes such as
+  `media_cluster_summary`; it degrades gracefully to `no_lower_summaries` when a
+  routed scope has no current lower summaries.
 - Query budget is a separate concept from the representation build budget.
-- First implementation: `list` (reads `summary_nodes` only) and the `--budget`
-  knob with `mid` mapped to current routed behavior; `low`/`high` are increments.
+- `list` reads `summary_nodes` only; `search text --budget high` keeps scoped
+  proof search semantics and adds a matched-region listing in `route_trace`.
 
 ## Current Implementation Anchors
 
@@ -562,7 +563,17 @@ Single-route (current) shape — still emitted when only the FTS route is curren
     "deep_searches": [
       {"scope_id": "scope_...", "fts_index_id": "fts_...", "status": "ok", "hits_returned": 4}
     ],
-    "widening_status": {"status": "not_needed", "reasons": [], "skipped_rungs": []}
+    "widening_status": {"status": "not_needed", "reasons": [], "skipped_rungs": []},
+    "recursive_deepening": {
+      "status": "used",
+      "matched_summaries": [
+        {"summary_id": "sum_...", "kind": "media_cluster_summary", "summary_level": 1}
+      ],
+      "region_listing": [
+        {"summary_id": "sum_...", "kind": "media_cluster_summary", "summary_level": 1}
+      ],
+      "skipped_rungs": []
+    }
   }
 }
 ```
@@ -605,11 +616,12 @@ If routing is unavailable, use:
 ## Media Mapping
 
 Media follows the same shape as document routing, one level up. D1 implements
-the text-routable part of this shape; visual vector routing remains future work.
+the text-routable `album_summary`; D3 adds SigLIP visual routing and
+`media_cluster_summary` companion rows.
 
 | Text world | Media world |
 | --- | --- |
-| chunk text plus text embedding | image/media metadata plus future SigLIP vector |
+| chunk text plus text embedding | image/media metadata plus SigLIP vector |
 | document made of chunks | image container made of media assets |
 | sampled chunks summarized into text | sampled media assets summarized into routing text |
 | document/root summary routes to deep FTS | album/container summary routes to per-scope media text evidence |
@@ -627,7 +639,7 @@ filename tokens
 caption text          existing media_observations facet
 generated album summary
 OCR text              future facet
-generated cluster summary future facet
+generated cluster summary
 detected labels       future facet
 selected metadata     media_kind, capture date, duration, etc.
 ```

@@ -18,6 +18,15 @@ DEFAULT_URL = "http://localhost:11434"
 DEFAULT_MODEL = "granite3.2-vision"
 
 
+class EmptyVlmResponse(RuntimeError):
+    """The VLM returned HTTP 200 with no text.
+
+    Seen when an image is just over the model's image-token budget: Ollama answers
+    200 but does not generate (no ``eval_count``, empty ``response``). Treated as a
+    failure so the caller records it instead of writing a blank caption.
+    """
+
+
 def ollama_available(url: str = DEFAULT_URL, *, timeout: float = 5.0) -> bool:
     """Return True if a local Ollama server answers at the given URL."""
 
@@ -59,4 +68,9 @@ def generate_from_image(
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = json.load(response)
     elapsed_ms = round((time.monotonic() - started) * 1000, 1)
-    return {"text": str(body.get("response", "")).strip(), "elapsed_ms": elapsed_ms}
+    text = str(body.get("response", "")).strip()
+    if not text:
+        # 200 with no generation (e.g. image just over the token budget). Fail
+        # loudly rather than persist an empty caption.
+        raise EmptyVlmResponse("vlm returned an empty response")
+    return {"text": text, "elapsed_ms": elapsed_ms}

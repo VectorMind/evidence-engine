@@ -40,6 +40,7 @@ GLOBAL_FTS_MANIFEST = "manifest.json"
 PROMPT_VERSION = "summary_prompt_v2"
 MEDIA_PROMPT_VERSION = "media_summary_prompt_v2"
 MEDIA_SUMMARY_PROFILE = "media_album_summary_v1"
+MEDIA_CLUSTER_PROFILE = "media_cluster_summary_v1"
 
 # Trailing structured importance marker emitted as a summary side output, e.g.
 # "IMPORTANCE: 0.8" on its own line. Parsed out of the model text and stored in
@@ -1083,6 +1084,7 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
                 "reasons": ["no_representative_scopes"],
                 "skipped_rungs": [],
             },
+            representative_hits=fused,
         )
         return _finalize_route(fallback, budget, fused)
 
@@ -1117,6 +1119,7 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
                 "reasons": weak_reasons,
                 "skipped_rungs": [],
             },
+            representative_hits=fused,
         )
         return _finalize_route(fallback, budget, fused)
 
@@ -1124,6 +1127,7 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
         routes, selected_scopes, scoped, budget,
         status="used",
         widening_status={"status": "not_needed", "reasons": [], "skipped_rungs": []},
+        representative_hits=fused,
     )
     return _finalize_route(scoped, budget, fused)
 
@@ -1157,6 +1161,7 @@ def _routed_fts_only(
             route=route,
             selected_scopes=selected_scopes,
             deep_result=scoped,
+            budget=budget,
             status="fallback_all_scopes",
             widening_status={
                 "status": "fallback_all_scopes",
@@ -1170,6 +1175,7 @@ def _routed_fts_only(
         route=route,
         selected_scopes=selected_scopes,
         deep_result=scoped,
+        budget=budget,
         status="used",
         widening_status={"status": "not_needed", "reasons": [], "skipped_rungs": []},
     )
@@ -1219,9 +1225,10 @@ def _multi_route_trace(
     *,
     status: str,
     widening_status: dict[str, Any],
+    representative_hits: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     hits = deep_result.get("hits", []) if deep_result else []
-    return {
+    trace = {
         "budget": budget,
         "status": status,
         "routes": routes,
@@ -1237,6 +1244,12 @@ def _multi_route_trace(
         "deep_searches": _deep_searches(selected_scopes, hits, deep_result or {}),
         "widening_status": widening_status,
     }
+    recursive = _recursive_deepening_trace(
+        representative_hits or [], selected_scopes, budget
+    )
+    if recursive is not None:
+        trace["recursive_deepening"] = recursive
+    return trace
 
 
 def _query_budget(options: Any) -> str:
@@ -1561,6 +1574,7 @@ def _upsert_media_summary(
 
     if not assets:
         written = 0
+        _delete_stale_media_clusters(summary_id, set(), now)
         if state:
             _upsert_summary_row(
                 summary_id=summary_id,
@@ -1614,6 +1628,14 @@ def _upsert_media_summary(
         and state.get("summary_status") == "current"
         and state.get("source_high_watermark") == watermark
     ):
+        cluster_result = _upsert_media_cluster_summaries(
+            root_id=root_id,
+            root_label=root_label,
+            scope_id=scope_id,
+            parent_summary_id=summary_id,
+            assets=assets,
+            now=now,
+        )
         return {
             "status": "ok",
             "summary_id": summary_id,
@@ -1622,7 +1644,15 @@ def _upsert_media_summary(
             "counts": {
                 "media_assets_considered": len(assets),
                 "media_assets_sampled": 0,
-                "summary_nodes_written": 0,
+                "media_clusters_considered": cluster_result["counts"][
+                    "media_clusters_considered"
+                ],
+                "media_cluster_summaries_written": cluster_result["counts"][
+                    "media_cluster_summaries_written"
+                ],
+                "summary_nodes_written": cluster_result["counts"][
+                    "media_cluster_summaries_written"
+                ],
             },
         }
 
@@ -1642,6 +1672,7 @@ def _upsert_media_summary(
             summary_generator, prompt, model=model, url=url, timeout=timeout
         )
     except SummaryGenerationError as exc:
+        _delete_stale_media_clusters(summary_id, set(), now)
         _upsert_summary_row(
             summary_id=summary_id,
             root_id=root_id,
@@ -1692,6 +1723,7 @@ def _upsert_media_summary(
     if parsed_importance is not None and parsed_importance < _importance_learn_threshold():
         _learn_low_prior(root_label)
     if not summary_text:
+        _delete_stale_media_clusters(summary_id, set(), now)
         _upsert_summary_row(
             summary_id=summary_id,
             root_id=root_id,
@@ -1767,6 +1799,14 @@ def _upsert_media_summary(
         container_kind="root",
         importance=importance,
     )
+    cluster_result = _upsert_media_cluster_summaries(
+        root_id=root_id,
+        root_label=root_label,
+        scope_id=scope_id,
+        parent_summary_id=summary_id,
+        assets=assets,
+        now=now,
+    )
     return {
         "status": "ok",
         "summary_id": summary_id,
@@ -1775,7 +1815,82 @@ def _upsert_media_summary(
         "counts": {
             "media_assets_considered": len(assets),
             "media_assets_sampled": len(samples),
-            "summary_nodes_written": 1,
+            "media_clusters_considered": cluster_result["counts"][
+                "media_clusters_considered"
+            ],
+            "media_cluster_summaries_written": cluster_result["counts"][
+                "media_cluster_summaries_written"
+            ],
+            "summary_nodes_written": 1
+            + cluster_result["counts"]["media_cluster_summaries_written"],
+        },
+    }
+
+
+def _upsert_media_cluster_summaries(
+    *,
+    root_id: str,
+    root_label: str,
+    scope_id: str,
+    parent_summary_id: str,
+    assets: list[dict[str, Any]],
+    now: str,
+) -> dict[str, Any]:
+    clusters = _media_asset_clusters(scope_id, assets)
+    current_ids = {cluster["summary_id"] for cluster in clusters}
+    _delete_stale_media_clusters(parent_summary_id, current_ids, now)
+    written = 0
+    for cluster in clusters:
+        members = cluster["assets"]
+        source_refs = _media_source_refs(members)
+        summary_text = _media_cluster_summary_text(cluster)
+        state = _summary_state(cluster["summary_id"])
+        watermark = _media_high_watermark(
+            members,
+            "media_cluster_siglip_v1",
+            cluster["medoid_id"],
+            _image_profile_name(),
+        )
+        if (
+            state
+            and state.get("summary_status") == "current"
+            and state.get("source_high_watermark") == watermark
+        ):
+            continue
+        _upsert_summary_row(
+            summary_id=cluster["summary_id"],
+            root_id=root_id,
+            scope_id=scope_id,
+            parent_summary_id=parent_summary_id,
+            source_item_id=cluster["medoid"].get("source_item_id"),
+            title=cluster["title"],
+            summary_text=summary_text,
+            routing_meta=_media_routing_meta(root_label, members),
+            source_refs=source_refs,
+            source_count=len(members),
+            sample_count=len(members),
+            coverage_estimate=_coverage(len(members), len(assets)),
+            sample_policy="media_cluster_siglip_v1",
+            producer="deterministic:siglip_cluster",
+            profile=MEDIA_CLUSTER_PROFILE,
+            watermark=watermark,
+            status="current",
+            attrs=_media_cluster_attrs(cluster),
+            now=now,
+            created_at=state["created_at"] if state else None,
+            kind="media_cluster_summary",
+            modality=_media_modality(members),
+            media_kind=_dominant_media_kind(members),
+            container_kind="cluster",
+            summary_level=1,
+            importance=_media_cluster_importance(members),
+        )
+        written += 1
+    return {
+        "status": "ok" if clusters else "deferred",
+        "counts": {
+            "media_clusters_considered": len(clusters),
+            "media_cluster_summaries_written": written,
         },
     }
 
@@ -2626,6 +2741,178 @@ def _album_medoids(scope_id: str) -> dict[str, Any]:
     return {"medoids": medoids, "medoid_profile": profile}
 
 
+def _media_asset_clusters(
+    scope_id: str, assets: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Group image assets by nearest SigLIP medoid for lower media representatives."""
+
+    from even import image_index
+
+    vectors_by_asset = image_index.read_scope_image_vectors(scope_id, _image_profile_name())
+    if not vectors_by_asset:
+        return []
+
+    asset_by_id = {
+        str(asset.get("asset_id")): asset
+        for asset in assets
+        if asset.get("asset_id") and str(asset.get("media_class") or "") == "image"
+    }
+    ids = sorted(asset_id for asset_id in asset_by_id if asset_id in vectors_by_asset)
+    if not ids:
+        return []
+
+    vectors = [vectors_by_asset[asset_id]["vector"] for asset_id in ids]
+    medoid_ids = _kmeans_medoids(vectors, ids, k_max=_media_cluster_k_max())
+    if not medoid_ids:
+        return []
+
+    assignments = _assign_to_medoids(vectors_by_asset, ids, medoid_ids)
+    clusters: list[dict[str, Any]] = []
+    for medoid_id in medoid_ids:
+        member_ids = assignments.get(medoid_id) or []
+        members = [asset_by_id[asset_id] for asset_id in member_ids if asset_id in asset_by_id]
+        if not members:
+            continue
+        medoid = asset_by_id.get(medoid_id) or members[0]
+        clusters.append(
+            {
+                "summary_id": _media_cluster_summary_id(scope_id, medoid_id),
+                "medoid_id": medoid_id,
+                "medoid": medoid,
+                "assets": sorted(
+                    members,
+                    key=lambda item: (
+                        str(item.get("relative_path") or ""),
+                        str(item.get("asset_id") or ""),
+                    ),
+                ),
+                "title": _media_cluster_title(medoid),
+            }
+        )
+    return sorted(clusters, key=lambda cluster: str(cluster["summary_id"]))
+
+
+def _assign_to_medoids(
+    vectors_by_asset: dict[str, dict[str, Any]],
+    asset_ids: list[str],
+    medoid_ids: list[str],
+) -> dict[str, list[str]]:
+    import numpy as np  # type: ignore[import-not-found]
+
+    medoid_vectors = {
+        medoid_id: _normalized_vector(vectors_by_asset[medoid_id]["vector"])
+        for medoid_id in medoid_ids
+        if medoid_id in vectors_by_asset
+    }
+    assignments: dict[str, list[str]] = {medoid_id: [] for medoid_id in medoid_vectors}
+    for asset_id in asset_ids:
+        vector = _normalized_vector(vectors_by_asset[asset_id]["vector"])
+        best = sorted(
+            (
+                (float(np.dot(vector, medoid_vector)), medoid_id)
+                for medoid_id, medoid_vector in medoid_vectors.items()
+            ),
+            key=lambda item: (-item[0], item[1]),
+        )
+        if best:
+            assignments[best[0][1]].append(asset_id)
+    return assignments
+
+
+def _normalized_vector(vector: list[float]) -> Any:
+    import numpy as np  # type: ignore[import-not-found]
+
+    data = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(data))
+    if norm == 0:
+        return data
+    return data / norm
+
+
+def _media_cluster_title(medoid: dict[str, Any]) -> str:
+    path = str(medoid.get("relative_path") or medoid.get("asset_id") or "media cluster")
+    stem = Path(path).stem.replace("_", " ").replace("-", " ").strip()
+    return f"Media cluster: {stem or path}"
+
+
+def _media_cluster_summary_text(cluster: dict[str, Any]) -> str:
+    members = list(cluster["assets"])
+    medoid_path = str(cluster["medoid"].get("relative_path") or "")
+    captions = [
+        " ".join(str(asset.get("caption") or "").split())[:120]
+        for asset in members
+        if asset.get("caption")
+    ][:5]
+    filenames = [
+        Path(str(asset.get("relative_path") or "")).stem.replace("_", " ").replace("-", " ")
+        for asset in members
+    ][:8]
+    parts = [
+        f"Visual media cluster centered on {medoid_path or cluster['medoid_id']}.",
+        f"Contains {len(members)} image asset{'s' if len(members) != 1 else ''}.",
+    ]
+    if captions:
+        parts.append("Captions include: " + "; ".join(captions) + ".")
+    elif filenames:
+        parts.append("Filename terms include: " + "; ".join(filenames) + ".")
+    return " ".join(parts)
+
+
+def _media_cluster_attrs(cluster: dict[str, Any]) -> dict[str, Any]:
+    members = list(cluster["assets"])
+    return {
+        "asset_count": len(members),
+        "medoid": cluster["medoid_id"],
+        "medoid_profile": _image_profile_name(),
+        "asset_ids": sorted(str(asset["asset_id"]) for asset in members if asset.get("asset_id")),
+        "media_classes": _value_counts(members, "media_class"),
+        "media_kinds": _value_counts(members, "media_kind"),
+    }
+
+
+def _media_cluster_importance(assets: list[dict[str, Any]]) -> float:
+    if any(str(asset.get("caption") or "").strip() for asset in assets):
+        return 0.45
+    return 0.35
+
+
+def _delete_stale_media_clusters(
+    parent_summary_id: str, current_summary_ids: set[str], now: str
+) -> None:
+    with sqlite3.connect(catalog_path()) as conn:
+        rows = conn.execute(
+            """
+            SELECT summary_id
+            FROM "summary_nodes"
+            WHERE parent_summary_id = ?
+              AND kind = 'media_cluster_summary'
+              AND summary_status = 'current'
+            """,
+            (parent_summary_id,),
+        ).fetchall()
+        stale_ids = [row[0] for row in rows if row[0] not in current_summary_ids]
+        if not stale_ids:
+            return
+        conn.executemany(
+            """
+            UPDATE "summary_nodes"
+            SET summary_status = 'deleted',
+                updated_at = ?,
+                attrs_json = ?
+            WHERE summary_id = ?
+            """,
+            [
+                (
+                    now,
+                    json.dumps({"error_kind": "stale_media_cluster"}, sort_keys=True),
+                    summary_id,
+                )
+                for summary_id in stale_ids
+            ],
+        )
+        conn.commit()
+
+
 def _media_summary_attrs(
     assets: list[dict[str, Any]],
     samples: list[dict[str, Any]],
@@ -3097,16 +3384,152 @@ def _weak_route_reasons(
     return reasons
 
 
+def _recursive_deepening_trace(
+    representative_hits: list[dict[str, Any]],
+    selected_scopes: list[dict[str, Any]],
+    budget: str,
+) -> dict[str, Any] | None:
+    """For high-budget queries, expose lower summary nodes inside routed scopes."""
+
+    if budget != "high" or not selected_scopes:
+        return None
+    scope_ids = [str(scope.get("scope_id") or "") for scope in selected_scopes]
+    scope_ids = [scope_id for scope_id in scope_ids if scope_id]
+    if not scope_ids:
+        return None
+
+    rows = _summary_region_rows(scope_ids)
+    if rows is None:
+        return {
+            "status": "unavailable",
+            "reason": "summary_nodes_unavailable",
+            "matched_summaries": [],
+            "region_listing": [],
+        }
+    lower_rows = [row for row in rows if int(row.get("summary_level") or 0) > 0]
+    if not lower_rows:
+        return {
+            "status": "no_lower_summaries",
+            "matched_summaries": [],
+            "region_listing": [],
+            "skipped_rungs": ["no_current_lower_summary_nodes"],
+        }
+
+    hit_rank = {
+        str(hit.get("summary_id")): int(hit.get("rank") or 999_999)
+        for hit in representative_hits
+        if hit.get("summary_id")
+    }
+    matched = [row for row in lower_rows if row["summary_id"] in hit_rank]
+    if not matched:
+        matched = sorted(lower_rows, key=_summary_region_precedence)[:5]
+    else:
+        matched = sorted(
+            matched,
+            key=lambda row: (
+                hit_rank.get(str(row["summary_id"]), 999_999),
+                _summary_region_precedence(row),
+            ),
+        )
+
+    return {
+        "status": "used",
+        "matched_summaries": [
+            _summary_region_payload(row, hit_rank) for row in matched[:12]
+        ],
+        "region_listing": [
+            _summary_region_payload(row, hit_rank)
+            for row in sorted(lower_rows, key=_summary_region_precedence)[:24]
+        ],
+        "skipped_rungs": [],
+    }
+
+
+def _summary_region_rows(scope_ids: list[str]) -> list[dict[str, Any]] | None:
+    placeholders = ", ".join("?" for _ in scope_ids)
+    try:
+        with sqlite3.connect(catalog_path()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT summary_id, root_id, scope_id, parent_summary_id, kind,
+                       modality, media_kind, container_kind, summary_level, title,
+                       source_count, sample_count, coverage_estimate, importance
+                FROM "summary_nodes"
+                WHERE summary_status = 'current'
+                  AND scope_id IN ({placeholders})
+                ORDER BY scope_id, summary_level, kind, title, summary_id
+                """,
+                scope_ids,
+            ).fetchall()
+    except sqlite3.Error:
+        return None
+    return [
+        {
+            "summary_id": row[0],
+            "root_id": row[1],
+            "scope_id": row[2],
+            "parent_summary_id": row[3],
+            "kind": row[4],
+            "modality": row[5],
+            "media_kind": row[6],
+            "container_kind": row[7],
+            "summary_level": int(row[8] or 0),
+            "title": row[9],
+            "source_count": int(row[10] or 0),
+            "sample_count": int(row[11] or 0),
+            "coverage_estimate": float(row[12] or 0.0),
+            "importance": row[13],
+        }
+        for row in rows
+    ]
+
+
+def _summary_region_precedence(row: dict[str, Any]) -> tuple[int, float, float, str]:
+    importance = row.get("importance")
+    importance_value = float(importance) if importance is not None else 0.0
+    return (
+        int(row.get("summary_level") or 0),
+        -importance_value,
+        -float(row.get("coverage_estimate") or 0.0),
+        str(row.get("summary_id") or ""),
+    )
+
+
+def _summary_region_payload(
+    row: dict[str, Any], hit_rank: dict[str, int]
+) -> dict[str, Any]:
+    summary_id = str(row.get("summary_id") or "")
+    payload = {
+        "summary_id": summary_id,
+        "parent_summary_id": row.get("parent_summary_id"),
+        "scope_id": row.get("scope_id"),
+        "kind": row.get("kind"),
+        "modality": row.get("modality"),
+        "media_kind": row.get("media_kind"),
+        "container_kind": row.get("container_kind"),
+        "summary_level": row.get("summary_level"),
+        "title": row.get("title"),
+        "source_count": row.get("source_count"),
+        "sample_count": row.get("sample_count"),
+        "coverage_estimate": row.get("coverage_estimate"),
+        "importance": row.get("importance"),
+    }
+    if summary_id in hit_rank:
+        payload["representative_rank"] = hit_rank[summary_id]
+    return payload
+
+
 def _route_trace(
     *,
     route: dict[str, Any],
     selected_scopes: list[dict[str, Any]],
     deep_result: dict[str, Any],
+    budget: str,
     status: str,
     widening_status: dict[str, Any],
 ) -> dict[str, Any]:
     hits = deep_result.get("hits", [])
-    return {
+    trace = {
         "mode": "global_representative_fts",
         "status": status,
         "representative_index_uri": route.get("representative_index_uri"),
@@ -3115,6 +3538,10 @@ def _route_trace(
         "deep_searches": _deep_searches(selected_scopes, hits, deep_result),
         "widening_status": widening_status,
     }
+    recursive = _recursive_deepening_trace(route.get("hits", []), selected_scopes, budget)
+    if recursive is not None:
+        trace["recursive_deepening"] = recursive
+    return trace
 
 
 def _fallback_trace(reasons: list[str]) -> dict[str, Any]:
@@ -3169,6 +3596,10 @@ def _summary_id(scope_id: str) -> str:
 
 def _media_summary_id(scope_id: str) -> str:
     return stable_id("sum", scope_id, "album_summary", "media")
+
+
+def _media_cluster_summary_id(scope_id: str, medoid_asset_id: str) -> str:
+    return stable_id("sum", scope_id, "media_cluster_summary", medoid_asset_id)
 
 
 def _empty_watermark(root_id: str, scope_id: str, sample_policy: str) -> str:
