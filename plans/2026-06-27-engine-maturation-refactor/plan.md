@@ -83,7 +83,7 @@ Non-goals:
 | ID | Question | Status | Resolution |
 | --- | --- | --- | --- |
 | OP-001 | Should the catalog helper be a context manager (`catalog_connection()`) or a thin module-level façade with query helpers? | Open | — |
-| OP-002 | Does any supported install path actually run without PyYAML, or are all fallback parsers safe to delete outright? | Open | Lean: delete; PyYAML is a base dep. Confirm before removal. |
+| OP-002 | Does any supported install path actually run without PyYAML, or are all fallback parsers safe to delete outright? | Resolved | Deleted. PyYAML 6.0.3 confirmed importable and a hard base dep; fallback branches unreachable. Removed in Phase 2 (−358 LOC). |
 | OP-003 | Package layout for the routing split — submodule names and what stays in a top-level `routing/__init__.py` facade so `from even.routing import index_routing, search_text_with_routing, list_representatives` keeps working for `cli.py`/`fts.py`. | Open | — |
 | OP-004 | Convert all 33 connect sites to the helper, or only the read sites that use positional access (lowest-risk subset first)? | Open | — |
 

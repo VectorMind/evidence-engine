@@ -2,10 +2,10 @@
 
 ## Progress
 
-`▰▰▰▱▱▱▱ Phase 1/6` — hermetic fixture done; catalog access layer landed and all
-non-routing modules migrated (8 of 9). Only `routing.py`'s 9 sites remain, folded
-into the Phase 4 decomposition. Next: Phase 2 (delete dead YAML fallbacks) or
-Phase 3 (representative-store dedupe).
+`▰▰▰▰▱▱▱ Phase 2/6` — hermetic fixture done; access layer migrated (8 of 9
+modules, only `routing.py` left for Phase 4); dead YAML fallback parsers removed
+(−358 LOC). Next: Phase 3 (representative-store dedupe) or Phase 4 (`routing.py`
+split).
 
 ## Log
 
@@ -64,6 +64,24 @@ Remaining Phase 1 call sites (future steps): `media.py` (4), `parse.py` (4),
 - After this batch the only `sqlite3.connect(catalog_path())` sites left are in
   `db.py` (the helper) and `routing.py` (deferred to Phase 4).
 - Proof: `uv run ruff check src/even/` clean; `uv run pytest -q` → `57 passed`.
+
+### Phase 2 — Delete dead YAML fallback parsers (Finding 5 / OP-002) — done
+
+- Confirmed OP-002: PyYAML 6.0.3 is importable and is a hard base dependency
+  (`pyproject.toml`), so the `except ModuleNotFoundError` fallback branches are
+  unreachable in any supported install. The other `ModuleNotFoundError` sites in
+  the tree guard optional deps (pillow/tantivy/docling), not yaml — left intact.
+- `config.py`: lifted `import yaml` to module top; removed
+  `_load_parser_config_fallback`, `_load_embedding_config_fallback`,
+  `_load_routing_config_fallback`, and the fallback-only `_scalar`/`_list`/
+  `_parse_value`/`re` helpers. 246 → 35 lines.
+- `catalog.py`: lifted `import yaml` to top; removed the try/except and the
+  `_load_catalog_tables_fallback`/`_parse_column_line`/`_split_inline_mapping`
+  hand-rolled parser. Kept `re` (still used by `parse_reference`).
+- Net −358 lines (9 insertions, 358 deletions across the two files).
+- Round-trip sanity: real-YAML loaders return the same values the fallbacks
+  hardcoded (routing `representative_top_k=12`, fastembed `dimension=384`,
+  21 catalog tables, 15 parser defaults).
 
 ## Proof
 

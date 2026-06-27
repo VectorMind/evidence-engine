@@ -7,6 +7,8 @@ import re
 import sqlite3
 from typing import Any
 
+import yaml
+
 from even.contracts import read_contract_text
 from even.db import catalog_connection
 from even.paths import catalog_path
@@ -38,20 +40,9 @@ class Table:
 
 
 def load_catalog_tables() -> list[Table]:
-    """Load table definitions from catalog.yaml.
+    """Load table definitions from catalog.yaml."""
 
-    PyYAML is the normal parser once base dependencies are installed. The
-    fallback parser handles this repository's deliberately simple schema shape
-    so catalog commands can run in the stdlib-only scaffold environment.
-    """
-
-    text = read_contract_text("catalog.yaml")
-    try:
-        import yaml  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
-        return _load_catalog_tables_fallback(text)
-
-    data = yaml.safe_load(text)
+    data = yaml.safe_load(read_contract_text("catalog.yaml"))
     tables_data = data["datasets"][0]["tables"]
     tables: list[Table] = []
     for table_data in tables_data:
@@ -73,136 +64,6 @@ def load_catalog_tables() -> list[Table]:
         )
         tables.append(Table(name=table_data["name"], columns=columns, indexes=indexes))
     return tables
-
-
-def _load_catalog_tables_fallback(text: str) -> list[Table]:
-    tables: list[Table] = []
-    current_table: str | None = None
-    current_columns: list[Column] = []
-    current_indexes: list[Index] = []
-    in_columns = False
-    in_indexes = False
-    pending_index_name: str | None = None
-    pending_index_columns: tuple[str, ...] | None = None
-    pending_index_unique = False
-
-    def flush_index() -> None:
-        nonlocal pending_index_name, pending_index_columns, pending_index_unique
-        if pending_index_name and pending_index_columns is not None:
-            current_indexes.append(
-                Index(
-                    name=pending_index_name,
-                    columns=pending_index_columns,
-                    unique=pending_index_unique,
-                )
-            )
-        pending_index_name = None
-        pending_index_columns = None
-        pending_index_unique = False
-
-    def flush_table() -> None:
-        nonlocal current_table, current_columns, current_indexes
-        if current_table:
-            flush_index()
-            tables.append(
-                Table(
-                    name=current_table,
-                    columns=tuple(current_columns),
-                    indexes=tuple(current_indexes),
-                )
-            )
-        current_table = None
-        current_columns = []
-        current_indexes = []
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip(" "))
-
-        if indent == 6 and stripped.startswith("- name: "):
-            flush_table()
-            current_table = stripped.removeprefix("- name: ").strip()
-            in_columns = False
-            in_indexes = False
-            continue
-
-        if current_table is None:
-            continue
-
-        if indent == 8 and stripped == "columns:":
-            flush_index()
-            in_columns = True
-            in_indexes = False
-            continue
-
-        if indent == 8 and stripped == "indexes:":
-            in_columns = False
-            in_indexes = True
-            continue
-
-        if in_columns and indent == 10 and stripped.startswith("- {"):
-            current_columns.append(_parse_column_line(stripped))
-            continue
-
-        if in_indexes and indent == 10 and stripped.startswith("- name: "):
-            flush_index()
-            pending_index_name = stripped.removeprefix("- name: ").strip()
-            continue
-
-        if in_indexes and indent == 12 and stripped.startswith("columns: "):
-            value = stripped.removeprefix("columns: ").strip()
-            pending_index_columns = tuple(
-                part.strip()
-                for part in value.removeprefix("[").removesuffix("]").split(",")
-                if part.strip()
-            )
-            continue
-
-        if in_indexes and indent == 12 and stripped.startswith("unique: "):
-            pending_index_unique = stripped.removeprefix("unique: ").strip() == "true"
-
-    flush_table()
-    return tables
-
-
-def _parse_column_line(line: str) -> Column:
-    inner = line.removeprefix("- {").removesuffix("}")
-    fields = _split_inline_mapping(inner)
-    return Column(
-        name=fields["name"],
-        kind=fields["type"],
-        ref=fields.get("ref"),
-    )
-
-
-def _split_inline_mapping(value: str) -> dict[str, str]:
-    parts: list[str] = []
-    current: list[str] = []
-    quote = False
-    bracket_depth = 0
-    for char in value:
-        if char == '"':
-            quote = not quote
-        elif not quote and char == "[":
-            bracket_depth += 1
-        elif not quote and char == "]":
-            bracket_depth -= 1
-        elif not quote and bracket_depth == 0 and char == ",":
-            parts.append("".join(current).strip())
-            current = []
-            continue
-        current.append(char)
-    if current:
-        parts.append("".join(current).strip())
-
-    fields: dict[str, str] = {}
-    for part in parts:
-        key, raw = part.split(":", 1)
-        cleaned = raw.strip()
-        if cleaned.startswith('"') and cleaned.endswith('"'):
-            cleaned = cleaned[1:-1]
-        fields[key.strip()] = cleaned
-    return fields
 
 
 def create_catalog() -> dict[str, Any]:
