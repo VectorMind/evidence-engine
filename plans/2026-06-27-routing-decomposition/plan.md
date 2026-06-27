@@ -70,26 +70,32 @@ Non-goals:
 
 | ID | Question | Status | Resolution |
 | --- | --- | --- | --- |
-| OP-001 | Preserve the tested-private import surface via `__init__` re-exports, or migrate `tests/test_routing.py` to import from submodules? | Open | Lean: re-export from `__init__` first (zero test churn, proves the move is behavior-neutral); optionally tighten test imports afterward. |
-| OP-002 | Final submodule seams and names (see proposed cut below). | Open | — |
-| OP-003 | Does the split expose import cycles (e.g. summaries ↔ representatives via `_current_summary_rows` / `_select_budgeted_rows`)? Where do shared helpers (`_iso`, `_utc_now`, `_json_object`, watermark, config accessors) live? | Open | Candidate: a small `routing/_shared.py` (or `common.py`) for cross-cut helpers. |
-| OP-004 | Revisit OP-005 (build-orchestrator consolidation) during the split, or leave the three builders separate as decided? | Open | — |
+| OP-001 | Preserve the tested-private import surface via `__init__` re-exports, or migrate `tests/test_routing.py` to import from submodules? | Resolved | Re-export the 4 public + 10 tested-private names from `__init__` (zero test churn). Tightening test imports deferred to Phase 5. See `seam-map.md`. |
+| OP-002 | Final submodule seams and names. | Resolved | 12-module cut verified against the AST call-graph; see `seam-map.md` for the function→module map. The plan's first-draft `summaries.py` was ~1446 lines, so it is split into `summaries` / `media_summaries` / `summary_store` / `importance`. |
+| OP-003 | Does the split expose import cycles? Where do shared helpers live? | Resolved | No cycle exists once `RoutingIndexOptions` / `SummaryGenerationError` move to `_shared` and `_root_source_item_id` / `_coverage` / `_clean_routing_meta` are relocated. The feared summaries↔representatives cycle is not real: summary writers never read summaries back. Cross-cut helpers live in `routing/_shared.py`. DFS cycle check: NONE. |
+| OP-004 | Revisit OP-005 (build-orchestrator consolidation) during the split? | Resolved | Leave the three `build_*` orchestrators separate (as previously decided); they share the `representative_store` manifest/watermark layer but stay distinct functions. The new structural change is splitting representatives along the build/search consumer seam. |
 
-## Proposed Submodule Cut (first draft — OP-002)
+## Verified Submodule Cut (OP-002 — see `seam-map.md` for full map)
 
-Derived from the current function inventory; treat as a starting point, not
-committed scope:
+Twelve modules, leaf → root. Every module is under the ~800 line target; largest
+is `media_summaries` (~705 body lines). Verified acyclic.
 
-- `routing/__init__.py` — `index_routing` orchestrator + facade re-exports.
-- `routing/summaries.py` — root/media/cluster summary upserts, prompts,
-  sampling, `_current_summary_rows`, importance parse/learn.
-- `routing/representatives.py` — the three backend build/write/search plus the
-  already-unified `_manifest_current` / `_write_manifest` layer.
+- `routing/_shared.py` — module constants, `RoutingIndexOptions`,
+  `SummaryGenerationError`, cross-cut helpers + config accessors.
+- `routing/budget.py` — token estimate, calibration, build-budget reporting.
+- `routing/importance.py` — importance prior/parse/learn subsystem.
+- `routing/medoids.py` — k-means / medoid math and album clustering.
+- `routing/summary_store.py` — summary-node read/write + row-budgeting layer.
+- `routing/summaries.py` — root/document summary generation, prompts, LLM call.
+- `routing/media_summaries.py` — media album + cluster summary generation.
+- `routing/representative_store.py` — manifest/watermark/uri/medoid-row helpers
+  shared by the build and search sides.
+- `routing/representatives.py` — the three `build_*` orchestrators + writers.
+- `routing/representative_search.py` — the three `_search_global_*` readers.
 - `routing/search.py` — `search_text_with_routing`, RRF fusion, scope selection,
   recursive deepening, route traces.
-- `routing/medoids.py` — k-means / medoid math and album clustering.
-- `routing/budget.py` — token estimate, calibration, build-budget reporting.
-- `routing/_shared.py` — cross-cut helpers + module constants (OP-003).
+- `routing/__init__.py` — `index_routing` + `list_representatives` orchestrators
+  and the facade re-export block.
 
 ## Implementation Phases
 
