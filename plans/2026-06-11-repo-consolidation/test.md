@@ -1,17 +1,25 @@
 # Test Proof: Repository Consolidation
 
-This is a planning/consolidation packet; proof is document review and
-content-migration checks rather than runtime behavior.
+This is a planning-only closure. Proof is document review and scope control, not
+runtime behavior.
 
-## Planned Checks
+## Checks
 
-| Phase | Check |
+| Check | Result |
 | --- | --- |
-| 1 | Reconciled layer-4 schema parses as YAML; every table from both private catalog.yaml files is either present, merged, or listed in the redundancy mapping; no personal facts (paths, names) appear in the public file. |
-| 2 | `docs/models.md` contains the face-model table and benchmark policy; no dependency added to pyproject.toml (`git diff pyproject.toml` empty). |
-| 3 | Private knowledge base contains the source maps and real config values; grep the evidence-engine working tree for real path fragments (e.g. user-profile paths) returns only pre-existing occurrences, none added by this packet. |
-| 4 | Both private repos show archived status on GitHub and remain private; pointer READMEs in place. |
+| Boundary is explicit: `even` is private-knowledge-friendly but private-repo-blind. | Pass - recorded in [plan.md](./plan.md). |
+| Private curated data location is resolved. | Pass - private Git repo, Markdown/YAML, OKF-compatible by convention. |
+| Generated/private runtime state remains out of Git. | Pass - `.db`, indexes, embeddings, OCR/parse artifacts, thumbnails, and caches are explicitly excluded from versioned curated data. |
+| No code or runtime schema change was made. | Pass - this packet is doc-only. |
+| Registry closure is recorded. | Pass - `plans/open.md` and `plans/closed.md` updated. |
 
-## Results
+## Commands
 
-Not executed yet — plan awaiting review.
+No runtime test commands were needed. The only command review performed for this
+closure was `git status --short`, which showed a clean working tree before the
+documentation edits.
+
+## Gaps
+
+Future implementation proof is needed only if a separate export-contract packet
+adds or changes `even` command behavior.

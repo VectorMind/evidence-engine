@@ -6,6 +6,28 @@ Scope: `evidence-engine` (this repo), `C:\dev\VectorMind\private-documents`,
 Question: should the three repositories merge into one, and what should move
 where?
 
+## 2026-06-27 Update
+
+The maintainer resolved the consolidation question differently than the initial
+survey recommendation. `evidence-engine` should remain friendly to private
+knowledge workflows, but private-repo-blind.
+
+The current decision is:
+
+- reusable source discovery, parsing, indexing, search, provenance, and generic
+  exports belong in `evidence-engine`;
+- curated private knowledge belongs in a private Git repository as
+  Markdown/YAML, with OKF-compatible frontmatter conventions where useful;
+- OneDrive, Google Drive, Gmail, and local folders remain source authorities;
+- `.cache/even/` remains generated machine state and is not versioned;
+- `evidence-engine` must not know or mutate the private repository, its Git
+  state, its folder layout, or its personal taxonomy.
+
+The original survey remains useful as inventory and design evidence, especially
+for separating source authority, generated cache, private curation, and durable
+knowledge. Treat recommendations about `knowledge.sqlite`, private catalog
+ownership, or repo absorption as superseded by [plan.md](./plan.md).
+
 ## Conclusion First
 
 Merge — but it is an **absorption, not a three-way code merge**. The two
