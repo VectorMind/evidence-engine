@@ -110,6 +110,14 @@ Implemented and tested (D2 semantic representative store, 2026-06-26):
 
 Run: `uv run pytest` → 46 passed; `uv run ruff check .` → clean.
 
+Real-embedding benchmark (2026-06-26, CPU, `fastembed_bge_small_en_v1_5`, 384-dim):
+embedded 300 routing_payload-shaped texts in 2.85 s → ~105 texts/s, ~29.7k
+chars/s, ~7.4k approx tokens/s; one-time model load+warmup ~7 s. Confirms
+embedding is negligible vs LLM summary generation, so the budget-bounded
+representative set embeds near-instantly. The fake-embedder automated tests stand;
+the routing semantic store has not yet been built with the real model on a real
+corpus.
+
 D0 representation contract (O1–O7) plus RP1 is fully implemented and tested. The
 only remaining contract item is the **derived embedding budget**, intentionally
 deferred to the D2 semantic-representative slice (no semantic projection exists to
@@ -118,3 +126,36 @@ budget yet), and the FTS/semantic backend parity it would exercise.
 Current behavior (1 `root_summary` + 1 `album_summary` per scope, projected as one
 FTS doc each) stays within the hardened contract, so the shipped D0/D1 tests
 remain valid; the items above extend it.
+
+## 2026-06-27: D3 media SigLIP representative routing (B1–B3)
+
+Spec consolidation first (Modality Asymmetry + Media representatives clauses;
+README two-lane diagram), then built B1–B3.
+
+Implemented and tested:
+
+- B1 medoid selection — `test_kmeans_medoids_selects_one_per_cluster` (pure scipy
+  k-means picks one medoid per visual cluster) and
+  `test_index_routing_persists_album_medoids_in_attrs` (medoid `asset_id`s +
+  `medoid_profile` land on `album_summary.attrs`, reusing the per-scope image proof
+  vectors);
+- B2 global SigLIP store — `test_build_global_siglip_store_reuses_medoid_vectors`
+  (one row per medoid, `albums=1`, reused vectors, idempotent unforced rebuild ⇒
+  `current`/`unchanged`);
+- B3 fusable visual route — `test_siglip_route_returns_fusable_album_hits` (the
+  visual route returns album-keyed hits and fuses with a text route at scope
+  granularity via the shared RRF).
+
+- B4 cross-modal probe — `test_search_text_image_engages_visual_route_and_returns_image_hits`
+  (`search text --image` engages the SigLIP visual route in fusion and returns image
+  hits from the routed scopes alongside text hits; monkeypatched embedder/runtime,
+  registered per-scope image store, real LanceDB).
+
+Tests use real LanceDB with synthetic 3-dim vectors and no model download (torch is
+not needed to build/search the store — medoid vectors are reused; the B4 test fakes
+the query-time SigLIP embedder). The SigLIP representative store has **not** yet been
+built from real SigLIP vectors on a real photo corpus; that end-to-end manual proof
+(`index scope --image` → `index routing --semantic` → `search text --image` with a
+real model) remains open.
+
+Run: `uv run pytest` → 51 passed; `uv run ruff check .` → clean.

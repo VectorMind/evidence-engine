@@ -97,6 +97,8 @@ def _load_routing_config_fallback() -> dict[str, Any]:
             "importance_default": 0.5,
             "importance_low_prior": 0.1,
             "importance_learn_threshold": 0.2,
+            "media_cluster_k_max": 16,
+            "image_profile": "siglip2_base",
             "importance_priors": [
                 "node_modules",
                 ".git",

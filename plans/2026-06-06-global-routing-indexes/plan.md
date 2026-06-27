@@ -400,8 +400,8 @@ parity it exercises still land with the D2 semantic projection.
 
 | ID | Point | Decision | Confidence |
 | --- | --- | --- | --- |
-| M1 | Clustering method | k-means on L2-normalized SigLIP vectors; medoid = nearest centroid; `k = clamp(ceil(sqrt(n/2)), 1, 16)`. | Medium |
-| M2 | L0 media root rep | Use both centroid and medoids: centroid for recall, medoids for exemplars. | Med-High |
+| M1 | Clustering method | k-means (`scipy.cluster.vq`, no new dep) on L2-normalized SigLIP vectors; medoid = member nearest its centroid; `k = clamp(ceil(sqrt(n/2)), 1, EVEN_MEDIA_CLUSTER_K_MAX=16)`. | High |
+| M2 | What medoids are for (reframed by Modality Asymmetry) | Medoids are the album's **visual fingerprint in the router**, used only to rank scopes for cross-modal/entity probes — **not** a recall device. Image recall is served by the central image index (logical union of per-root stores), never by a centroid. See the spec Modality Asymmetry clause. | High |
 | M3 | Routing-text assembly | LLM summary plus deterministic facets; defer a second rollup-LLM pass. | High |
 | M4 | OCR over media images | Plan behind `EVEN_MEDIA_OCR=1`, disabled by default. | High |
 | M5 | Media staleness | Use a media-summary watermark that includes caption/OCR state. | Medium |
@@ -468,6 +468,32 @@ semantic representative routes with RRF and emits the multi-route trace; semanti
 build is opt-in via `index routing --semantic`. Tests cover the RRF fusion and the
 FTS/semantic parity count. The single-route trace shape is preserved when only the
 FTS route is current.
+
+## D3: Media SigLIP Representative Routing
+
+The media slice. Grounded in the spec **Modality Asymmetry** and **Media
+representatives** clauses: text needs a lossy router because its proof is verbatim;
+image recall is central because the embedding *is* the representation; medoids are a
+**visual fingerprint in the router**, used only for cross-modal/entity probes, never
+a substitute for the central image index. Conceptual consolidation (2026-06-27) is
+illustrated by the "How Images Travel Two Lanes" diagram in `README.md`.
+
+Resolved open points:
+
+| ID | Point | Decision | Confidence |
+| --- | --- | --- | --- |
+| C1 | Central image index: physical vs logical | **Logical union** now — `search image` keeps merging the current per-root stores at query time; a single physical union index is deferred behind a real scale need. | High |
+| C2 | Medoid persistence | Persist chosen medoid `asset_id`s on the `album_summary` unit's `attrs` (`medoids`, `medoid_profile`) at summary build, so the projection fetches their vectors with no recompute or clustering drift. | High |
+| C3 | text→image cross-modal on `search text` | **Off.** `search text` stays FTS-first; media reaches the router through its summarized text only. Visual fingerprints fuse only for explicit cross-modal/entity probes. Media already feeds the root summary, so a second vector route would be redundant. | High |
+
+Build steps:
+
+| Step | Scope | Notes |
+| --- | --- | --- |
+| B1 | Medoid selection + persistence | `_kmeans_medoids` (scipy) over the per-scope SigLIP vectors (reused from the proof store, no re-embed); medoid `asset_id`s stored on `album_summary.attrs`. Best-effort: needs `index scope --image` to have run; degrades to no fingerprint otherwise. |
+| B2 | Global SigLIP representative store | `build_global_representative_siglip` writes one row per medoid (reused vector) to `semantic/global_representatives/siglip/{image_profile}.lancedb`, separate space (S3), own `k`-clamp budget, sidecar manifest/watermark. No torch — vectors are reused. Opt-in under `index routing --semantic`. |
+| B3 | Fusable visual route | `_search_global_representatives_siglip(query_vector, …)` returns hits keyed by the album's `summary_id`+`scope_id`, slotting into the existing RRF (`_fuse_representative_hits`) and scope selection at scope granularity. |
+| B4 | Cross-modal / entity query surface | **Done (O-A).** `search text --image PATH` (repeatable): example images are SigLIP-embedded (mean vector), the visual route fuses with the text routes (RRF, scope granularity), and image hits from the routed scopes return alongside text hits (`counts.image_hits_returned`). Plain `search text` is unchanged. Entities stay a higher-layer agentic concern; the engine just provides the `--image` tool. |
 
 ## Retrieval Strategy / Auto Mode
 

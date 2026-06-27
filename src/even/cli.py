@@ -422,7 +422,11 @@ def search_text(args: argparse.Namespace) -> int:
     try:
         result = search_text_indexes(
             args.query,
-            SearchOptions(limit=args.limit, budget=args.budget),
+            SearchOptions(
+                limit=args.limit,
+                budget=args.budget,
+                image_paths=tuple(args.image or ()),
+            ),
         )
         payload.update(result)
         attach_hit_refs(payload)
@@ -839,6 +843,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["low", "mid", "high"],
         default="mid",
         help="Query-time fanout budget: low (1 scope), mid (top scopes), high (wider). Defaults to mid.",
+    )
+    search_text_parser.add_argument(
+        "--image",
+        action="append",
+        metavar="PATH",
+        help="Example image path (repeatable). Engages the SigLIP visual route and "
+        "returns image hits from the routed scopes (needs image-search extra).",
     )
     search_text_parser.set_defaults(handler=search_text)
 

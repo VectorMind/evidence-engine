@@ -6,10 +6,13 @@ the global representative FTS map.
 
 ## Progress
 
-`▰▰▰▰▱▱ D0 ✅ · D1 ✅ · D2+ ▱` — D0 (Phases 1–5: schema, document summaries,
-global representative FTS, routed search, tests) and the D1 media-representative
-slice are implemented and tested. Media-cluster summaries, global semantic
-representatives, and SigLIP routing remain future slices.
+`▰▰▰▰▰▰ D0 ✅ · D1 ✅ · D2 ✅ · D3 B1–B4 ✅` — D0 (schema, document summaries,
+global representative FTS, routed search), D1 (media album summaries), D2 (text
+semantic representative store + fused RRF route), and D3 (media SigLIP representative
+routing — medoid selection + persistence, the global SigLIP store, the fusable
+visual route, and the `search text --image` cross-modal probe) are implemented and
+tested. Media-cluster summaries and the planner's `high`-budget recursive deepening
+remain future slices.
 
 ## Changes Made
 
@@ -341,10 +344,79 @@ representatives, and SigLIP routing remain future slices.
 - DP3 confirmed in code: one embedding unit = one selected `summary_node`; the set
   is budget-bounded, so all selected units are embedded.
 
+## 2026-06-27: spec consolidation — Modality Asymmetry (review)
+
+- Untangled two conflated concepts: hierarchical-summary **text** search vs
+  **image-vector** search. Added two named clauses to the spec Global
+  Representation Contract — **Modality asymmetry** (text needs a lossy router
+  because proof is verbatim; image recall is central because the embedding is
+  already the representation and ANN scales) and **Media representatives** (medoids
+  are a visual fingerprint for cross-modal/entity routing, persisted on
+  `album_summary.attrs`, fused only for explicit cross-modal probes). Clarified the
+  Search Contract image line (central = logical union of per-root stores) and the
+  media FTS-first wording (no second cross-modal vector route on text queries).
+- Added the README "How Images Travel Two Lanes" section + mermaid diagram as the
+  review support artifact.
+- Resolved C1 (logical union now), C2 (medoids on `album_summary.attrs`), C3
+  (text→media stays FTS-first). Reframed plan M1/M2 and added the D3 build plan.
+
+## 2026-06-27: D3 — Media SigLIP Representative Routing (B1–B3)
+
+- B1 — medoid selection + persistence. `_kmeans_medoids` (scipy `kmeans2`,
+  k-means++, fixed seed; `k = clamp(ceil(sqrt(n/2)), 1, EVEN_MEDIA_CLUSTER_K_MAX)`)
+  picks the member nearest each centroid over L2-normalized vectors. `_album_medoids`
+  reads the per-scope SigLIP **proof** vectors via the new
+  `image_index.read_scope_image_vectors` (reuse, no re-embed) and persists medoid
+  `asset_id`s + `medoid_profile` on `album_summary.attrs` during
+  `_upsert_media_summary`. Best-effort: degrades to no fingerprint when
+  `index scope --image` has not run. Config `media_cluster_k_max` (16) and
+  `image_profile` (`siglip2_base`) added to `config/routing.yaml` + `config.py`.
+- B2 — `build_global_representative_siglip` writes one row per medoid (reused
+  vector, **no torch**) to `semantic/global_representatives/siglip/{image_profile}.lancedb`,
+  table `media_representatives`, separate space (S3), sidecar manifest +
+  `_siglip_watermark`. New `siglip_summary_node` store template. Opt-in under
+  `index routing --semantic`; returns `deferred/no_media_representatives` cleanly
+  when no album has medoids, so text-only roots and prior tests are undisturbed.
+- B3 — `_search_global_representatives_siglip(query_vector, …)` ranks albums by a
+  SigLIP query vector, collapses medoids to one hit per album, and emits hits keyed
+  by the album's `summary_id`+`scope_id` so they slot into `_fuse_representative_hits`
+  and scope selection at scope granularity. Cross-modal/entity probes only (C3);
+  `search text` never calls it.
+- Fix: `read_scope_image_vectors` scans via `to_arrow().to_pylist()` (LanceTable
+  has no `to_list()`).
+- Tests: `test_kmeans_medoids_selects_one_per_cluster`,
+  `test_index_routing_persists_album_medoids_in_attrs`,
+  `test_build_global_siglip_store_reuses_medoid_vectors`,
+  `test_siglip_route_returns_fusable_album_hits` (real LanceDB, synthetic vectors,
+  no model). `uv run pytest` 50 passed; `uv run ruff check .` clean.
+## 2026-06-27: D3 — B4 cross-modal query surface (`search text --image`)
+
+- Chose O-A: `search text --image PATH` (repeatable) as the explicit cross-modal
+  probe; plain `search text` stays FTS-first (C3). Entities remain a higher-layer
+  agentic concern — the engine just exposes the tool.
+- `SearchOptions.image_paths` (tuple) carries the example images. `search_text_with_routing`
+  builds a third route via `_visual_route_from_images` (SigLIP-embed each image with
+  `image_index._load_embedder`, mean+normalize to one query vector, rank albums via
+  `_search_global_representatives_siglip`). The visual route joins the existing RRF
+  fusion + scope selection; the single-route FTS-only shape is kept only when no
+  vector route is active.
+- After scope selection, `_scoped_image_hits` proves the image side against the
+  central image union restricted to the routed scopes (reusing
+  `image_index._current_image_stores` + `_search_one_image_store`) and appends those
+  hits with `counts.image_hits_returned`. When the visual route is active, weak text
+  alone no longer triggers an all-scopes text fallback (the image route justified the
+  scopes).
+- CLI: `--image` (append) on `search text`, passed through as `image_paths`.
+- Test: `test_search_text_image_engages_visual_route_and_returns_image_hits`
+  (monkeypatched SigLIP embedder + runtime, registered per-scope image store, real
+  LanceDB; asserts the `global_representative_siglip` route is `used` and image hits
+  are returned alongside text). `uv run pytest` 51 passed; `uv run ruff check .` clean.
+
 ## Follow-Up Risks
 
-- Media cluster summaries, global semantic representative stores, and SigLIP
-  representative routing remain future work.
-- D1 automated tests use a fake summary generator so CI does not require a
-  local model; a manual Ollama proof should be recorded before relying on media
-  summaries with a real personal corpus.
+- `media_cluster_summary` generation and the planner's `high`-budget recursive
+  deepening remain future work.
+- The SigLIP representative store is proven with synthetic vectors only; a manual
+  proof on a real corpus (`index scope --image` then `index routing --semantic` on
+  real photos, plus a real SigLIP query) should be recorded before trusting the
+  visual route. The D1 media-summary path likewise still needs a live-Ollama proof.

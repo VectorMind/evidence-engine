@@ -168,6 +168,78 @@ flowchart TB
 Layer 5 (curated Markdown) sits one step further out and belongs mostly to
 workspaces that consume `even`; it is intentionally kept low-profile here.
 
+## How Images Travel Two Lanes
+
+A single image asset feeds **two independent retrieval lanes**, and the reason is
+a structural asymmetry between text and images:
+
+- **Text proof is verbatim.** Exact-term matching cannot survive compression, so
+  the global text layer must be a *separate lossy artifact* (summaries) and a
+  query is **routed** to the exhaustive per-root FTS. Two genuinely different
+  objects: a summary versus a chunk.
+- **An image embedding is already the representation.** There is no verbatim image
+  layer beneath it, and an ANN index scales sub-linearly over the whole corpus, so
+  image recall is served by **one central index directly, with no routing**.
+
+That is why the two lanes look different:
+
+- **Vector lane (visual similarity).** Each image is embedded with SigLIP into its
+  per-root image store (every vector, exhaustive proof). `search image` queries the
+  *logical union* of those stores directly — no router. A small set of **medoids**
+  (cluster leads) is also drawn from those same vectors into a global representative
+  store; medoids are the album's **visual fingerprint in the router**, not a
+  substitute for the union.
+- **Summary lane (hierarchical text).** The image's deterministic text — filename,
+  metadata, `media_kind`, caption — is summarized into an `album_summary` (which
+  also feeds the `root_summary`). Its `routing_payload` is indexed into the global
+  representative FTS/semantic **router**, which selects scopes that are then proven
+  in the per-root FTS. This is how `search text` finds media: through summarized
+  text, **once**, never through a second cross-modal vector route.
+
+The two lanes meet at exactly one place: the **scope router**, and only for an
+**entity / cross-modal probe** that carries both words and example images. There a
+text fingerprint (summary) and a visual fingerprint (medoids) are fused by RRF to
+rank scopes; plain `search text` stays FTS-first and plain `search image` stays on
+the central union.
+
+```mermaid
+flowchart TB
+  IMG["image asset<br/>(Layer 2 evidence)"]
+
+  subgraph VEC["Vector lane · visual similarity (no router)"]
+    SIG["SigLIP embedding"]
+    ROOTV["per-root image store<br/>all vectors · exhaustive proof"]
+    UNION["logical union<br/>query-time merge of root stores"]
+    MEDOID["k medoids · cluster leads<br/>(budgeted)"]
+    SIGREP["global SigLIP representative store<br/>medoids only · routing fingerprint"]
+  end
+
+  subgraph TXT["Summary lane · hierarchical text (routed)"]
+    FACTS["filename · metadata<br/>media_kind · caption"]
+    ALBUM["album_summary<br/>+ feeds root_summary"]
+    PAYLOAD["routing_payload"]
+    FTSREP["global representative<br/>FTS + semantic · router"]
+    ROOTF["per-root FTS<br/>exhaustive proof"]
+  end
+
+  SIMG(["search image<br/>image → image"])
+  STEXT(["search text<br/>text → text"])
+  ROUTER{{"scope router · RRF"}}
+  ENTITY["entity / cross-modal probe<br/>words + example images"]
+
+  IMG --> SIG --> ROOTV --> UNION --> SIMG
+  SIG --> MEDOID --> SIGREP
+  IMG --> FACTS --> ALBUM --> PAYLOAD --> FTSREP
+  FTSREP --> ROUTER --> ROOTF --> STEXT
+  SIGREP -. "visual fingerprint" .-> ROUTER
+  ENTITY ==> ROUTER
+  ENTITY -. "example image" .-> UNION
+```
+
+The asymmetry in one line: **text is routed because its proof is verbatim and
+large; images are central because the embedding *is* the proof, and medoids exist
+only to give the router a visual signal for mixed entity queries.**
+
 ## Current Status
 
 This repository is in beta/pre-development. There is no backward-compatibility
@@ -254,7 +326,7 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `index` | `scope <path> --semantic` | `path` | Build or refresh the semantic index for a source scope. |
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images (needs `image-search` extra). |
 | `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. |
-| `search` | `text <query>` | `query` | Search current text indexes. |
+| `search` | `text <query>` | `query` | Search current text indexes. `--budget low\|mid\|high` tunes fanout; `--image PATH` (repeatable) adds a SigLIP visual route and returns image hits from the routed scopes (cross-modal probe). |
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
 | `search` | `image <image-path>` | `image-path` | Visual search: image→image (or `--text` for text→image) over image embeddings. |
@@ -311,7 +383,11 @@ hint only; evidence still comes from root-scoped FTS hits.
 surface. Higher layers should not know which physical search engine backs
 those projections. When a current global representative map exists,
 `search text` routes to likely root scopes first and falls back to all current
-FTS indexes when routing is unavailable or weak.
+FTS indexes when routing is unavailable or weak. Passing `--image PATH` turns
+`search text` into an explicit cross-modal probe: the example images are embedded
+with SigLIP, their visual route is fused with the text routes to choose scopes, and
+image hits from those scopes come back alongside the text hits — the engine-side
+tool for higher-level agentic queries that carry both words and pictures.
 
 ## Public Data Contract
 

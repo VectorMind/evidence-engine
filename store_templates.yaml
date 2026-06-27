@@ -55,6 +55,24 @@ templates:
       - {name: source_refs_json, type: json, description: "Represented lower evidence refs."}
       - {name: metadata_json, type: json, description: "Compact route metadata (root_label, importance)."}
 
+  - name: siglip_summary_node
+    backend: semantic
+    description: >
+      One generated SigLIP-space row per album medoid (global media representative).
+      Vectors are reused from the per-scope image proof store, never re-embedded.
+      Separate space per image profile; never mixed with text vectors (S3).
+    columns:
+      - {name: summary_id, type: text, description: "Owning album_summary node ID."}
+      - {name: root_id, type: text, description: "Summarized source root."}
+      - {name: scope_id, type: text, description: "Summarized index scope (album)."}
+      - {name: asset_id, type: text, description: "Medoid image asset ID."}
+      - {name: image_profile, type: text, description: "SigLIP image profile used for this row."}
+      - {name: vector, type: vector, description: "Reused SigLIP image vector of the medoid asset."}
+      - {name: modality, type: enum, description: "Dominant modality (image)."}
+      - {name: title, type: text, description: "Display title (album)."}
+      - {name: relative_path, type: text, description: "Medoid asset relative path."}
+      - {name: metadata_json, type: json, description: "Compact route metadata (root_label, importance)."}
+
   - name: semantic_chunk_row
     backend: semantic
     description: One generated semantic row per indexing chunk.

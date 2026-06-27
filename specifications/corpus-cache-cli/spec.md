@@ -181,7 +181,11 @@ even search image <image-path>
 through its indexed metadata and generated captions. `search image` is a
 distinct query-by-example mode: it takes an image path, embeds it with the media
 image-embedding model, and returns visually similar assets. Visual similarity is
-a separate retrieval mode, not a text search over generated captions.
+a separate retrieval mode, not a text search over generated captions. Image recall
+is served directly by a single central image index — currently the logical union of
+the current per-root image stores — and never routes through representatives,
+because an image embedding is already a compact representation and an ANN index
+scales over the whole corpus (see Modality asymmetry below).
 
 `search text` may use global representative routing when a current derived
 representative map exists. Routing searches the lossy `summary_nodes`
@@ -198,7 +202,16 @@ deepening into matched roots plus a listing of the matched region. When deep
 search returns no hits, the result falls back to the routing suggestions rather
 than empty. The separate `list` command walks the representative hierarchy
 directly with no query. Global representative stores are fixed-path derived
-projections, not catalog registry rows.
+projections, not catalog registry rows. For media, `search text` stays FTS-first:
+a text query reaches media only through its summarized text (album and root
+summaries) in the FTS router, and the engine does not additionally fire a
+cross-modal text-to-image-vector route, so each media region is surfaced once as
+summarized text rather than twice. Image vectors are fused into the router only for
+explicit cross-modal or entity probes that supply example images, per the Global
+Representation Contract. `search text --image PATH` is that probe: the example
+images are embedded with SigLIP, their visual route is fused (RRF, scope
+granularity) with the text routes to select scopes, and image hits from the routed
+scopes are returned alongside the text hits.
 
 Search results hydrate back to catalog identities such as `source_item_id`,
 `doc_id`, `object_id`, `scope_id`, and index/store registry IDs. Every hit also
@@ -222,6 +235,37 @@ Two layers, opposite contracts. Root-scoped FTS, semantic, and image indexes are
 the proof layer: they are exhaustive and are never budget-limited or sampled. The
 global representative layer is the routing layer: it is lossy and
 budget-constrained. Only the routing layer is budgeted.
+
+Modality asymmetry. The router-then-proof split is mandatory for text but not for
+images, for a structural reason. Text proof is verbatim: exact-term matching cannot
+survive compression, so the global text layer must be a separate lossy artifact
+(summaries) and routing into the exhaustive per-root FTS is required. An image
+embedding is already a compact lossy representation — there is no verbatim image
+layer beneath it — and an ANN index scales sub-linearly over the whole corpus, so
+image recall is served directly by a single central image index, not by routing.
+`search image` therefore queries that central index (currently the logical union of
+the current per-root image stores) directly and never routes through
+representatives. Image medoids exist for a different purpose: they are an album's
+visual fingerprint in the router — the visual parallel to a text summary — used
+only to rank scopes for cross-modal and entity probes that combine text with
+example images. A medoid is never a substitute for the central image index on a
+pure visual query.
+
+Media representatives. Each root-level `album_summary` contributes a text
+fingerprint like any unit and, when image vectors exist, a small set of visual
+fingerprints: `k` medoid assets chosen by k-means over the L2-normalized per-scope
+image vectors (`k = clamp(ceil(sqrt(n / 2)), 1, EVEN_MEDIA_CLUSTER_K_MAX)`, default
+ceiling `16`), reusing the proof-layer vectors rather than re-embedding. The chosen
+medoid asset references are persisted on the `album_summary` unit (its `attrs`) so
+the projection fetches their vectors without recomputation or clustering drift.
+Medoids project into a separate SigLIP-space representative store, one per image
+profile, never mixed with text vectors, and budgeted by their own `k` clamp
+independent of the text `max_entries`. Visual and text fingerprints are fused only
+for explicit cross-modal or entity probes, by RRF at scope granularity; selected
+scopes are then proven exhaustively in the per-root FTS for text and the central
+image index for images, and hits return as plain `media_assets` and
+`document_objects` references so upper layers can attach evidence to an entity
+without copying lower rows.
 
 Representation budget. Each root's global representation is produced under a typed
 budget envelope. Two dimensions are decisive; the rest are advisory for now and
@@ -322,7 +366,7 @@ Public commands:
 | `index` | `scope <path> --image` | `path` | Build or refresh the image-embedding store for media images. |
 | `index` | `routing <path>` | `path` | Build or refresh document/media summaries and the global representative FTS map. `--semantic` also builds the optional semantic representative store. |
 | `list` | `[path]` | none | List the representative `summary_nodes` hierarchy (bypass; no query, no model). |
-| `search` | `text <query>` | `query` | Search text projections. Accepts `--budget low\|mid\|high` (default `mid`). |
+| `search` | `text <query>` | `query` | Search text projections. Accepts `--budget low\|mid\|high` (default `mid`) and `--image PATH` (repeatable): an explicit cross-modal probe that engages the SigLIP visual route and returns image hits from the routed scopes. |
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
 | `search` | `image <image-path>` | `image-path` | Query-by-image visual similarity over media image embeddings. |

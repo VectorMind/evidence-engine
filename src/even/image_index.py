@@ -506,6 +506,41 @@ def _upsert_image_registry(
         conn.commit()
 
 
+def read_scope_image_vectors(
+    scope_id: str, profile: str = DEFAULT_IMAGE_PROFILE
+) -> dict[str, dict[str, Any]] | None:
+    """Return the per-scope image proof vectors keyed by ``asset_id``.
+
+    Reads the per-root image store written by ``index scope --image`` and reuses
+    its already-computed SigLIP vectors (no model load). Returns ``None`` when no
+    store exists for the scope, so callers degrade to no visual fingerprint.
+    """
+
+    store_dir = workspace_root() / f"semantic/image/{profile}/{scope_id}.lancedb"
+    if not _lancedb_store_exists(store_dir):
+        return None
+    try:
+        import lancedb  # type: ignore[import-not-found]
+
+        with _quiet_output():
+            db = lancedb.connect(str(store_dir))
+            rows = db.open_table(TABLE_NAME).to_arrow().to_pylist()
+    except Exception:  # noqa: BLE001 - read boundary.
+        return None
+    vectors: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        asset_id = row.get("asset_id")
+        if not asset_id:
+            continue
+        vectors[str(asset_id)] = {
+            "vector": [float(value) for value in (row.get("vector") or [])],
+            "relative_path": row.get("relative_path"),
+            "root_label": row.get("root_label"),
+            "media_type": row.get("media_type"),
+        }
+    return vectors
+
+
 def _lancedb_store_exists(store_dir: Path) -> bool:
     try:
         import lancedb  # type: ignore[import-not-found]

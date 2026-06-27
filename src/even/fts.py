@@ -33,6 +33,10 @@ class SearchOptions:
     limit: int = 30
     routed: bool = True
     budget: str = "mid"
+    # Optional example image paths. When set, `search text` becomes an explicit
+    # cross-modal probe: a SigLIP visual route joins routing and image hits from
+    # the routed scopes are returned alongside text hits.
+    image_paths: tuple[str, ...] = ()
 
 
 def index_scope_to_fts(path: Path, options: IndexOptions) -> dict[str, Any]:

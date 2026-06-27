@@ -34,6 +34,8 @@ from even.references import evidence_ref
 GLOBAL_FTS_TEMPLATE = "fts_summary_node"
 GLOBAL_SEMANTIC_TEMPLATE = "semantic_summary_node"
 GLOBAL_SEMANTIC_TABLE = "summary_nodes"
+GLOBAL_SIGLIP_TEMPLATE = "siglip_summary_node"
+GLOBAL_SIGLIP_TABLE = "media_representatives"
 GLOBAL_FTS_MANIFEST = "manifest.json"
 PROMPT_VERSION = "summary_prompt_v2"
 MEDIA_PROMPT_VERSION = "media_summary_prompt_v2"
@@ -179,8 +181,10 @@ def index_routing(
         }
 
     semantic_projection = None
+    siglip_projection = None
     if options.build_semantic:
         semantic_projection = build_global_representative_semantic(force=options.force)
+        siglip_projection = build_global_representative_siglip(force=options.force)
 
     counts = _combined_summary_counts(summaries)
     counts.update(
@@ -211,6 +215,8 @@ def index_routing(
     }
     if semantic_projection is not None:
         result["global_representative_semantic"] = semantic_projection
+    if siglip_projection is not None:
+        result["global_representative_siglip"] = siglip_projection
     return result
 
 
@@ -590,6 +596,415 @@ def _search_global_representatives_semantic(
     return {"status": "ok", "representative_index_uri": index_uri, "hits": hits}
 
 
+# --------------------------------------------------------------------------- #
+# Global SigLIP representative store (D3 / B2)
+# --------------------------------------------------------------------------- #
+
+
+def _global_siglip_uri(image_profile_name: str) -> str:
+    return f"semantic/global_representatives/siglip/{image_profile_name}.lancedb"
+
+
+def _current_album_medoid_rows(image_profile_name: str) -> list[dict[str, Any]]:
+    """One row per album medoid, with the medoid's reused SigLIP vector (C2/B2).
+
+    Reads current `album_summary` units, takes their persisted medoid asset ids,
+    and fetches those assets' vectors from the per-scope image proof store. Albums
+    without a medoid fingerprint (no `index scope --image` yet) contribute nothing.
+    """
+
+    from even import image_index
+
+    with sqlite3.connect(catalog_path()) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.summary_id, s.root_id, s.scope_id, s.title, s.modality,
+                   s.importance, s.attrs_json, s.source_high_watermark, sr.root_label
+            FROM "summary_nodes" s
+            JOIN "source_roots" sr ON sr.root_id = s.root_id
+            WHERE s.summary_status = 'current' AND s.kind = 'album_summary'
+            ORDER BY s.root_id, s.scope_id, s.summary_id
+            """
+        ).fetchall()
+
+    vectors_cache: dict[str, dict[str, dict[str, Any]]] = {}
+    medoid_rows: list[dict[str, Any]] = []
+    for row in rows:
+        attrs = _json_object(row[6])
+        medoids = attrs.get("medoids") or []
+        profile = str(attrs.get("medoid_profile") or image_profile_name)
+        if not medoids or profile != image_profile_name:
+            continue
+        scope_id = str(row[2])
+        if scope_id not in vectors_cache:
+            vectors_cache[scope_id] = (
+                image_index.read_scope_image_vectors(scope_id, image_profile_name) or {}
+            )
+        by_asset = vectors_cache[scope_id]
+        for asset_id in medoids:
+            asset = by_asset.get(str(asset_id))
+            if not asset or not asset.get("vector"):
+                continue
+            medoid_rows.append(
+                {
+                    "summary_id": row[0],
+                    "root_id": row[1],
+                    "scope_id": scope_id,
+                    "asset_id": str(asset_id),
+                    "vector": asset["vector"],
+                    "modality": str(row[4] or "image"),
+                    "title": str(row[3] or row[8] or row[1]),
+                    "importance": row[5],
+                    "relative_path": asset.get("relative_path") or "",
+                    "root_label": row[8],
+                    "source_high_watermark": row[7] or "",
+                }
+            )
+    return medoid_rows
+
+
+def _siglip_watermark(rows: list[dict[str, Any]], image_profile_name: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(image_profile_name.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(GLOBAL_SIGLIP_TEMPLATE.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(_representation_policy_version().encode("utf-8"))
+    digest.update(b"\0")
+    for row in sorted(
+        rows,
+        key=lambda r: (str(r["scope_id"]), str(r["summary_id"]), str(r["asset_id"])),
+    ):
+        for field in ("summary_id", "scope_id", "asset_id", "source_high_watermark"):
+            digest.update(str(row.get(field) or "").encode("utf-8"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _siglip_row(row: dict[str, Any], image_profile_name: str) -> dict[str, Any]:
+    return {
+        "summary_id": row["summary_id"],
+        "root_id": row["root_id"],
+        "scope_id": row["scope_id"],
+        "asset_id": row["asset_id"],
+        "image_profile": image_profile_name,
+        "vector": row["vector"],
+        "modality": str(row.get("modality") or "image"),
+        "title": str(row.get("title") or ""),
+        "relative_path": str(row.get("relative_path") or ""),
+        "metadata_json": json.dumps(
+            {"root_label": row.get("root_label"), "importance": row.get("importance")},
+            sort_keys=True,
+        ),
+    }
+
+
+def build_global_representative_siglip(
+    *,
+    image_profile_name: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Build the global SigLIP representative store from album medoids (B2).
+
+    Reuses the medoids' per-scope proof vectors (no re-embed, no torch). Separate
+    space per image profile (S3), budgeted by the medoid `k` clamp applied at
+    summary build, not by the text `max_entries`.
+    """
+
+    profile_name = image_profile_name or _image_profile_name()
+    rows = _current_album_medoid_rows(profile_name)
+    index_uri = _global_siglip_uri(profile_name)
+    store_dir = workspace_root() / index_uri
+    manifest_path = store_dir / GLOBAL_FTS_MANIFEST
+
+    if not rows:
+        return {
+            "status": "deferred",
+            "error_kind": "no_media_representatives",
+            "index_uri": index_uri,
+            "template_name": GLOBAL_SIGLIP_TEMPLATE,
+            "counts": {"media_representatives_planned": 0, "media_representatives_indexed": 0},
+        }
+
+    watermark = _siglip_watermark(rows, profile_name)
+    albums = len({row["summary_id"] for row in rows})
+
+    from even import semantic
+
+    if (
+        not force
+        and _siglip_manifest_current(manifest_path, watermark)
+        and semantic._lancedb_store_exists(store_dir, GLOBAL_SIGLIP_TABLE)
+    ):
+        return {
+            "status": "ok",
+            "index_backend": "routing",
+            "index_status": "current",
+            "index_uri": index_uri,
+            "image_profile": profile_name,
+            "template_name": GLOBAL_SIGLIP_TEMPLATE,
+            "source_high_watermark": watermark,
+            "counts": {
+                "media_representatives_planned": len(rows),
+                "media_representatives_indexed": 0,
+                "media_representatives_unchanged": len(rows),
+                "albums": albums,
+            },
+        }
+
+    build = _write_global_siglip_index(store_dir, rows, profile_name)
+    if build["status"] != "ok":
+        return {
+            "status": "failed",
+            "error_kind": build["error_kind"],
+            "index_uri": index_uri,
+            "template_name": GLOBAL_SIGLIP_TEMPLATE,
+            "redacted_detail": build.get("redacted_detail"),
+            "counts": {"media_representatives_planned": len(rows), "media_representatives_indexed": 0},
+        }
+
+    _write_siglip_manifest(manifest_path, profile_name, watermark, len(rows), albums)
+    return {
+        "status": "ok",
+        "index_backend": "routing",
+        "index_status": "rebuilt" if force else "refreshed",
+        "index_uri": index_uri,
+        "image_profile": profile_name,
+        "template_name": GLOBAL_SIGLIP_TEMPLATE,
+        "source_high_watermark": watermark,
+        "counts": {
+            "media_representatives_planned": len(rows),
+            "media_representatives_indexed": len(rows),
+            "media_representatives_unchanged": 0,
+            "albums": albums,
+        },
+    }
+
+
+def _write_global_siglip_index(
+    store_dir: Path, rows: list[dict[str, Any]], image_profile_name: str
+) -> dict[str, Any]:
+    from even import semantic
+
+    try:
+        import lancedb  # type: ignore[import-not-found]
+
+        data = [_siglip_row(row, image_profile_name) for row in rows]
+        store_dir.mkdir(parents=True, exist_ok=True)
+        with semantic._quiet_output():
+            db = lancedb.connect(str(store_dir))
+            db.create_table(GLOBAL_SIGLIP_TABLE, data=data, mode="overwrite")
+    except Exception as exc:  # noqa: BLE001 - backend boundary.
+        return {
+            "status": "failed",
+            "error_kind": "global_siglip_write_failed",
+            "redacted_detail": exc.__class__.__name__,
+        }
+    return {"status": "ok"}
+
+
+def _siglip_manifest_current(manifest_path: Path, watermark: str) -> bool:
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        manifest.get("summary_watermark") == watermark
+        and manifest.get("template_name") == GLOBAL_SIGLIP_TEMPLATE
+    )
+
+
+def _write_siglip_manifest(
+    manifest_path: Path,
+    image_profile_name: str,
+    watermark: str,
+    row_count: int,
+    album_count: int,
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "built_at": _iso(_utc_now()),
+                "image_profile": image_profile_name,
+                "template_name": GLOBAL_SIGLIP_TEMPLATE,
+                "summary_watermark": watermark,
+                "row_count": row_count,
+                "album_count": album_count,
+                "representation_policy_version": _representation_policy_version(),
+                "schema_version": CATALOG_SCHEMA_VERSION,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _search_global_representatives_siglip(
+    query_vector: list[float],
+    *,
+    image_profile_name: str,
+    limit: int,
+) -> dict[str, Any]:
+    """Visual representative route: rank albums by a SigLIP query vector (B3).
+
+    Returns fusable hits keyed by the owning album's `summary_id`+`scope_id`, so
+    they slot into the shared RRF and scope selection. Used only for cross-modal /
+    entity probes (C3); `search text` never calls this.
+    """
+
+    from even import semantic
+
+    rows = _current_album_medoid_rows(image_profile_name)
+    if not rows:
+        return {"status": "unavailable", "reasons": ["no_media_representatives"]}
+
+    index_uri = _global_siglip_uri(image_profile_name)
+    store_dir = workspace_root() / index_uri
+    manifest_path = store_dir / GLOBAL_FTS_MANIFEST
+    watermark = _siglip_watermark(rows, image_profile_name)
+    if not _siglip_manifest_current(manifest_path, watermark):
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_index_stale"],
+            "representative_index_uri": index_uri,
+        }
+    if not semantic._lancedb_store_exists(store_dir, GLOBAL_SIGLIP_TABLE):
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_index_missing"],
+            "representative_index_uri": index_uri,
+        }
+
+    try:
+        import lancedb  # type: ignore[import-not-found]
+
+        db = lancedb.connect(str(store_dir))
+        table = db.open_table(GLOBAL_SIGLIP_TABLE)
+        # Over-fetch medoids, then collapse to one hit per album by best distance.
+        results = table.search(query_vector).limit(max(1, limit) * 4).to_list()
+    except Exception:  # noqa: BLE001 - backend boundary.
+        return {
+            "status": "unavailable",
+            "reasons": ["global_representative_search_failed"],
+            "representative_index_uri": index_uri,
+        }
+
+    best: dict[str, dict[str, Any]] = {}
+    for row in results:
+        summary_id = str(row.get("summary_id") or "")
+        if not summary_id:
+            continue
+        distance = float(row.get("_distance", 0.0) or 0.0)
+        metadata = _json_object(row.get("metadata_json"))
+        current = best.get(summary_id)
+        if current is None or distance < current["distance"]:
+            best[summary_id] = {
+                "distance": distance,
+                "summary_id": summary_id,
+                "root_id": row.get("root_id"),
+                "scope_id": row.get("scope_id"),
+                "modality": row.get("modality"),
+                "title": row.get("title"),
+                "asset_id": row.get("asset_id"),
+                "root_label": metadata.get("root_label"),
+            }
+    ordered = sorted(best.values(), key=lambda hit: (hit["distance"], hit["summary_id"]))
+    hits = []
+    for rank, hit in enumerate(ordered[: max(1, limit)], start=1):
+        hits.append(
+            {
+                "rank": rank,
+                "score": 1.0 / (1.0 + hit["distance"]),
+                "summary_id": hit["summary_id"],
+                "root_id": hit["root_id"],
+                "scope_id": hit["scope_id"],
+                "kind": "album_summary",
+                "modality": hit["modality"],
+                "title": hit["title"],
+                "asset_id": hit["asset_id"],
+                "root_label": hit["root_label"],
+            }
+        )
+    return {"status": "ok", "representative_index_uri": index_uri, "hits": hits}
+
+
+def _mean_vector(vectors: list[list[float]]) -> list[float]:
+    import numpy as np  # type: ignore[import-not-found]
+
+    arr = np.asarray(vectors, dtype=float)
+    mean = arr.mean(axis=0)
+    norm = float(np.linalg.norm(mean)) or 1.0
+    return [float(value) for value in (mean / norm)]
+
+
+def _visual_route_from_images(
+    image_paths: tuple[str, ...], *, limit: int
+) -> dict[str, Any]:
+    """Embed example images with SigLIP and rank albums by the mean query vector.
+
+    The cross-modal probe entrypoint (B4): turns `search text --image` into a
+    visual route that joins routing. Needs the image-search extra at query time.
+    """
+
+    from even import image_index
+
+    if image_index.image_runtime_status()["status"] != "ok":
+        return {"status": "unavailable", "reasons": ["image_runtime_unavailable"]}
+    profile = _image_profile_name()
+    try:
+        embedder = image_index._load_embedder(profile)
+        vectors = [
+            embedder.embed_image(Path(path).read_bytes()) for path in image_paths
+        ]
+    except Exception:  # noqa: BLE001 - query embedding boundary.
+        return {"status": "unavailable", "reasons": ["image_query_embed_failed"]}
+    if not vectors:
+        return {"status": "unavailable", "reasons": ["no_query_images"]}
+    query_vector = _mean_vector(vectors)
+    route = _search_global_representatives_siglip(
+        query_vector, image_profile_name=profile, limit=limit
+    )
+    if route.get("status") == "ok":
+        route["query_vector"] = query_vector
+    return route
+
+
+def _scoped_image_hits(
+    query_vector: list[float] | None,
+    scope_ids: list[str],
+    *,
+    profile: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Image hits from the central image union, restricted to the routed scopes.
+
+    Proves the image side of a cross-modal probe (spec: per-root FTS for text, the
+    central image index for images), reusing the registered per-scope image stores.
+    """
+
+    if not query_vector or not scope_ids:
+        return []
+    from even import image_index
+
+    wanted = set(scope_ids)
+    stores = [
+        store
+        for store in image_index._current_image_stores(profile)
+        if store.get("scope_id") in wanted
+    ]
+    hits: list[dict[str, Any]] = []
+    for store in stores:
+        result = image_index._search_one_image_store(store, query_vector, max(1, limit))
+        if result["status"] == "ok":
+            hits.extend(result["hits"])
+    hits.sort(key=lambda hit: float(hit.get("distance", 0.0)))
+    return hits[: max(1, limit)]
+
+
 def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
     """Route text search through global representatives when they are current.
 
@@ -610,27 +1025,37 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
     semantic_route = _search_global_representatives_semantic(
         query, embedding_profile_name=_embedding_profile_name(), limit=top_k
     )
+    image_paths = tuple(getattr(options, "image_paths", ()) or ())
+    visual_route = (
+        _visual_route_from_images(image_paths, limit=top_k) if image_paths else None
+    )
     fts_ok = fts_route.get("status") == "ok"
     semantic_ok = semantic_route.get("status") == "ok"
+    visual_ok = bool(visual_route and visual_route.get("status") == "ok")
 
-    # Single-route FTS path (semantic store absent) keeps the original shape.
-    if fts_ok and not semantic_ok:
+    # Single-route FTS path (no vector route active) keeps the original shape.
+    if fts_ok and not semantic_ok and not visual_ok:
         return _routed_fts_only(query, options, fts_route, max_scopes, budget, config)
 
-    if not (fts_ok or semantic_ok):
+    if not (fts_ok or semantic_ok or visual_ok):
         fallback = fts.search_all_text_indexes(query, options)
         fallback["route_trace"] = _fallback_trace(
-            fts_route.get("reasons", []) or semantic_route.get("reasons", [])
+            fts_route.get("reasons", [])
+            or semantic_route.get("reasons", [])
+            or (visual_route.get("reasons", []) if visual_route else [])
         )
         return _finalize_route(fallback, budget)
 
-    # Fused multi-route path (semantic representative store is current).
+    # Fused multi-route path (semantic and/or SigLIP visual route is current).
     routes: list[dict[str, Any]] = []
     hit_lists: list[tuple[str, list[dict[str, Any]]]] = []
-    for mode, route in (
+    route_specs: list[tuple[str, dict[str, Any]]] = [
         ("global_representative_fts", fts_route),
         ("global_representative_semantic", semantic_route),
-    ):
+    ]
+    if visual_route is not None:
+        route_specs.append(("global_representative_siglip", visual_route))
+    for mode, route in route_specs:
         if route.get("status") == "ok":
             routes.append(
                 {
@@ -661,11 +1086,26 @@ def search_text_with_routing(query: str, options: Any) -> dict[str, Any]:
         )
         return _finalize_route(fallback, budget, fused)
 
-    scoped = fts.search_all_text_indexes(
-        query, options, scope_ids=[scope["scope_id"] for scope in selected_scopes]
-    )
-    weak_reasons = _weak_route_reasons(
-        representative_hits=fused, deep_hits=scoped.get("hits", []), config=config
+    scope_ids = [scope["scope_id"] for scope in selected_scopes]
+    scoped = fts.search_all_text_indexes(query, options, scope_ids=scope_ids)
+    if visual_ok:
+        # Cross-modal probe: prove the image side against the routed scopes and
+        # return those hits alongside the text hits. The visual route justified the
+        # scopes, so weak text alone does not trigger an all-scopes text fallback.
+        image_hits = _scoped_image_hits(
+            visual_route.get("query_vector"),
+            scope_ids,
+            profile=_image_profile_name(),
+            limit=int(getattr(options, "limit", 30) or 30),
+        )
+        scoped["hits"] = list(scoped.get("hits", [])) + image_hits
+        scoped.setdefault("counts", {})["image_hits_returned"] = len(image_hits)
+    weak_reasons = (
+        []
+        if visual_ok
+        else _weak_route_reasons(
+            representative_hits=fused, deep_hits=scoped.get("hits", []), config=config
+        )
     )
     if weak_reasons:
         fallback = fts.search_all_text_indexes(query, options)
@@ -1316,6 +1756,7 @@ def _upsert_media_summary(
                 "prompt_version": MEDIA_PROMPT_VERSION,
                 "model": model,
                 "ollama_url": url,
+                **_album_medoids(scope_id),
             },
         ),
         now=now,
@@ -2108,6 +2549,81 @@ def _dominant_media_kind(assets: list[dict[str, Any]]) -> str | None:
     if not counts:
         return None
     return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _image_profile_name() -> str:
+    return str(_routing_defaults().get("image_profile") or "siglip2_base")
+
+
+def _media_cluster_k_max() -> int:
+    env = os.environ.get("EVEN_MEDIA_CLUSTER_K_MAX")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return max(1, int(_routing_defaults().get("media_cluster_k_max", 16)))
+
+
+def _kmeans_medoids(
+    vectors: list[list[float]], ids: list[str], *, k_max: int
+) -> list[str]:
+    """Pick k medoid ids by k-means over L2-normalized vectors (M1).
+
+    medoid = the cluster member nearest its centroid. Deterministic (fixed seed).
+    Returns a sorted, de-duplicated id list; empty when there is nothing to cluster.
+    """
+
+    n = len(vectors)
+    if n == 0 or len(ids) != n:
+        return []
+    if n == 1:
+        return [ids[0]]
+    import numpy as np  # type: ignore[import-not-found]
+
+    data = np.asarray(vectors, dtype=float)
+    norms = np.linalg.norm(data, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    data = data / norms
+    k = max(1, min(int(math.ceil(math.sqrt(n / 2))), int(k_max), n))
+    if k == 1:
+        centroid = data.mean(axis=0)
+        return [ids[int(np.argmax(data @ centroid))]]
+
+    import warnings
+
+    from scipy.cluster.vq import kmeans2  # type: ignore[import-not-found]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        centroids, labels = kmeans2(data, k, seed=0, minit="++", missing="warn")
+    medoids: list[str] = []
+    for cluster in range(len(centroids)):
+        members = np.where(labels == cluster)[0]
+        if members.size == 0:
+            continue
+        sims = data[members] @ centroids[cluster]
+        medoids.append(ids[int(members[int(np.argmax(sims))])])
+    return sorted(dict.fromkeys(medoids))
+
+
+def _album_medoids(scope_id: str) -> dict[str, Any]:
+    """The album's visual fingerprint: medoid asset ids over the per-scope image
+    proof vectors (C2). Best-effort — empty when no image store exists yet, so the
+    summary still lands without a visual fingerprint."""
+
+    from even import image_index
+
+    profile = _image_profile_name()
+    vectors_by_asset = image_index.read_scope_image_vectors(scope_id, profile)
+    if not vectors_by_asset:
+        return {}
+    ids = sorted(vectors_by_asset)
+    vectors = [vectors_by_asset[asset_id]["vector"] for asset_id in ids]
+    medoids = _kmeans_medoids(vectors, ids, k_max=_media_cluster_k_max())
+    if not medoids:
+        return {}
+    return {"medoids": medoids, "medoid_profile": profile}
 
 
 def _media_summary_attrs(

@@ -29,6 +29,11 @@ defaults:
   # Model importance below this threshold teaches the dynamic prior list to demote
   # the path on later builds (feedback loop on importance_priors).
   importance_learn_threshold: 0.2
+  # Media SigLIP representative routing (D3). The visual fingerprint store is
+  # budgeted by its own k clamp, independent of max_entries; medoids reuse the
+  # per-scope proof vectors. Image recall stays on the central image index.
+  media_cluster_k_max: 16
+  image_profile: "siglip2_base"
   importance_priors:
     - node_modules
     - .git

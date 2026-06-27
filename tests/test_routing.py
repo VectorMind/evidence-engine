@@ -18,9 +18,12 @@ from even.routing import (
     _estimate_tokens,
     _fuse_representative_hits,
     _importance_prior,
+    _kmeans_medoids,
     _parse_importance,
+    _search_global_representatives_siglip,
     _select_budgeted_rows,
     _token_budget,
+    build_global_representative_siglip,
     index_routing,
     list_representatives,
 )
@@ -684,3 +687,234 @@ def _fake_summary(prompt: str, **_: object) -> str:
     if "beta" in prompt:
         return "beta invoice receipt root"
     return "generic document root"
+
+
+# --------------------------------------------------------------------------- #
+# D3 — media SigLIP representative routing (B1/B2/B3)
+# --------------------------------------------------------------------------- #
+
+
+def test_kmeans_medoids_selects_one_per_cluster() -> None:
+    pytest.importorskip("scipy")
+    vectors = [
+        [1.0, 0.0, 0.0],
+        [0.99, 0.1, 0.0],
+        [0.99, -0.1, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.99, 0.1],
+    ]
+    ids = ["a1", "a2", "a3", "b1", "b2"]
+
+    medoids = _kmeans_medoids(vectors, ids, k_max=16)
+
+    # n=5 -> k=ceil(sqrt(2.5))=2: one medoid drawn from each visual cluster.
+    assert len(medoids) == 2
+    assert any(medoid.startswith("a") for medoid in medoids)
+    assert any(medoid.startswith("b") for medoid in medoids)
+
+
+def _img_vec(relative_path: str) -> list[float]:
+    # Two visual clusters by filename prefix, with a small intra-cluster offset.
+    if relative_path.startswith("a"):
+        base = [1.0, 0.0, 0.0]
+    else:
+        base = [0.0, 1.0, 0.0]
+    jitter = (hash(relative_path) % 5) / 100.0
+    raw = [base[0], base[1] + jitter, base[2]]
+    norm = sum(value * value for value in raw) ** 0.5 or 1.0
+    return [value / norm for value in raw]
+
+
+def _image_asset_map(root_id: str) -> dict[str, str]:
+    with sqlite3.connect(catalog_path()) as conn:
+        rows = conn.execute(
+            """
+            SELECT si.relative_path, a.asset_id
+            FROM media_assets a
+            JOIN source_items si ON si.source_item_id = a.source_item_id
+            WHERE si.root_id = ? AND a.media_class = 'image'
+            """,
+            (root_id,),
+        ).fetchall()
+    return {relative_path: asset_id for relative_path, asset_id in rows}
+
+
+def _seed_image_store(
+    scope_id: str, asset_map: dict[str, str], profile: str = "siglip2_base"
+) -> None:
+    import lancedb
+
+    from even.image_index import TABLE_NAME
+    from even.paths import workspace_root
+
+    store_dir = workspace_root() / f"semantic/image/{profile}/{scope_id}.lancedb"
+    store_dir.mkdir(parents=True, exist_ok=True)
+    data = [
+        {
+            "asset_id": asset_id,
+            "scope_id": scope_id,
+            "image_profile": profile,
+            "vector": _img_vec(relative_path),
+            "relative_path": relative_path,
+            "root_label": "media",
+            "media_type": "image/png",
+        }
+        for relative_path, asset_id in asset_map.items()
+    ]
+    db = lancedb.connect(str(store_dir))
+    db.create_table(TABLE_NAME, data=data, mode="overwrite")
+
+    # Register the store so the central image union (search text --image) finds it.
+    from even import image_index
+
+    image_index._upsert_image_registry(
+        image_index._stable_id("img", scope_id, profile),
+        scope_id,
+        profile,
+        f"semantic/image/{profile}/{scope_id}.lancedb",
+        3,
+        len(data),
+        "test-watermark",
+        "current",
+        "2026-06-27T00:00:00Z",
+    )
+
+
+def _build_media_root_with_medoids(
+    tmp_path: Path,
+) -> tuple[str, str, str]:
+    data = _make_root(tmp_path, "album", "ignored text")
+    filenames = ["a1.png", "a2.png", "a3.png", "b1.png", "b2.png"]
+    for filename in filenames:
+        (data / filename).write_bytes(b"\x89PNG\r\n")
+    scan = scan_folder_to_catalog(
+        data, ScanOptions(max_files=None, max_bytes=None, max_depth=None)
+    )
+    for filename in filenames:
+        _seed_media_caption(scan["root_id"], filename, f"{filename} lamp scene")
+    # Seed the per-scope image proof store BEFORE routing so medoids are computed.
+    _seed_image_store(scan["scope_id"], _image_asset_map(scan["root_id"]))
+
+    result = index_routing(
+        data, RoutingIndexOptions(force=True), summary_generator=_fake_summary
+    )
+    assert result["status"] == "ok"
+    return str(data), scan["root_id"], scan["scope_id"]
+
+
+def test_index_routing_persists_album_medoids_in_attrs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    _, _root_id, _scope_id = _build_media_root_with_medoids(tmp_path)
+
+    with sqlite3.connect(catalog_path()) as conn:
+        attrs_json = conn.execute(
+            "SELECT attrs_json FROM summary_nodes WHERE kind = 'album_summary'"
+        ).fetchone()[0]
+    attrs = json.loads(attrs_json)
+
+    assert attrs["medoid_profile"] == "siglip2_base"
+    assert 1 <= len(attrs["medoids"]) <= 5
+    # Medoids are real asset ids drawn from this album.
+    asset_ids = set(_image_asset_map(_root_id).values())
+    assert set(attrs["medoids"]).issubset(asset_ids)
+
+
+def test_build_global_siglip_store_reuses_medoid_vectors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    _build_media_root_with_medoids(tmp_path)
+
+    built = build_global_representative_siglip(force=True)
+
+    assert built["status"] == "ok"
+    assert built["image_profile"] == "siglip2_base"
+    assert built["counts"]["albums"] == 1
+    assert built["counts"]["media_representatives_indexed"] >= 1
+    # Idempotent: an unforced rebuild over the same medoids is unchanged.
+    again = build_global_representative_siglip(force=False)
+    assert again["index_status"] == "current"
+    assert again["counts"]["media_representatives_unchanged"] >= 1
+
+
+def test_siglip_route_returns_fusable_album_hits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    _, _root_id, scope_id = _build_media_root_with_medoids(tmp_path)
+    assert build_global_representative_siglip(force=True)["status"] == "ok"
+
+    route = _search_global_representatives_siglip(
+        _img_vec("a1.png"), image_profile_name="siglip2_base", limit=5
+    )
+
+    assert route["status"] == "ok"
+    assert route["hits"], "expected at least one album hit"
+    top = route["hits"][0]
+    assert top["kind"] == "album_summary"
+    assert top["scope_id"] == scope_id
+
+    # B3: the visual route fuses with a text route at scope granularity.
+    fts_route = [{"summary_id": top["summary_id"], "scope_id": scope_id, "rank": 1}]
+    fused = _fuse_representative_hits(
+        [
+            ("global_representative_fts", fts_route),
+            ("global_representative_siglip", route["hits"]),
+        ]
+    )
+    assert fused[0]["scope_id"] == scope_id
+    assert "global_representative_siglip" in fused[0]["contributing_modes"]
+    assert "global_representative_fts" in fused[0]["contributing_modes"]
+
+
+class _FakeSiglipEmbedder:
+    def embed_image(self, _image_bytes: bytes) -> list[float]:
+        return [1.0, 0.0, 0.0]
+
+    def embed_text(self, _text: str) -> list[float]:
+        return [1.0, 0.0, 0.0]
+
+
+def test_search_text_image_engages_visual_route_and_returns_image_hits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("tantivy")
+    pytest.importorskip("lancedb")
+    pytest.importorskip("scipy")
+    monkeypatch.chdir(tmp_path)
+    from even import image_index
+
+    monkeypatch.setattr(image_index, "image_runtime_status", lambda: {"status": "ok"})
+    monkeypatch.setattr(image_index, "_load_embedder", lambda profile: _FakeSiglipEmbedder())
+
+    data_str, _root_id, scope_id = _build_media_root_with_medoids(tmp_path)
+    data = Path(data_str)
+    assert index_scope_to_fts(data, IndexOptions(force=True))["status"] == "ok"
+    assert build_global_representative_siglip(force=True)["status"] == "ok"
+    query_image = tmp_path / "query.png"
+    query_image.write_bytes(b"\x89PNG\r\n")
+
+    result = search_text_indexes(
+        "lamp", SearchOptions(limit=10, image_paths=(str(query_image),))
+    )
+
+    # The SigLIP visual route joins routing (C3: explicit cross-modal probe only).
+    modes = {route["mode"]: route["status"] for route in result["route_trace"]["routes"]}
+    assert modes["global_representative_siglip"] == "used"
+    # Image hits from the routed scope are returned alongside text hits.
+    assert result["counts"]["image_hits_returned"] >= 1
+    assert any(
+        str(hit.get("ref") or "").startswith("corpus_cache.media_assets.")
+        for hit in result["hits"]
+    )
