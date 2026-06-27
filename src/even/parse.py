@@ -10,13 +10,12 @@ import importlib
 import io
 import json
 from pathlib import Path
-import sqlite3
 from typing import Any, Callable
 
 from even.blobs import store_artifact_blob
 from even.config import load_parser_config
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import catalog_path
 
 
 FAILURE_RESULT_LIMIT = 100
@@ -563,7 +562,7 @@ def _write_parsed_document(
 ) -> int:
     artifact_id = _stable_id("artifact", doc_id, "docling_json")
     object_id = _stable_id("obj", doc_id, "paragraph", "0")
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         blob = store_artifact_blob(conn, payload=payload, now=now)
         conn.execute(
@@ -661,7 +660,7 @@ def _mark_document_failed(
     title: str,
     now: str,
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute(
             """
             INSERT INTO "documents"
@@ -716,24 +715,24 @@ def _source_items_for_root(root_id: str, limit: int | None) -> list[dict[str, An
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [
         {
-            "source_item_id": row[0],
-            "relative_path": row[1],
-            "source_uri": row[2],
-            "media_type": row[3],
-            "size_bytes": row[4],
-            "source_mtime": row[5],
-            "source_sha256": row[6],
+            "source_item_id": row["source_item_id"],
+            "relative_path": row["relative_path"],
+            "source_uri": row["source_uri"],
+            "media_type": row["media_type"],
+            "size_bytes": row["size_bytes"],
+            "source_mtime": row["source_mtime"],
+            "source_sha256": row["source_sha256"],
         }
         for row in rows
     ]
 
 
 def _document_state(doc_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_sha256, parser_profile, parse_status
@@ -745,9 +744,9 @@ def _document_state(doc_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     return {
-        "source_sha256": row[0],
-        "parser_profile": row[1],
-        "parse_status": row[2],
+        "source_sha256": row["source_sha256"],
+        "parser_profile": row["parser_profile"],
+        "parse_status": row["parse_status"],
     }
 
 

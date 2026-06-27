@@ -25,9 +25,9 @@ from typing import Any
 
 from even.blobs import store_artifact_blob
 from even.catalog import ensure_catalog
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.ollama import DEFAULT_MODEL, DEFAULT_URL, generate_from_image, ollama_available
-from even.paths import catalog_path
 
 IMAGE_MEDIA_TYPES = {
     "image/jpeg",
@@ -137,7 +137,7 @@ def inspect_folder_to_catalog(path: Path, options: InspectOptions) -> dict[str, 
 
     image_module = _load_pillow()
 
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         for item in items:
             media_class = item["media_class"]
@@ -266,7 +266,7 @@ def dedupe_folder_to_catalog(path: Path, options: DedupeOptions) -> dict[str, An
     failures: list[dict[str, Any]] = []
     hashed: list[tuple[str, Any]] = []
 
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         for item in items:
             try:
@@ -413,7 +413,7 @@ def describe_folder_to_catalog(path: Path, options: DescribeOptions) -> dict[str
     elapsed_samples: list[float] = []
     image_module = _load_pillow()
 
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         for item in items:
             try:
@@ -1035,17 +1035,17 @@ def _media_items_for_root(root_id: str, limit: int | None) -> list[dict[str, Any
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     items = []
     for row in rows:
-        media_type = row[3] or ""
+        media_type = row["media_type"] or ""
         items.append(
             {
-                "source_item_id": row[0],
-                "relative_path": row[1],
-                "source_uri": row[2],
-                "media_type": row[3],
+                "source_item_id": row["source_item_id"],
+                "relative_path": row["relative_path"],
+                "source_uri": row["source_uri"],
+                "media_type": row["media_type"],
                 "media_class": _media_class(media_type),
             }
         )

@@ -17,13 +17,13 @@ import importlib.util
 import io
 import os
 from pathlib import Path
-import sqlite3
 from typing import Any
 
 from even.catalog import ensure_catalog
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.media import _ensure_media_asset
-from even.paths import catalog_path, model_cache_root, workspace_root
+from even.paths import model_cache_root, workspace_root
 from even.references import evidence_ref
 from even.semantic import _quiet_output
 
@@ -159,7 +159,7 @@ def index_scope_to_image(path: Path, options: ImageIndexOptions) -> dict[str, An
         }
 
     # Register the embedded assets so refs resolve even before media inspect.
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         for asset in assets:
             _ensure_media_asset(conn, asset["asset_id"], asset, now)
@@ -399,17 +399,18 @@ def _image_assets_for_root(
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     assets = []
     for row in rows:
+        source_item_id = row["source_item_id"]
         assets.append(
             {
-                "source_item_id": row[0],
-                "asset_id": _stable_id("asset", row[0]),
-                "relative_path": row[1],
-                "source_uri": row[2],
-                "media_type": row[3],
+                "source_item_id": source_item_id,
+                "asset_id": _stable_id("asset", source_item_id),
+                "relative_path": row["relative_path"],
+                "source_uri": row["source_uri"],
+                "media_type": row["media_type"],
                 "media_class": "image",
                 "scope_id": scope_id,
                 "root_label": root_label,
@@ -419,7 +420,7 @@ def _image_assets_for_root(
 
 
 def _image_registry_state(image_store_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_high_watermark, status, vector_dimension
@@ -429,7 +430,11 @@ def _image_registry_state(image_store_id: str) -> dict[str, Any] | None:
         ).fetchone()
     if not row:
         return None
-    return {"source_high_watermark": row[0], "status": row[1], "vector_dimension": row[2]}
+    return {
+        "source_high_watermark": row["source_high_watermark"],
+        "status": row["status"],
+        "vector_dimension": row["vector_dimension"],
+    }
 
 
 def _current_image_stores(profile_name: str | None) -> list[dict[str, Any]]:
@@ -443,18 +448,18 @@ def _current_image_stores(profile_name: str | None) -> list[dict[str, Any]]:
         sql += " AND image_profile = ?"
         params.append(profile_name)
     sql += " ORDER BY updated_at DESC, image_store_id"
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [
         {
-            "image_store_id": row[0],
-            "scope_id": row[1],
-            "image_profile": row[2],
-            "store_uri": row[3],
-            "table_name": row[4],
-            "vector_dimension": row[5],
-            "indexed_asset_count": row[6],
-            "source_high_watermark": row[7],
+            "image_store_id": row["image_store_id"],
+            "scope_id": row["scope_id"],
+            "image_profile": row["image_profile"],
+            "store_uri": row["store_uri"],
+            "table_name": row["table_name"],
+            "vector_dimension": row["vector_dimension"],
+            "indexed_asset_count": row["indexed_asset_count"],
+            "source_high_watermark": row["source_high_watermark"],
         }
         for row in rows
     ]
@@ -471,7 +476,7 @@ def _upsert_image_registry(
     status: str,
     updated_at: str,
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute(
             """
             INSERT INTO "image_stores"

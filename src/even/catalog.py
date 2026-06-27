@@ -8,6 +8,7 @@ import sqlite3
 from typing import Any
 
 from even.contracts import read_contract_text
+from even.db import catalog_connection
 from even.paths import catalog_path
 
 
@@ -229,7 +230,7 @@ def create_catalog() -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     tables = load_catalog_tables()
 
-    with sqlite3.connect(path) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         before_version = _user_version(conn)
         if before_version > CATALOG_USER_VERSION:
@@ -285,9 +286,9 @@ def catalog_status_report() -> dict[str, Any]:
         }
 
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        with catalog_connection(read_only=True) as conn:
             current_tables = {
-                row[0]
+                row["name"]
                 for row in conn.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 ).fetchall()
