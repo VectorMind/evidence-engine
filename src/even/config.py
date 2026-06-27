@@ -109,6 +109,7 @@ def _load_routing_config_fallback() -> dict[str, Any]:
                 "dist",
                 "build",
                 ".cache",
+                ".even",
                 "program files",
                 "appdata",
             ],

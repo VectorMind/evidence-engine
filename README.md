@@ -249,7 +249,7 @@ workspace state may be wiped and rebuilt while the public contract settles.
 Implemented today:
 
 - package and CLI entrypoint named `even`;
-- workspace-local storage under `.cache/even/`;
+- workspace-local storage under `.cache/`;
 - SQLite catalog create/status/wipe;
 - media-aware source inventory through `sources scan` (documents, images, video, audio, 3D);
 - Docling parsing through `docs parse`;
@@ -267,6 +267,27 @@ Implemented today:
 The brand is **Evidence Engine**. The package name is
 `even`; the console script is `even` (ev-idence en-gine).
 
+`even` is an installable tool, not a file that each consuming workspace vendors.
+When the command is available on `PATH`, it can be launched from any folder. The
+Python code runs from the environment that installed it, while evidence catalogs,
+indexes, results, and reports are resolved from `EVEN_CACHE` or the process
+current working directory.
+
+For development in this source checkout, you can use the repo as `EVEN_HOME`.
+Keep the virtual environment and shared model downloads at the repo root, then
+add `bin/` to `PATH`:
+
+```powershell
+$env:EVEN_HOME = "<this-checkout>"
+$env:PATH = "$env:EVEN_HOME\bin;$env:PATH"
+even health
+```
+
+For reuse from another workspace, install the package into a user/tool
+environment or another virtual environment, make sure its `even` executable is
+on `PATH`, then `cd` to the workspace that should own the generated state before
+running commands.
+
 Optional dependency groups are defined in [pyproject.toml](./pyproject.toml).
 Plain `uv sync` installs the `laptop` stack by default.
 
@@ -283,20 +304,101 @@ Plain `uv sync` installs the `laptop` stack by default.
 | `station` | `laptop` plus heavier models (SentenceTransformers). |
 | `all` | Alias of `station`. |
 
-## Workspace Storage
+## Interaction Model
 
-Generated data is written under the caller workspace:
+The key split is **Even home** versus **evidence cache**:
 
 ```text
-.cache/even/
+EVEN_HOME                       default: ~/.even
+  .venv/                        one Even install + heavy Python deps
+  bin/                          optional wrapper scripts
+  models/                       shared model downloads
+        |
+        | even command reads/writes evidence cache
+        v
+EVEN_CACHE                      default: <cwd>/.cache
+  .cache/
+    catalog/catalog.sqlite
+    blobs/
+    fts/
+    semantic/
+    results/
+    reports/
+
+source folders passed to commands
+  read original files
+  never receive generated cache files
+```
+
+`EVEN_HOME` selects the shared runtime home. Models always live under
+`EVEN_HOME/models`. `EVEN_CACHE` selects the current catalog/index/result cache.
+A `.env` file in the current directory can set `EVEN_HOME` or `EVEN_CACHE`; that
+value overrides the process environment for the command. When `EVEN_CACHE` is
+unset, the current working directory is the cache selector:
+
+```powershell
+cd C:\work\case-a
+even sources scan C:\docs\case-a
+# writes C:\work\case-a\.cache\...
+
+cd C:\work\case-b
+even sources scan C:\docs\case-b
+# writes C:\work\case-b\.cache\...
+```
+
+If you want one shared evidence universe, set `EVEN_CACHE` explicitly, for
+example to `~/.even/cache`. Then every command using that environment writes to
+the same catalog and root-scoped indexes.
+
+## Environment Variables
+
+Even reads only these path environment variables:
+
+| Variable | Default | Purpose | `.env` override |
+| --- | --- | --- | --- |
+| `EVEN_HOME` | `~/.even` | Shared Even home for the installed runtime, wrapper scripts, and model downloads. | yes |
+| `EVEN_CACHE` | `<cwd>/.cache` | Evidence cache for the current catalog, blobs, indexes, results, reports, and calibration. | yes |
+
+Resolution order is:
+
+1. Current directory `.env`.
+2. Process environment.
+3. Built-in default.
+
+Model paths are not separately configurable. FastEmbed downloads go to
+`<EVEN_HOME>/models/fastembed/`; SigLIP downloads go to
+`<EVEN_HOME>/models/siglip/`.
+
+Example `.env`:
+
+```env
+EVEN_HOME=C:\tools\even
+EVEN_CACHE=%USERPROFILE%\.even\cache
+```
+
+## Workspace Storage
+
+Generated evidence data is written under `EVEN_CACHE`:
+
+```text
+<EVEN_CACHE>/
   catalog/catalog.sqlite
   blobs/
   fts/
   semantic/
-  models/fastembed/
   results/
   reports/
 ```
+
+When `EVEN_CACHE` is unset, it defaults to `.cache/` under the caller's
+current directory. The engine does not write generated files into the scanned
+source folder. The scanner also excludes `.cache/` by default, so a local cache
+is not inventoried as source input when scanning the workspace itself.
+
+Runtime model files controlled by this code are stored under `EVEN_HOME/models`,
+including FastEmbed and SigLIP model downloads. Third-party runtimes may still
+keep their own external caches, but Evidence Engine's catalog, result, report,
+FTS, semantic, and blob storage live under `EVEN_CACHE`.
 
 This avoids one shared home-cache result/report tree. Real generated data is
 private even when the code and schema files are public.
@@ -396,7 +498,7 @@ The public contract is open local data plus search access:
 | Surface | Purpose |
 | --- | --- |
 | [catalog.yaml](./catalog.yaml) | Current-state SQLite schema. |
-| `.cache/even/catalog/catalog.sqlite` | Readable local catalog database. |
+| `.cache/catalog/catalog.sqlite` | Readable local catalog database. |
 | [store_templates.yaml](./store_templates.yaml) | Generated text/semantic row templates. |
 | [config/exposures.yaml](./config/exposures.yaml) | Workspace storage layout. |
 | [config/parser.yaml](./config/parser.yaml) | Parser, traversal, indexing, and safeguard defaults. |

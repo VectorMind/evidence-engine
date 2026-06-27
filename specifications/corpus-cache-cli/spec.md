@@ -26,10 +26,10 @@ meaning, curated knowledge, and user-specific workflows.
 
 ## Workspace Storage Contract
 
-Generated state lives under the caller workspace:
+Generated evidence state lives under `EVEN_CACHE`:
 
 ```text
-.cache/even/
+<EVEN_CACHE>/
   catalog/
     catalog.sqlite
   blobs/
@@ -39,18 +39,19 @@ Generated state lives under the caller workspace:
     <fts_profile>/<scope_id>/
   semantic/
     <embedding_profile>/<scope_id>.lancedb/
-  models/
-    fastembed/
   results/
     <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
   reports/
     <yyyy>.<mm>/<dd>/<hhmmss>-<command>/
 ```
 
-The `.cache/even/` root is resolved relative to the caller's current
-directory, so the same convention serves the user home (`~/.cache/even/`) and a
-project-local cache (`<folder>/.cache/even/`). The scanner excludes `.cache/`
-so it never inventories its own generated output.
+`EVEN_CACHE` is read from the current directory `.env` first, then the process
+environment. When unset, it defaults to `.cache/` relative to the caller's
+current directory. The scanner excludes `.cache/` so it never inventories its own
+generated output.
+
+Shared model downloads are not evidence state. They live under
+`EVEN_HOME/models`; `EVEN_HOME` defaults to `~/.even`.
 
 The old beta home-cache layout is not a compatibility target. During this
 phase, catalog and index wipe/rebuild is acceptable.

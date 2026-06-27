@@ -26,7 +26,7 @@ from even.chunks import (
 )
 from even.config import embedding_profile, load_parser_config
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import catalog_path, workspace_root
+from even.paths import catalog_path, model_cache_root, workspace_root
 
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -378,7 +378,7 @@ def _embed_query(profile: dict[str, Any], text: str) -> list[float]:
 def _fastembed_model(profile: dict[str, Any]) -> Any:
     from fastembed import TextEmbedding  # type: ignore[import-not-found]
 
-    cache_dir = workspace_root() / "models" / "fastembed"
+    cache_dir = model_cache_root() / "fastembed"
     cache_dir.mkdir(parents=True, exist_ok=True)
     with _quiet_output():
         return TextEmbedding(

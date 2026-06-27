@@ -23,7 +23,7 @@ from typing import Any
 from even.catalog import ensure_catalog
 from even.inventory import ScanOptions, scan_folder_to_catalog
 from even.media import _ensure_media_asset
-from even.paths import catalog_path, workspace_root
+from even.paths import catalog_path, model_cache_root, workspace_root
 from even.references import evidence_ref
 from even.semantic import _quiet_output
 
@@ -296,7 +296,7 @@ def _load_embedder(profile_name: str) -> _SiglipEmbedder:
     from transformers import AutoModel, AutoProcessor  # type: ignore[import-not-found]
 
     model_id = _IMAGE_MODELS[profile_name]
-    cache_dir = str(workspace_root() / "models" / "siglip")
+    cache_dir = str(model_cache_root() / "siglip")
     with _quiet_output():
         model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir)
         model.eval()

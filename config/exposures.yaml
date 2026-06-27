@@ -6,13 +6,21 @@ description: >
   These settings are configuration, not SQLite catalog tables.
 
 workspace_storage_root:
-  path_template: ".cache/even"
-  configurable: false
+  path_template: "${EVEN_CACHE:-<cwd>/.cache}"
+  configurable: true
   description: >
-    The generated storage root is the .cache/even folder relative to the
-    caller's current directory. The same convention resolves to the user home
-    cache (~/.cache/even) or a project-local cache (<folder>/.cache/even)
-    depending on where even is invoked.
+    The generated evidence cache root is EVEN_CACHE when set, with a current
+    directory .env value taking precedence over the process environment. When
+    unset, it is the .cache folder relative to the caller's current
+    directory.
+
+shared_home_root:
+  path_template: "${EVEN_HOME:-~/.even}"
+  configurable: true
+  description: >
+    The shared Even home for the installed runtime, wrapper scripts, and default
+    model cache. It is not the evidence catalog/index cache unless a caller
+    explicitly points EVEN_CACHE there.
 
 exposure_kinds:
   - name: sqlite
@@ -55,8 +63,12 @@ workspace_root_layout:
     description: Future derived SigLIP map over summary medoid asset refs. Not catalog-registered.
   - name: embedding_models
     exposure: file
-    path_template: "models/fastembed/"
-    description: Local FastEmbed model cache used by semantic indexing commands.
+    path_template: "${EVEN_HOME:-~/.even}/models/fastembed/"
+    description: Shared FastEmbed model cache used by semantic indexing commands.
+  - name: image_models
+    exposure: file
+    path_template: "${EVEN_HOME:-~/.even}/models/siglip/"
+    description: Shared SigLIP model cache used by image indexing commands.
   - name: results
     exposure: file
     path_template: "results/{yyyy}.{mm}/{dd}/{hhmmss}-{command}/"

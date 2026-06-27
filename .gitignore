@@ -157,6 +157,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Even local runtime assets when this checkout is used as EVEN_HOME.
+models/
+
 # Spyder project settings
 .spyderproject
 .spyproject

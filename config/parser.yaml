@@ -37,7 +37,7 @@ folder_safeguards:
     "**/*.mp3", "**/*.wav", "**/*.flac", "**/*.m4a",
     "**/*.obj", "**/*.stl", "**/*.gltf", "**/*.glb", "**/*.ply",
   ]
-  exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**", "**/.cache/**"]
+  exclude_globs_default: ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**", "**/.cache/**", "**/.even/**"]
 
 parser_runtime:
   document_timeout_seconds_default: 300

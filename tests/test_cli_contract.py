@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from even.cli import build_parser, main
-from even.paths import catalog_path, workspace_root
+from even.paths import catalog_path, even_home, model_cache_root, workspace_root
+
+
+@pytest.fixture(autouse=True)
+def clear_even_path_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("EVEN_CACHE", "EVEN_HOME"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_parser_uses_new_sources_scan_surface() -> None:
@@ -38,8 +44,45 @@ def test_health_outputs_json_for_workspace(monkeypatch: pytest.MonkeyPatch, tmp_
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"] == "health"
-    assert payload["workspace_root"] == str(tmp_path / ".cache" / "even")
+    assert payload["workspace_root"] == str(tmp_path / ".cache")
     assert "cache_root" not in payload
+
+
+def test_even_cache_env_selects_workspace_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache = tmp_path / "central-cache"
+    monkeypatch.setenv("EVEN_CACHE", str(cache))
+    monkeypatch.chdir(tmp_path)
+
+    assert workspace_root() == cache
+    assert catalog_path() == cache / "catalog" / "catalog.sqlite"
+
+
+def test_dotenv_even_cache_overrides_process_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env_cache = tmp_path / "env-cache"
+    dotenv_cache = tmp_path / "dotenv-cache"
+    monkeypatch.setenv("EVEN_CACHE", str(env_cache))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        f"EVEN_CACHE={dotenv_cache}\n",
+        encoding="utf-8",
+    )
+
+    assert workspace_root() == dotenv_cache
+
+
+def test_even_home_defines_model_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "even-home"
+    monkeypatch.setenv("EVEN_HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    assert even_home() == home
+    assert model_cache_root() == home / "models"
 
 
 def test_sources_scan_writes_workspace_results(
