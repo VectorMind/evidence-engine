@@ -42,6 +42,11 @@ def test_health_outputs_json_for_workspace(monkeypatch: pytest.MonkeyPatch, tmp_
     assert "cache_root" not in payload
 
 
+def test_pytest_default_paths_are_test_local(tmp_path: Path) -> None:
+    assert workspace_root() == tmp_path / ".cache"
+    assert even_home() == tmp_path / ".even-home"
+
+
 def test_even_cache_env_selects_workspace_cache(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

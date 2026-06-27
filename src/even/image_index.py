@@ -206,7 +206,48 @@ def search_image_stores(
             "message": "No current image stores were registered.",
         }
 
-    profile_name = stores[0]["image_profile"]
+    skipped: list[dict[str, Any]] = []
+    supported_stores = []
+    for store in stores:
+        if store["image_profile"] not in _IMAGE_MODELS:
+            skipped.append(
+                _skipped_image_store(
+                    store,
+                    "unknown_image_profile",
+                    image_profile=store.get("image_profile"),
+                )
+            )
+        else:
+            supported_stores.append(store)
+    if not supported_stores:
+        return {
+            "status": "ok",
+            "search_backend": "image",
+            "counts": {
+                "indexes_searched": 0,
+                "indexes_skipped": len(skipped),
+                "hits_returned": 0,
+            },
+            "hits": [],
+            "skipped": skipped[:10],
+            "message": "No supported current image stores were registered.",
+        }
+
+    profile_name = supported_stores[0]["image_profile"]
+    profile_stores = []
+    for store in supported_stores:
+        if store["image_profile"] != profile_name:
+            skipped.append(
+                _skipped_image_store(
+                    store,
+                    "image_profile_incompatible",
+                    expected_image_profile=profile_name,
+                    image_profile=store.get("image_profile"),
+                )
+            )
+        else:
+            profile_stores.append(store)
+
     try:
         embedder = _load_embedder(profile_name)
         if options.text is not None:
@@ -223,9 +264,28 @@ def search_image_stores(
         }
 
     limit = max(1, int(options.limit or 30))
+    query_dimension = len(query_vector)
+    searchable_stores = []
+    for store in profile_stores:
+        store_dimension = _store_vector_dimension(store)
+        if store_dimension != query_dimension:
+            skipped.append(
+                _skipped_image_store(
+                    store,
+                    "image_vector_dimension_incompatible",
+                    vector_dimension=store_dimension,
+                    query_dimension=query_dimension,
+                )
+            )
+            continue
+        if not _lancedb_store_exists(workspace_root() / store["store_uri"]):
+            skipped.append(_skipped_image_store(store, "image_store_unavailable"))
+            continue
+        searchable_stores.append(store)
+
     hits: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    for store in stores:
+    for store in searchable_stores:
         result = _search_one_image_store(store, query_vector, limit)
         if result["status"] == "ok":
             hits.extend(result["hits"])
@@ -238,12 +298,14 @@ def search_image_stores(
         "search_backend": "image",
         "query_kind": query_kind,
         "counts": {
-            "indexes_searched": len(stores),
+            "indexes_searched": len(searchable_stores),
+            "indexes_skipped": len(skipped),
             "index_failures": len(failures),
             "hits_returned": len(hits),
         },
         "hits": hits,
         "failures": failures[:10],
+        "skipped": skipped[:10],
     }
 
 
@@ -359,6 +421,24 @@ def _search_one_image_store(
             "redacted_detail": exc.__class__.__name__,
         }
     return {"status": "ok", "hits": hits}
+
+
+def _store_vector_dimension(store: dict[str, Any]) -> int:
+    try:
+        return int(store.get("vector_dimension") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _skipped_image_store(
+    store: dict[str, Any], error_kind: str, **details: Any
+) -> dict[str, Any]:
+    return {
+        "status": "skipped",
+        "error_kind": error_kind,
+        "image_store_id": store.get("image_store_id"),
+        **details,
+    }
 
 
 def _hit_from_image_row(store: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:

@@ -431,7 +431,7 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `search` | `text <query>` | `query` | Search current text indexes. `--budget low\|mid\|high` tunes fanout; `--image PATH` (repeatable) adds a SigLIP visual route and returns image hits from the routed scopes (cross-modal probe). |
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
-| `search` | `image <image-path>` | `image-path` | Visual search: image→image (or `--text` for text→image) over image embeddings. |
+| `search` | `image <image-path>` | `image-path` or `--text <query>` | Visual search: image→image (or `--text` for text→image) over image embeddings. |
 
 Minimal examples:
 
@@ -448,6 +448,9 @@ even index routing "C:\docs\example-folder"
 even search text "contract renewal clause"
 even search semantic "contract renewal clause"
 even search hybrid "contract renewal clause"
+even index scope "C:\docs\example-folder" --image
+even search image "C:\docs\example-folder\photo.jpg"
+even search image --text "people outdoors"
 ```
 
 `sources scan` accepts optional safeguard overrides when a caller needs to
