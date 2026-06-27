@@ -26,8 +26,9 @@ from urllib.request import Request, urlopen
 from even.catalog import CATALOG_SCHEMA_VERSION, ensure_catalog
 from even.chunks import chunks_for_root, high_watermark, stable_id
 from even.config import embedding_profile, load_parser_config, load_routing_config
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import calibration_path, catalog_path, workspace_root
+from even.paths import calibration_path, workspace_root
 from even.references import evidence_ref
 
 
@@ -588,7 +589,7 @@ def _current_album_medoid_rows(image_profile_name: str) -> list[dict[str, Any]]:
 
     from even import image_index
 
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(
             """
             SELECT s.summary_id, s.root_id, s.scope_id, s.title, s.modality,
@@ -603,12 +604,12 @@ def _current_album_medoid_rows(image_profile_name: str) -> list[dict[str, Any]]:
     vectors_cache: dict[str, dict[str, dict[str, Any]]] = {}
     medoid_rows: list[dict[str, Any]] = []
     for row in rows:
-        attrs = _json_object(row[6])
+        attrs = _json_object(row["attrs_json"])
         medoids = attrs.get("medoids") or []
         profile = str(attrs.get("medoid_profile") or image_profile_name)
         if not medoids or profile != image_profile_name:
             continue
-        scope_id = str(row[2])
+        scope_id = str(row["scope_id"])
         if scope_id not in vectors_cache:
             vectors_cache[scope_id] = (
                 image_index.read_scope_image_vectors(scope_id, image_profile_name) or {}
@@ -620,17 +621,17 @@ def _current_album_medoid_rows(image_profile_name: str) -> list[dict[str, Any]]:
                 continue
             medoid_rows.append(
                 {
-                    "summary_id": row[0],
-                    "root_id": row[1],
+                    "summary_id": row["summary_id"],
+                    "root_id": row["root_id"],
                     "scope_id": scope_id,
                     "asset_id": str(asset_id),
                     "vector": asset["vector"],
-                    "modality": str(row[4] or "image"),
-                    "title": str(row[3] or row[8] or row[1]),
-                    "importance": row[5],
+                    "modality": str(row["modality"] or "image"),
+                    "title": str(row["title"] or row["root_label"] or row["root_id"]),
+                    "importance": row["importance"],
                     "relative_path": asset.get("relative_path") or "",
-                    "root_label": row[8],
-                    "source_high_watermark": row[7] or "",
+                    "root_label": row["root_label"],
+                    "source_high_watermark": row["source_high_watermark"] or "",
                 }
             )
     return medoid_rows
@@ -1238,26 +1239,26 @@ def list_representatives(path: Path | None = None) -> dict[str, Any]:
         params.append(f"%{path}%")
     sql += " ORDER BY sr.root_label, s.root_id, s.summary_level, s.kind, s.summary_id"
     try:
-        with sqlite3.connect(catalog_path()) as conn:
+        with catalog_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
     except sqlite3.Error:
         return {"status": "deferred", "error_kind": "catalog_unavailable", "roots": []}
 
     roots: dict[str, dict[str, Any]] = {}
     for row in rows:
-        root_id = row[0]
+        root_id = row["root_id"]
         root = roots.setdefault(
             root_id,
-            {"root_id": root_id, "root_label": row[1], "nodes": []},
+            {"root_id": root_id, "root_label": row["root_label"], "nodes": []},
         )
         root["nodes"].append(
             {
-                "summary_id": row[2],
-                "kind": row[3],
-                "modality": row[4],
-                "title": row[5] or row[1] or root_id,
-                "summary_level": int(row[6] or 0),
-                "importance": row[7],
+                "summary_id": row["summary_id"],
+                "kind": row["kind"],
+                "modality": row["modality"],
+                "title": row["title"] or row["root_label"] or root_id,
+                "summary_level": int(row["summary_level"] or 0),
+                "importance": row["importance"],
             }
         )
     root_list = list(roots.values())
@@ -2073,7 +2074,7 @@ def _upsert_summary_row(
     summary_level: int = 0,
     importance: float | None = None,
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute(
             """
@@ -2150,7 +2151,7 @@ def _upsert_summary_row(
 
 
 def _summary_state(summary_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_high_watermark, summary_status, created_at
@@ -2162,14 +2163,14 @@ def _summary_state(summary_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     return {
-        "source_high_watermark": row[0],
-        "summary_status": row[1],
-        "created_at": row[2],
+        "source_high_watermark": row["source_high_watermark"],
+        "summary_status": row["summary_status"],
+        "created_at": row["created_at"],
     }
 
 
 def _current_summary_rows() -> list[dict[str, Any]]:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(
             """
             SELECT s.summary_id, s.root_id, s.scope_id, s.kind, s.modality,
@@ -2185,34 +2186,34 @@ def _current_summary_rows() -> list[dict[str, Any]]:
         ).fetchall()
     result = []
     for row in rows:
-        summary_text = row[6] or ""
-        routing_meta = _json_object(row[7])
+        summary_text = row["summary_text"] or ""
+        routing_meta = _json_object(row["routing_meta"])
         routing_payload = _routing_payload(summary_text, routing_meta)
         if not routing_payload.strip():
             continue
         metadata = {
-            "root_label": row[11],
-            "source_high_watermark": row[9],
-            "updated_at": row[10],
-            "media_kind": row[12],
-            "container_kind": row[13],
+            "root_label": row["root_label"],
+            "source_high_watermark": row["source_high_watermark"],
+            "updated_at": row["updated_at"],
+            "media_kind": row["media_kind"],
+            "container_kind": row["container_kind"],
         }
         result.append(
             {
-                "summary_id": row[0],
-                "root_id": row[1],
-                "scope_id": row[2],
-                "kind": row[3],
-                "modality": row[4],
-                "title": row[5] or row[11] or row[1],
+                "summary_id": row["summary_id"],
+                "root_id": row["root_id"],
+                "scope_id": row["scope_id"],
+                "kind": row["kind"],
+                "modality": row["modality"],
+                "title": row["title"] or row["root_label"] or row["root_id"],
                 "summary_text": summary_text,
                 "routing_meta": routing_meta,
                 "routing_payload": routing_payload,
-                "source_refs_json": row[8] or "[]",
-                "source_high_watermark": row[9] or "",
-                "source_count": int(row[14] or 0),
-                "coverage_estimate": float(row[15] or 0.0),
-                "importance": row[16],
+                "source_refs_json": row["source_refs_json"] or "[]",
+                "source_high_watermark": row["source_high_watermark"] or "",
+                "source_count": int(row["source_count"] or 0),
+                "coverage_estimate": float(row["coverage_estimate"] or 0.0),
+                "importance": row["importance"],
                 "metadata_json": json.dumps(metadata, sort_keys=True),
             }
         )
@@ -2312,7 +2313,7 @@ def _select_budgeted_rows(
 
 
 def _root_source_item_id(root_id: str) -> str | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_item_id
@@ -2323,7 +2324,7 @@ def _root_source_item_id(root_id: str) -> str | None:
             """,
             (root_id,),
         ).fetchone()
-    return row[0] if row else None
+    return row["source_item_id"] if row else None
 
 
 def _media_assets_for_root(root_id: str) -> list[dict[str, Any]]:
@@ -2368,8 +2369,7 @@ def _media_assets_for_root(root_id: str) -> list[dict[str, Any]]:
           AND si.inventory_status IN ('current', 'unchanged', 'changed')
         ORDER BY si.relative_path, a.asset_id
     """
-    with sqlite3.connect(catalog_path()) as conn:
-        conn.row_factory = sqlite3.Row
+    with catalog_connection() as conn:
         rows = conn.execute(sql, (root_id,)).fetchall()
     return [dict(row) for row in rows]
 
@@ -2821,7 +2821,7 @@ def _media_cluster_importance(assets: list[dict[str, Any]]) -> float:
 def _delete_stale_media_clusters(
     parent_summary_id: str, current_summary_ids: set[str], now: str
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(
             """
             SELECT summary_id
@@ -2832,7 +2832,11 @@ def _delete_stale_media_clusters(
             """,
             (parent_summary_id,),
         ).fetchall()
-        stale_ids = [row[0] for row in rows if row[0] not in current_summary_ids]
+        stale_ids = [
+            row["summary_id"]
+            for row in rows
+            if row["summary_id"] not in current_summary_ids
+        ]
         if not stale_ids:
             return
         conn.executemany(
@@ -3408,7 +3412,7 @@ def _recursive_deepening_trace(
 def _summary_region_rows(scope_ids: list[str]) -> list[dict[str, Any]] | None:
     placeholders = ", ".join("?" for _ in scope_ids)
     try:
-        with sqlite3.connect(catalog_path()) as conn:
+        with catalog_connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT summary_id, root_id, scope_id, parent_summary_id, kind,
@@ -3425,20 +3429,20 @@ def _summary_region_rows(scope_ids: list[str]) -> list[dict[str, Any]] | None:
         return None
     return [
         {
-            "summary_id": row[0],
-            "root_id": row[1],
-            "scope_id": row[2],
-            "parent_summary_id": row[3],
-            "kind": row[4],
-            "modality": row[5],
-            "media_kind": row[6],
-            "container_kind": row[7],
-            "summary_level": int(row[8] or 0),
-            "title": row[9],
-            "source_count": int(row[10] or 0),
-            "sample_count": int(row[11] or 0),
-            "coverage_estimate": float(row[12] or 0.0),
-            "importance": row[13],
+            "summary_id": row["summary_id"],
+            "root_id": row["root_id"],
+            "scope_id": row["scope_id"],
+            "parent_summary_id": row["parent_summary_id"],
+            "kind": row["kind"],
+            "modality": row["modality"],
+            "media_kind": row["media_kind"],
+            "container_kind": row["container_kind"],
+            "summary_level": int(row["summary_level"] or 0),
+            "title": row["title"],
+            "source_count": int(row["source_count"] or 0),
+            "sample_count": int(row["sample_count"] or 0),
+            "coverage_estimate": float(row["coverage_estimate"] or 0.0),
+            "importance": row["importance"],
         }
         for row in rows
     ]

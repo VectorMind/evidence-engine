@@ -105,10 +105,12 @@ Non-goals:
 3. **Representative-store dedupe (Finding 2).** Extract a backend-parameterized
    representative store (build/manifest-watermark/write/search) and reduce the
    three FTS/semantic/siglip families to one.
-4. **`routing.py` decomposition (Finding 1).** Split into a `routing/`
-   sub-package (e.g. `summaries`, `representatives`, `search`, `budget`,
-   `importance`) behind a stable `__init__` facade. Pure mechanical moves; no
-   behavior change.
+4. **`routing.py` decomposition (Finding 1).** *Parked by maintainer pending a
+   proper redesign.* Splitting a 3.6k-line module is not a safe mechanical move
+   at this altitude; it should be designed deliberately (module seams, the
+   `__init__` facade preserving `cli.py`/`fts.py` imports) rather than rushed as
+   part of this cleanup packet. The access-layer migration of routing's sqlite
+   sites (Phase 1) is already done independently of any split.
 5. **Minor consolidation.** Fold routing's text generation into `ollama.py` as
    a shared `generate_text`.
 6. **Test broadening (Finding 6).** Add direct tests for parse, inventory,

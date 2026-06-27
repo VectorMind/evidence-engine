@@ -2,10 +2,12 @@
 
 ## Progress
 
-`▰▰▰▰▰▱▱ Phase 3/6` — hermetic fixture done; access layer migrated (8 of 9
-modules); dead YAML fallbacks removed (−358 LOC); representative manifest layer
-unified (6 helpers → 2). Next: Phase 4 (`routing.py` split + its 9 sqlite
-sites), optionally OP-005 (build-orchestrator consolidation).
+`▰▰▰▰▰▱▱ Phases 0–3 done` — hermetic fixture; catalog access layer fully migrated
+(all 9 modules incl. `routing.py`); dead YAML fallbacks removed (−358 LOC);
+representative manifest layer unified (6 helpers → 2). Phase 4 (`routing.py`
+file split) parked by maintainer pending a proper redesign — not a mechanical
+refactor. Remaining low-risk: Phase 5 (ollama text-gen consolidation), Phase 6
+(test broadening).
 
 ## Log
 
@@ -116,6 +118,24 @@ Done:
   FTS/semantic/siglip build, "unchanged"/currency, and search routes.
 
 See OP-005 for the deferred build-orchestrator consolidation.
+
+### Phase 1 completion — `routing.py` sqlite sites (Findings 3+4) — done
+
+Migrated all 9 remaining `sqlite3.connect(catalog_path())` sites in `routing.py`
+to `catalog_connection()` with keyed row access, without restructuring the file
+(the Phase 4 split is parked):
+
+- `_current_album_medoid_rows`, `list_representatives`, `_upsert_summary_row`
+  (write), `_summary_state`, `_current_summary_rows` (17-column read),
+  `_root_source_item_id`, `_media_assets_for_root`, `_delete_stale_media_clusters`,
+  `_summary_region_rows`.
+- `_media_assets_for_root` previously set `conn.row_factory = sqlite3.Row` by
+  hand; dropped that line since the helper provides it. `dict(row)` unchanged.
+- Added `from even.db import catalog_connection`; dropped the now-unused
+  `catalog_path` import. Kept `sqlite3` (still used by `except sqlite3.Error`).
+- Result: the only `sqlite3.connect` in the whole `src/even` tree is now inside
+  `db.py`. Findings 3+4 fully closed.
+- Proof: ruff clean; `uv run pytest -q` → `57 passed`.
 
 ## Proof
 
