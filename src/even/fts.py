@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path
-import sqlite3
 from typing import Any
 
 from even.catalog import ensure_catalog
@@ -19,8 +18,9 @@ from even.chunks import (
     stable_id,
 )
 from even.config import load_parser_config
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import catalog_path, workspace_root
+from even.paths import workspace_root
 
 
 @dataclass(frozen=True)
@@ -383,7 +383,7 @@ def _search_one_index(
 
 
 def _fts_registry_state(fts_index_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_high_watermark, status
@@ -394,14 +394,17 @@ def _fts_registry_state(fts_index_id: str) -> dict[str, Any] | None:
         ).fetchone()
     if not row:
         return None
-    return {"source_high_watermark": row[0], "status": row[1]}
+    return {
+        "source_high_watermark": row["source_high_watermark"],
+        "status": row["status"],
+    }
 
 
 def _current_fts_indexes(
     *, scope_ids: list[str] | None = None
 ) -> list[dict[str, Any]]:
     scope_filter = sorted({scope_id for scope_id in scope_ids or [] if scope_id})
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         params: list[Any] = []
         where = "WHERE status = 'current'"
         if scope_filter:
@@ -421,14 +424,14 @@ def _current_fts_indexes(
         ).fetchall()
     return [
         {
-            "fts_index_id": row[0],
-            "scope_id": row[1],
-            "fts_profile": row[2],
-            "chunk_profile": row[3],
-            "template_name": row[4],
-            "index_uri": row[5],
-            "indexed_chunk_count": row[6],
-            "source_high_watermark": row[7],
+            "fts_index_id": row["fts_index_id"],
+            "scope_id": row["scope_id"],
+            "fts_profile": row["fts_profile"],
+            "chunk_profile": row["chunk_profile"],
+            "template_name": row["template_name"],
+            "index_uri": row["index_uri"],
+            "indexed_chunk_count": row["indexed_chunk_count"],
+            "source_high_watermark": row["source_high_watermark"],
         }
         for row in rows
     ]
@@ -446,7 +449,7 @@ def _upsert_fts_registry(
     status: str,
     updated_at: str,
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute(
             """
             INSERT INTO "fts_indexes"

@@ -9,12 +9,6 @@ from even.cli import build_parser, main
 from even.paths import catalog_path, even_home, model_cache_root, workspace_root
 
 
-@pytest.fixture(autouse=True)
-def clear_even_path_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("EVEN_CACHE", "EVEN_HOME"):
-        monkeypatch.delenv(name, raising=False)
-
-
 def test_parser_uses_new_sources_scan_surface() -> None:
     parser = build_parser()
 

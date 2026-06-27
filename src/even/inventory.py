@@ -9,12 +9,11 @@ import hashlib
 import mimetypes
 import os
 from pathlib import Path
-import sqlite3
 from typing import Any
 
 from even.catalog import ensure_catalog
 from even.config import load_parser_config
-from even.paths import catalog_path
+from even.db import catalog_connection
 
 
 @dataclass(frozen=True)
@@ -289,7 +288,7 @@ def _write_inventory(
         ),
     )
 
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         existing_root = conn.execute(
             'SELECT first_seen_at FROM "source_roots" WHERE root_id = ?', (root_id,)
@@ -316,11 +315,11 @@ def _write_inventory(
             )
 
         existing_items = {
-            row[0]: {
-                "size_bytes": row[1],
-                "source_mtime": row[2],
-                "source_sha256": row[3],
-                "item_kind": row[4],
+            row["source_item_id"]: {
+                "size_bytes": row["size_bytes"],
+                "source_mtime": row["source_mtime"],
+                "source_sha256": row["source_sha256"],
+                "item_kind": row["item_kind"],
             }
             for row in conn.execute(
                 """

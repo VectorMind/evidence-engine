@@ -11,7 +11,6 @@ import json
 import logging
 import os
 from pathlib import Path
-import sqlite3
 import sys
 from typing import Any, Iterator
 import warnings
@@ -25,8 +24,9 @@ from even.chunks import (
     stable_id,
 )
 from even.config import embedding_profile, load_parser_config
+from even.db import catalog_connection
 from even.inventory import ScanOptions, scan_folder_to_catalog
-from even.paths import catalog_path, model_cache_root, workspace_root
+from even.paths import model_cache_root, workspace_root
 
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -438,7 +438,7 @@ def _hit_from_row(store: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _semantic_registry_state(semantic_store_id: str) -> dict[str, Any] | None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         row = conn.execute(
             """
             SELECT source_high_watermark, status, vector_dimension
@@ -450,9 +450,9 @@ def _semantic_registry_state(semantic_store_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     return {
-        "source_high_watermark": row[0],
-        "status": row[1],
-        "vector_dimension": row[2],
+        "source_high_watermark": row["source_high_watermark"],
+        "status": row["status"],
+        "vector_dimension": row["vector_dimension"],
     }
 
 
@@ -471,20 +471,20 @@ def _current_semantic_stores(
         sql += " AND embedding_profile = ?"
         params.append(profile_name)
     sql += " ORDER BY updated_at DESC, semantic_store_id"
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [
         {
-            "semantic_store_id": row[0],
-            "scope_id": row[1],
-            "embedding_profile": row[2],
-            "chunk_profile": row[3],
-            "template_name": row[4],
-            "store_uri": row[5],
-            "table_name": row[6],
-            "vector_dimension": row[7],
-            "indexed_chunk_count": row[8],
-            "source_high_watermark": row[9],
+            "semantic_store_id": row["semantic_store_id"],
+            "scope_id": row["scope_id"],
+            "embedding_profile": row["embedding_profile"],
+            "chunk_profile": row["chunk_profile"],
+            "template_name": row["template_name"],
+            "store_uri": row["store_uri"],
+            "table_name": row["table_name"],
+            "vector_dimension": row["vector_dimension"],
+            "indexed_chunk_count": row["indexed_chunk_count"],
+            "source_high_watermark": row["source_high_watermark"],
         }
         for row in rows
     ]
@@ -504,7 +504,7 @@ def _upsert_semantic_registry(
     status: str,
     updated_at: str,
 ) -> None:
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         conn.execute(
             """
             INSERT INTO "semantic_stores"

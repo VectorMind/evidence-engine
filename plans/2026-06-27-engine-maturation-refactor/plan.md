@@ -32,6 +32,12 @@ Findings (ranked):
    (`pyproject.toml`). ~200 LOC unreachable in any supported install.
 6. **Test coverage is routing-heavy** — 1,039 of 1,596 test lines are
    `test_routing.py`; parse/inventory/semantic/blobs have thin direct coverage.
+7. **Tests are not hermetic against the new path env vars** — the 2026-06-27
+   `path env var home` commit gave `EVEN_CACHE`/`EVEN_HOME` (and a cwd `.env`)
+   precedence over `workspace_root()`, but tests only `monkeypatch.chdir`. When
+   those vars are exported in the shell, the suite reads the real `~/.even`
+   catalog and 12 tests fail (e.g. `assert 23 == 1`). The suite must clear the
+   even env vars so it is isolated regardless of the developer's shell.
 
 Minor: Ollama plumbing is split between `ollama.py` (image generation) and
 inline urllib in `routing.py` (text generation).
@@ -83,10 +89,15 @@ Non-goals:
 
 ## Implementation Phases
 
+0. **Hermetic test fixture (Finding 7).** Add an autouse fixture (conftest) that
+   `monkeypatch.delenv`s `EVEN_CACHE`/`EVEN_HOME` and isolates cwd, so the suite
+   does not read the developer's real `~/.even` catalog. Do this first: every
+   later phase relies on a trustworthy green suite to prove no behavior change.
 1. **Catalog access layer (Findings 3+4).** Add a `catalog_connection()` (or
    chosen shape, OP-001) that opens the catalog with `row_factory =
    sqlite3.Row`. Migrate call sites incrementally, converting `row[i]` to keyed
    access. Start with `chunks.py` (worst offender) to validate the pattern.
+   *Done: `db.py` helper added; `chunks.py` migrated.*
 2. **Delete dead fallback parsers (Finding 5).** After confirming OP-002,
    remove `_load_*_fallback` from `config.py` and `catalog.py` and their
    branches.

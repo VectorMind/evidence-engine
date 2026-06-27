@@ -24,7 +24,8 @@ Measured on the current tree:
 
 | Phase | Expected | Actual |
 | --- | --- | --- |
-| 1 Catalog layer | Migrated modules use keyed row access; suite green after each | — |
+| 0 Hermetic fixture | Suite green with `EVEN_CACHE`/`EVEN_HOME` exported | Done — was 12 failed; now `57 passed` with vars exported |
+| 1 Catalog layer | Migrated modules use keyed row access; suite green after each | In progress — `chunks`/`fts`/`semantic`/`inventory` migrated; `57 passed`, ruff clean |
 | 2 Dead fallbacks | Files smaller; `uv run pytest` + Ruff green; no install path regressed | — |
 | 3 Representative dedupe | One abstraction; `index routing` output JSON unchanged on a fixture | — |
 | 4 routing split | `from even.routing import ...` paths intact; suite green | — |
