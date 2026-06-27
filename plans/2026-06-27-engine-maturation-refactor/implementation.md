@@ -2,11 +2,12 @@
 
 ## Progress
 
-`▰▰▰▰▰▰▱ Phases 0–3, 5, 6 done` — hermetic fixture; catalog access layer fully
-migrated (all 9 modules); dead YAML fallbacks removed (−358 LOC); representative
-manifest layer unified (6 helpers → 2); ollama text-gen consolidated; tests
-broadened (+10, 67 total). Only Phase 4 (`routing.py` file split) remains, parked
-by maintainer pending a proper redesign — to be done last.
+`▰▰▰▰▰▰ Done` — Findings 2–5 and 7 closed: hermetic test fixture; catalog access
+layer fully migrated (all 9 modules); dead YAML fallbacks removed (−358 LOC);
+representative manifest layer unified (6 helpers → 2); ollama text-gen
+consolidated; tests broadened (+10, 67 total). Finding 1 (`routing.py` file
+split) handed off to its own packet:
+[2026-06-27-routing-decomposition](../2026-06-27-routing-decomposition/).
 
 ## Log
 
