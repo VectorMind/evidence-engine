@@ -5,10 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import sqlite3
 from typing import Any
 
-from even.paths import catalog_path
+from even.db import catalog_connection
 from even.references import evidence_ref
 
 
@@ -30,26 +29,26 @@ def chunks_for_root(
           AND COALESCE(o.text_preview, '') <> ''
         ORDER BY si.relative_path, o.order_index, o.object_id
     """
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, (root_id,)).fetchall()
 
     chunks: list[dict[str, Any]] = []
     for row in rows:
-        object_id = row[0]
-        doc_id = row[1]
-        object_type = row[2] or "paragraph"
-        text = " ".join(str(row[7] or "").split())
+        object_id = row["object_id"]
+        doc_id = row["doc_id"]
+        object_type = row["object_type"] or "paragraph"
+        text = " ".join(str(row["text_preview"] or "").split())
         if not text:
             continue
-        title = row[9] or Path(row[13]).stem
+        title = row["title"] or Path(row["relative_path"]).stem
         metadata = {
             "root_id": root_id,
-            "root_label": row[14],
-            "source_item_id": row[12],
-            "relative_path": row[13],
-            "parser_profile": row[10],
-            "source_sha256": row[11],
-            "object_order_index": row[3],
+            "root_label": row["root_label"],
+            "source_item_id": row["source_item_id"],
+            "relative_path": row["relative_path"],
+            "parser_profile": row["parser_profile"],
+            "source_sha256": row["source_sha256"],
+            "object_order_index": row["order_index"],
         }
         chunk_id = stable_id("chunk", scope_id, doc_id, object_id, chunk_profile)
         chunks.append(
@@ -62,13 +61,13 @@ def chunks_for_root(
                 "scope_id": scope_id,
                 "chunk_profile": chunk_profile,
                 "content_type": content_type(object_type),
-                "page_start": row[4],
-                "page_end": row[5],
+                "page_start": row["page_start"],
+                "page_end": row["page_end"],
                 "title": title,
-                "heading_path": row[6] or "",
+                "heading_path": row["heading_path"] or "",
                 "body": text,
                 "metadata_json": json.dumps(metadata, sort_keys=True),
-                "source_sha256": row[11],
+                "source_sha256": row["source_sha256"],
             }
         )
     return chunks
@@ -98,15 +97,15 @@ def media_chunks_for_root(
           AND si.inventory_status IN ('current', 'unchanged', 'changed')
         ORDER BY si.relative_path, a.asset_id
     """
-    with sqlite3.connect(catalog_path()) as conn:
+    with catalog_connection() as conn:
         rows = conn.execute(sql, (root_id,)).fetchall()
 
     chunks: list[dict[str, Any]] = []
     for row in rows:
-        asset_id = row[0]
-        relative_path = row[2]
-        caption = row[6]
-        media_kind = row[7]
+        asset_id = row["asset_id"]
+        relative_path = row["relative_path"]
+        caption = row["caption"]
+        media_kind = row["media_kind"]
         stem = Path(relative_path).stem.replace("_", " ").replace("-", " ")
         body_parts = [part for part in (caption, media_kind, stem) if part]
         body = " ".join(" ".join(str(part).split()) for part in body_parts)
@@ -114,10 +113,10 @@ def media_chunks_for_root(
             continue
         metadata = {
             "root_id": root_id,
-            "root_label": row[3],
-            "source_item_id": row[1],
+            "root_label": row["root_label"],
+            "source_item_id": row["source_item_id"],
             "relative_path": relative_path,
-            "media_type": row[4],
+            "media_type": row["media_type"],
         }
         chunk_id = stable_id("mchunk", scope_id, asset_id, chunk_profile)
         chunks.append(
@@ -136,7 +135,7 @@ def media_chunks_for_root(
                 "heading_path": "",
                 "body": body,
                 "metadata_json": json.dumps(metadata, sort_keys=True),
-                "source_sha256": row[5],
+                "source_sha256": row["source_sha256"],
             }
         )
     return chunks
