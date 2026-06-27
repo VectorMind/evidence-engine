@@ -282,7 +282,9 @@ def build_global_representative_fts(
 
     if (
         not force
-        and _manifest_current(manifest_path, watermark, profile)
+        and _manifest_current(
+            manifest_path, watermark, GLOBAL_FTS_TEMPLATE, fts_profile=profile
+        )
         and _tantivy_index_exists(index_dir)
     ):
         return {
@@ -315,11 +317,13 @@ def build_global_representative_fts(
         }
 
     _write_manifest(
-        manifest_path=manifest_path,
-        fts_profile=profile,
-        source_high_watermark=watermark,
+        manifest_path,
+        template=GLOBAL_FTS_TEMPLATE,
+        profile_field="fts_profile",
+        profile_value=profile,
+        watermark=watermark,
         row_count=len(rows),
-        overflow_count=len(overflow),
+        extra={"overflow_count": len(overflow)},
     )
     return {
         "status": "ok",
@@ -388,7 +392,7 @@ def build_global_representative_semantic(
 
     if (
         not force
-        and _semantic_manifest_current(manifest_path, watermark)
+        and _manifest_current(manifest_path, watermark, GLOBAL_SEMANTIC_TEMPLATE)
         and semantic._lancedb_store_exists(store_dir, GLOBAL_SEMANTIC_TABLE)
     ):
         return {
@@ -418,7 +422,15 @@ def build_global_representative_semantic(
             "counts": {"summary_nodes_planned": len(rows), "summary_nodes_indexed": 0},
         }
 
-    _write_semantic_manifest(manifest_path, profile_name, watermark, len(rows), len(overflow))
+    _write_manifest(
+        manifest_path,
+        template=GLOBAL_SEMANTIC_TEMPLATE,
+        profile_field="embedding_profile",
+        profile_value=profile_name,
+        watermark=watermark,
+        row_count=len(rows),
+        extra={"overflow_count": len(overflow)},
+    )
     return {
         "status": "ok",
         "index_backend": "routing",
@@ -484,46 +496,6 @@ def _semantic_row(
     }
 
 
-def _semantic_manifest_current(manifest_path: Path, watermark: str) -> bool:
-    if not manifest_path.exists():
-        return False
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return (
-        manifest.get("summary_watermark") == watermark
-        and manifest.get("template_name") == GLOBAL_SEMANTIC_TEMPLATE
-    )
-
-
-def _write_semantic_manifest(
-    manifest_path: Path,
-    embedding_profile_name: str,
-    watermark: str,
-    row_count: int,
-    overflow_count: int = 0,
-) -> None:
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "built_at": _iso(_utc_now()),
-                "embedding_profile": embedding_profile_name,
-                "template_name": GLOBAL_SEMANTIC_TEMPLATE,
-                "summary_watermark": watermark,
-                "row_count": row_count,
-                "overflow_count": overflow_count,
-                "representation_policy_version": _representation_policy_version(),
-                "schema_version": CATALOG_SCHEMA_VERSION,
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-
-
 def _search_global_representatives_semantic(
     query: str,
     *,
@@ -551,7 +523,7 @@ def _search_global_representatives_semantic(
     store_dir = workspace_root() / index_uri
     manifest_path = store_dir / GLOBAL_FTS_MANIFEST
     watermark = _representative_watermark(rows, embedding_profile_name, GLOBAL_SEMANTIC_TEMPLATE)
-    if not _semantic_manifest_current(manifest_path, watermark):
+    if not _manifest_current(manifest_path, watermark, GLOBAL_SEMANTIC_TEMPLATE):
         return {
             "status": "unavailable",
             "reasons": ["global_representative_index_stale"],
@@ -734,7 +706,7 @@ def build_global_representative_siglip(
 
     if (
         not force
-        and _siglip_manifest_current(manifest_path, watermark)
+        and _manifest_current(manifest_path, watermark, GLOBAL_SIGLIP_TEMPLATE)
         and semantic._lancedb_store_exists(store_dir, GLOBAL_SIGLIP_TABLE)
     ):
         return {
@@ -764,7 +736,15 @@ def build_global_representative_siglip(
             "counts": {"media_representatives_planned": len(rows), "media_representatives_indexed": 0},
         }
 
-    _write_siglip_manifest(manifest_path, profile_name, watermark, len(rows), albums)
+    _write_manifest(
+        manifest_path,
+        template=GLOBAL_SIGLIP_TEMPLATE,
+        profile_field="image_profile",
+        profile_value=profile_name,
+        watermark=watermark,
+        row_count=len(rows),
+        extra={"album_count": albums},
+    )
     return {
         "status": "ok",
         "index_backend": "routing",
@@ -804,46 +784,6 @@ def _write_global_siglip_index(
     return {"status": "ok"}
 
 
-def _siglip_manifest_current(manifest_path: Path, watermark: str) -> bool:
-    if not manifest_path.exists():
-        return False
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return (
-        manifest.get("summary_watermark") == watermark
-        and manifest.get("template_name") == GLOBAL_SIGLIP_TEMPLATE
-    )
-
-
-def _write_siglip_manifest(
-    manifest_path: Path,
-    image_profile_name: str,
-    watermark: str,
-    row_count: int,
-    album_count: int,
-) -> None:
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "built_at": _iso(_utc_now()),
-                "image_profile": image_profile_name,
-                "template_name": GLOBAL_SIGLIP_TEMPLATE,
-                "summary_watermark": watermark,
-                "row_count": row_count,
-                "album_count": album_count,
-                "representation_policy_version": _representation_policy_version(),
-                "schema_version": CATALOG_SCHEMA_VERSION,
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-
-
 def _search_global_representatives_siglip(
     query_vector: list[float],
     *,
@@ -867,7 +807,7 @@ def _search_global_representatives_siglip(
     store_dir = workspace_root() / index_uri
     manifest_path = store_dir / GLOBAL_FTS_MANIFEST
     watermark = _siglip_watermark(rows, image_profile_name)
-    if not _siglip_manifest_current(manifest_path, watermark):
+    if not _manifest_current(manifest_path, watermark, GLOBAL_SIGLIP_TEMPLATE):
         return {
             "status": "unavailable",
             "reasons": ["global_representative_index_stale"],
@@ -2046,7 +1986,9 @@ def _search_global_representatives(
     index_dir = workspace_root() / index_uri
     manifest_path = index_dir / GLOBAL_FTS_MANIFEST
     watermark = _representative_watermark(rows, fts_profile)
-    if not _manifest_current(manifest_path, watermark, fts_profile):
+    if not _manifest_current(
+        manifest_path, watermark, GLOBAL_FTS_TEMPLATE, fts_profile=fts_profile
+    ):
         return {
             "status": "unavailable",
             "reasons": ["global_representative_index_stale"],
@@ -3294,48 +3236,66 @@ def _representative_watermark(
 
 
 def _write_manifest(
-    *,
     manifest_path: Path,
-    fts_profile: str,
-    source_high_watermark: str,
+    *,
+    template: str,
+    profile_field: str,
+    profile_value: str,
+    watermark: str,
     row_count: int,
-    overflow_count: int = 0,
+    extra: dict[str, Any] | None = None,
 ) -> None:
+    """Write a global representative manifest shared by all three backends.
+
+    `profile_field` names the backend's profile key (`fts_profile`,
+    `embedding_profile`, or `image_profile`); `extra` carries the backend's
+    extra count (`overflow_count` for text, `album_count` for media).
+    """
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "built_at": _iso(_utc_now()),
+        profile_field: profile_value,
+        "template_name": template,
+        "summary_watermark": watermark,
+        "row_count": row_count,
+        "representation_policy_version": _representation_policy_version(),
+        "schema_version": CATALOG_SCHEMA_VERSION,
+    }
+    if extra:
+        payload.update(extra)
     manifest_path.write_text(
-        json.dumps(
-            {
-                "built_at": _iso(_utc_now()),
-                "fts_profile": fts_profile,
-                "template_name": GLOBAL_FTS_TEMPLATE,
-                "summary_watermark": source_high_watermark,
-                "row_count": row_count,
-                "overflow_count": overflow_count,
-                "representation_policy_version": _representation_policy_version(),
-                "schema_version": CATALOG_SCHEMA_VERSION,
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
     )
 
 
 def _manifest_current(
     manifest_path: Path,
-    source_high_watermark: str,
-    fts_profile: str,
+    watermark: str,
+    template: str,
+    *,
+    fts_profile: str | None = None,
 ) -> bool:
+    """Check a global representative manifest against the current watermark.
+
+    All three backends validate `summary_watermark` and `template_name`. The FTS
+    backend additionally pins `fts_profile`; the vector backends never validated
+    their profile field, so that check stays opt-in.
+    """
+
     if not manifest_path.exists():
         return False
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return (
-        manifest.get("summary_watermark") == source_high_watermark
-        and manifest.get("fts_profile") == fts_profile
-        and manifest.get("template_name") == GLOBAL_FTS_TEMPLATE
-    )
+    if manifest.get("summary_watermark") != watermark:
+        return False
+    if manifest.get("template_name") != template:
+        return False
+    if fts_profile is not None and manifest.get("fts_profile") != fts_profile:
+        return False
+    return True
 
 
 def _selected_scopes(

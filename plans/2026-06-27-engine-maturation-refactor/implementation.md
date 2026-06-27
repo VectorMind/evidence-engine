@@ -2,10 +2,10 @@
 
 ## Progress
 
-`▰▰▰▰▱▱▱ Phase 2/6` — hermetic fixture done; access layer migrated (8 of 9
-modules, only `routing.py` left for Phase 4); dead YAML fallback parsers removed
-(−358 LOC). Next: Phase 3 (representative-store dedupe) or Phase 4 (`routing.py`
-split).
+`▰▰▰▰▰▱▱ Phase 3/6` — hermetic fixture done; access layer migrated (8 of 9
+modules); dead YAML fallbacks removed (−358 LOC); representative manifest layer
+unified (6 helpers → 2). Next: Phase 4 (`routing.py` split + its 9 sqlite
+sites), optionally OP-005 (build-orchestrator consolidation).
 
 ## Log
 
@@ -82,6 +82,40 @@ Remaining Phase 1 call sites (future steps): `media.py` (4), `parse.py` (4),
 - Round-trip sanity: real-YAML loaders return the same values the fallbacks
   hardcoded (routing `representative_top_k=12`, fastembed `dimension=384`,
   21 catalog tables, 15 parser defaults).
+
+### Phase 3 — Representative-store dedupe (Finding 2) — manifest layer done
+
+Reviewed all three families before refactoring. They split into three bands:
+
+- **Manifest layer** (currency-check + write) — pure JSON/watermark logic, six
+  near-identical functions. **Unified.**
+- **Index-write bodies** — genuinely different engines (tantivy schema+documents
+  vs lancedb embed+create vs lancedb reuse-vectors). **Kept separate by design.**
+- **Search + build orchestrators** — different row sources
+  (`_current_summary_rows` vs `_current_album_medoid_rows`), different
+  store-exists predicates (`_tantivy_index_exists` vs `_lancedb_store_exists`),
+  and different `counts` schemas (`summary_nodes_*` vs `media_representatives_*`).
+  **Kept separate by design** — forcing them into one parameterized function
+  would trade triplication for a conditional-heavy abstraction that reads worse.
+
+Done:
+
+- Replaced `_manifest_current` / `_semantic_manifest_current` /
+  `_siglip_manifest_current` (3) with one `_manifest_current(path, watermark,
+  template, *, fts_profile=None)`. Behavior preserved: all three validate
+  watermark + template; only FTS additionally pins `fts_profile` (the vector
+  backends never validated their profile field, so it stays opt-in).
+- Replaced `_write_manifest` / `_write_semantic_manifest` /
+  `_write_siglip_manifest` (3) with one `_write_manifest(path, *, template,
+  profile_field, profile_value, watermark, row_count, extra=None)`. `extra`
+  carries the backend's extra count (`overflow_count` for text, `album_count`
+  for media). Manifest JSON key sets are identical to before (sorted output).
+- Updated all 8 call sites (3 build writers, 5 currency checks).
+- Net −40 LOC in `routing.py` (78 insertions, 118 deletions); 6 functions → 2.
+- Verified across backends by `test_routing.py` (29 passed), which exercises
+  FTS/semantic/siglip build, "unchanged"/currency, and search routes.
+
+See OP-005 for the deferred build-orchestrator consolidation.
 
 ## Proof
 

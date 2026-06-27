@@ -27,7 +27,7 @@ Measured on the current tree:
 | 0 Hermetic fixture | Suite green with `EVEN_CACHE`/`EVEN_HOME` exported | Done — was 12 failed; now `57 passed` with vars exported |
 | 1 Catalog layer | Migrated modules use keyed row access; suite green after each | In progress — `chunks`/`fts`/`semantic`/`inventory` migrated; `57 passed`, ruff clean |
 | 2 Dead fallbacks | Files smaller; `uv run pytest` + Ruff green; no install path regressed | Done — −358 LOC (config 246→35, catalog −147); `57 passed`, ruff clean; loaders round-trip real YAML to the same values |
-| 3 Representative dedupe | One abstraction; `index routing` output JSON unchanged on a fixture | — |
+| 3 Representative dedupe | One abstraction; `index routing` output JSON unchanged on a fixture | Done (manifest layer) — 6 helpers → 2; `test_routing.py` 29 passed across FTS/semantic/siglip build+currency+search; ruff clean. Build orchestrators kept backend-specific (OP-005) |
 | 4 routing split | `from even.routing import ...` paths intact; suite green | — |
 | 5 ollama consolidation | Summary generation unchanged on a fixture run | — |
 | 6 Test broadening | New parse/inventory/semantic/helper tests pass | — |
