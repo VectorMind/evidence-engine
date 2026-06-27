@@ -29,8 +29,8 @@ Measured on the current tree:
 | 2 Dead fallbacks | Files smaller; `uv run pytest` + Ruff green; no install path regressed | Done — −358 LOC (config 246→35, catalog −147); `57 passed`, ruff clean; loaders round-trip real YAML to the same values |
 | 3 Representative dedupe | One abstraction; `index routing` output JSON unchanged on a fixture | Done (manifest layer) — 6 helpers → 2; `test_routing.py` 29 passed across FTS/semantic/siglip build+currency+search; ruff clean. Build orchestrators kept backend-specific (OP-005) |
 | 4 routing split | `from even.routing import ...` paths intact; suite green | — |
-| 5 ollama consolidation | Summary generation unchanged on a fixture run | — |
-| 6 Test broadening | New parse/inventory/semantic/helper tests pass | — |
+| 5 ollama consolidation | Summary generation unchanged on a fixture run | Done — `generate_text` added; routing delegates HTTP, keeps localhost policy + error taxonomy; covered by `test_ollama.py`; `67 passed` |
+| 6 Test broadening | New helper/loader/transport tests pass | Done — added `test_db.py`, `test_ollama.py`, `test_config.py` (+10); covers the access-layer keystone, Phase 5 transport, Phase 2 loaders |
 
 ## Contract-Invariance Check (required before closure)
 

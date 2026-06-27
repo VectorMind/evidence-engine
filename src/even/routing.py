@@ -21,7 +21,6 @@ import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
 from even.catalog import CATALOG_SCHEMA_VERSION, ensure_catalog
 from even.chunks import chunks_for_root, high_watermark, stable_id
@@ -1843,24 +1842,17 @@ def _generate_summary_text(
     url: str,
     timeout: float,
 ) -> str:
-    endpoint = _local_ollama_generate_url(url)
-    payload = {
-        "model": model,
-        "stream": False,
-        "options": {"temperature": 0},
-        "prompt": prompt,
-    }
+    from even import ollama
+
+    base_url = _validated_local_base_url(url)
     try:
-        request = Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        return ollama.generate_text(
+            prompt,
+            model=model,
+            url=base_url,
+            timeout=timeout,
+            options={"temperature": 0},
         )
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 local-only
-            body = json.loads(response.read().decode("utf-8"))
-    except SummaryGenerationError:
-        raise
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         raise SummaryGenerationError(
             "deferred",
@@ -1873,10 +1865,15 @@ def _generate_summary_text(
             "ollama_response_parse_failed",
             exc.__class__.__name__,
         ) from exc
-    return str(body.get("response", "")).strip()
 
 
-def _local_ollama_generate_url(base_url: str) -> str:
+def _validated_local_base_url(base_url: str) -> str:
+    """Validate a summary Ollama endpoint and return its normalized base URL.
+
+    Summary generation is localhost-only; `ollama.generate_text` appends the
+    `/api/generate` path, so this returns the base without it.
+    """
+
     normalized = base_url if "://" in base_url else f"http://{base_url}"
     parsed = urlparse(normalized)
     host = parsed.hostname or ""
@@ -1892,10 +1889,7 @@ def _local_ollama_generate_url(base_url: str) -> str:
             "unsupported_summary_endpoint_scheme",
             "Summary generation expects an HTTP localhost endpoint.",
         )
-    url = normalized.rstrip("/")
-    if not url.endswith("/api/generate"):
-        url = f"{url}/api/generate"
-    return url
+    return normalized.rstrip("/")
 
 
 def _write_global_fts_index(

@@ -37,6 +37,34 @@ def ollama_available(url: str = DEFAULT_URL, *, timeout: float = 5.0) -> bool:
         return False
 
 
+def generate_text(
+    prompt: str,
+    *,
+    model: str = DEFAULT_MODEL,
+    url: str = DEFAULT_URL,
+    timeout: float = 300.0,
+    options: dict[str, Any] | None = None,
+) -> str:
+    """Run a single text-only generation and return the stripped response text.
+
+    Policy-free transport: raises plain transport/server/parse errors so callers
+    can classify them. Endpoint policy (e.g. localhost-only) belongs to callers.
+    """
+
+    payload: dict[str, Any] = {"model": model, "prompt": prompt, "stream": False}
+    if options:
+        payload["options"] = options
+    request = urllib.request.Request(
+        f"{url}/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.load(response)
+    return str(body.get("response", "")).strip()
+
+
 def generate_from_image(
     image_bytes: bytes,
     prompt: str,

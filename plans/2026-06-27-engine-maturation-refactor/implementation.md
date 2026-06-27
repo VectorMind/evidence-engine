@@ -2,12 +2,11 @@
 
 ## Progress
 
-`▰▰▰▰▰▱▱ Phases 0–3 done` — hermetic fixture; catalog access layer fully migrated
-(all 9 modules incl. `routing.py`); dead YAML fallbacks removed (−358 LOC);
-representative manifest layer unified (6 helpers → 2). Phase 4 (`routing.py`
-file split) parked by maintainer pending a proper redesign — not a mechanical
-refactor. Remaining low-risk: Phase 5 (ollama text-gen consolidation), Phase 6
-(test broadening).
+`▰▰▰▰▰▰▱ Phases 0–3, 5, 6 done` — hermetic fixture; catalog access layer fully
+migrated (all 9 modules); dead YAML fallbacks removed (−358 LOC); representative
+manifest layer unified (6 helpers → 2); ollama text-gen consolidated; tests
+broadened (+10, 67 total). Only Phase 4 (`routing.py` file split) remains, parked
+by maintainer pending a proper redesign — to be done last.
 
 ## Log
 
@@ -137,10 +136,42 @@ to `catalog_connection()` with keyed row access, without restructuring the file
   `db.py`. Findings 3+4 fully closed.
 - Proof: ruff clean; `uv run pytest -q` → `57 passed`.
 
+### Phase 5 — Ollama text-gen consolidation — done
+
+- Added policy-free `ollama.generate_text(prompt, *, model, url, timeout,
+  options=None)` — the text-only sibling of `generate_from_image`. Builds the
+  `/api/generate` POST, returns the stripped `response`, raises plain
+  transport/parse errors. The image path is untouched (zero risk there).
+- `routing._generate_summary_text` now delegates the HTTP to
+  `ollama.generate_text`, keeping its domain policy in routing: localhost-only
+  enforcement (renamed `_local_ollama_generate_url` → `_validated_local_base_url`,
+  now returns the validated *base* since `generate_text` appends the path) and
+  the `SummaryGenerationError` taxonomy (`ollama_unreachable` /
+  `ollama_response_parse_failed`). Behavior preserved: same payload, endpoint,
+  and error mapping.
+- Dropped the now-unused `from urllib.request import Request, urlopen` in
+  `routing.py` (`urlparse`/`HTTPError`/`URLError` still used).
+- This path has no fake-injection in the suite, so it is now covered directly by
+  `tests/test_ollama.py` (payload shape + response parsing via a fake urlopen).
+
+### Phase 6 — Test broadening — done (focused on this packet's changes)
+
+Added direct tests for the surfaces this packet introduced or changed, rather
+than a broad sweep:
+
+- `tests/test_db.py` — `catalog_connection`: keyed + positional row access,
+  commit-on-clean-exit, rollback-on-error, and `read_only=True` blocking writes.
+  Covers the keystone every migrated module now depends on.
+- `tests/test_ollama.py` — `generate_text` payload/endpoint/timeout and the
+  `options`-omitted case (covers Phase 5).
+- `tests/test_config.py` — config/catalog loaders parse the real packaged YAML
+  and resolve profiles by name (guards the Phase 2 fallback removal).
+- +10 tests; suite now 67.
+
 ## Proof
 
 - `uv run ruff check src/even/ tests/` — all checks passed.
-- `uv run pytest -q` — `57 passed` (env vars exported; hermetic via conftest).
+- `uv run pytest -q` — `67 passed` (env vars exported; hermetic via conftest).
 
 ## Follow-up risks
 
