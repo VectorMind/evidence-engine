@@ -6,21 +6,28 @@ cycles and per-module size. **Result: acyclic DAG, every module under the ~800
 target.** Cycle check and sizing reproduced by the analysis script in the
 hand-off notes.
 
+> Line counts below are **design-time body-line estimates** (function/class
+> bodies only, excluding each file's docstring/imports/constants). They are what
+> the Phase-1 analysis produced and are what justified the cut; the larger
+> **as-landed file sizes** (e.g. `media_summaries` 783, `representatives` 507)
+> are recorded in `test.md` → "Module sizes (final)". All landed sizes are under
+> the ~800 target.
+
 ## Module DAG (leaf → root; an import may only point left/down)
 
 ```
-_shared            (no routing deps)
-  ← budget         → _shared
-  ← importance     → budget, _shared
-  ← medoids        → _shared
-  ← summary_store  → _shared
-  ← media_summaries→ budget, importance, medoids, summary_store, _shared
-  ← summaries      → budget, importance, summary_store, _shared
-  ← representative_store      → summary_store, _shared
-  ← representatives (build)   → representative_store, summary_store, medoids, _shared
-  ← representative_search     → representative_store, summary_store, _shared
-  ← search         → representative_search, medoids, _shared
-  ← __init__       → summaries, media_summaries, representatives, budget, _shared
+shared            (no routing deps)
+  ← budget         → shared
+  ← importance     → budget, shared
+  ← medoids        → shared
+  ← summary_store  → shared
+  ← media_summaries→ budget, importance, medoids, summary_store, shared
+  ← summaries      → budget, importance, summary_store, shared
+  ← representative_store      → summary_store, shared
+  ← representatives (build)   → representative_store, summary_store, medoids, shared
+  ← representative_search     → representative_store, summary_store, shared
+  ← search         → representative_search, medoids, shared
+  ← __init__       → summaries, media_summaries, representatives, budget, shared
 ```
 
 No edge points back up — verified by DFS cycle detection (CYCLES: NONE).
@@ -33,12 +40,12 @@ No edge points back up — verified by DFS cycle detection (CYCLES: NONE).
    read/write/budget layer that representatives consume), and `importance`
    (prior/learn subsystem). Largest resulting module: `media_summaries` ~705.
 
-2. **`RoutingIndexOptions` and `SummaryGenerationError` must live in `_shared`,
+2. **`RoutingIndexOptions` and `SummaryGenerationError` must live in `shared`,
    not `__init__`.** They are referenced by `_upsert_*` (summaries/media) as well
    as the orchestrator. Leaving them in `__init__` created the only real cycle
    (`init → representatives → summary_store → … → init`). Moving them to
-   `_shared` breaks it. `RoutingIndexOptions` is also part of the external facade
-   (`cli.py`), so `__init__` re-exports it from `_shared`.
+   `shared` breaks it. `RoutingIndexOptions` is also part of the external facade
+   (`cli.py`), so `__init__` re-exports it from `shared`.
 
 3. **The feared `summaries ↔ representatives` cycle (OP-003) does not exist.**
    The summary *writers* (`_upsert_*`) never read summaries back; only the
@@ -55,12 +62,12 @@ No edge points back up — verified by DFS cycle detection (CYCLES: NONE).
 ## Three shared helpers relocated to break root/media coupling
 
 - `_root_source_item_id` → `summary_store` (catalog lookup used by both upserts).
-- `_coverage` (sample/source ratio math) → `_shared`.
-- `_clean_routing_meta` (prune-empty dict helper) → `_shared`.
+- `_coverage` (sample/source ratio math) → `shared`.
+- `_clean_routing_meta` (prune-empty dict helper) → `shared`.
 
 ## Function → module assignment
 
-**`_shared.py`** — module constants (`GLOBAL_*`, `*_PROMPT_VERSION`,
+**`shared.py`** — module constants (`GLOBAL_*`, `*_PROMPT_VERSION`,
 `MEDIA_*_PROFILE`, `_IMPORTANCE_RE`), `RoutingIndexOptions`,
 `SummaryGenerationError`, `_iso`, `_utc_now`, `_json_object`, `_json_field`,
 `_first`, `_summary_id`, `_media_summary_id`, `_media_cluster_summary_id`,

@@ -1071,13 +1071,13 @@ def _asset_id(item: dict[str, Any]) -> str:
 def _load_pillow() -> Any | None:
     try:
         from PIL import Image  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         return None
     try:
         from pillow_heif import register_heif_opener  # type: ignore[import-not-found]
 
         register_heif_opener()
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         pass
     return Image
 
@@ -1085,7 +1085,7 @@ def _load_pillow() -> Any | None:
 def _load_pymediainfo() -> Any | None:
     try:
         from pymediainfo import MediaInfo  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         return None
     if not MediaInfo.can_parse():
         return None
