@@ -18,11 +18,14 @@ It owns:
 - text search index management;
 - semantic search store management;
 - hybrid search result hydration;
+- generic entity catalog management;
 - command result files;
 - health checks and diagnostics.
 
-Private repositories own source policy, review decisions, private semantic
-meaning, curated knowledge, and user-specific workflows.
+Private or upper workspaces own source policy, private Knowledge Markdown,
+custom domain semantics, and user-specific workflows. The public engine owns the
+standard entity catalog shape, but not the private data rows committed nowhere
+in this repo.
 
 ## Workspace Storage Contract
 
@@ -75,7 +78,9 @@ The catalog stores:
 - semantic store registry rows;
 - media assets and typed image/video/3D metadata;
 - media artifacts, generated observations, and duplicate candidates;
-- image-embedding store registry rows.
+- image-embedding store registry rows;
+- generic entities, aliases, evidence links, classifications, attributes,
+  relationships, and review tasks.
 
 The catalog does not store:
 
@@ -84,13 +89,14 @@ The catalog does not store:
 - text-index internal documents;
 - vector-store internal rows;
 - global representative FTS or semantic registry rows;
-- private review decisions;
-- private semantic facts;
-- private knowledge.
+- private source maps and selected local/private paths;
+- non-standard domain schemas that do not fit the generic entity catalog;
+- private Knowledge Markdown.
 
-Private repositories may open `catalog.sqlite` read-only. They reference
-catalog rows through the Reference Contract below rather than copying lower
-rows.
+Private repositories may open `catalog.sqlite` read-only. They reference catalog
+rows through the Reference Contract below rather than copying lower rows. If
+they need custom facts that do not fit the generic entity tables, those custom
+rows stay above the engine.
 
 ## Reference Contract
 
@@ -151,9 +157,11 @@ Generated media meaning has a deliberate ceiling:
   chart, illustration, map, render). This is generic and useful for routing.
 - A **caption** observation is general free text only. The engine does not
   produce a subject taxonomy (nature, animal, people, objects). Mixed-subject
-  content is left as text; upper layers extract structured subjects from it.
-- Identity meaning — faces, people, named places, reviewed identity — is never
-  produced here. It belongs to private workspaces.
+  content is left as text; generic entity workflows may later bind structured
+  subjects to evidence.
+- Identity meaning — faces, people, named places, reviewed identity — belongs
+  in the Layer 4 entity catalog when it fits the generic schema. Domain-specific
+  meaning beyond that catalog stays in upper workspaces.
 
 Media observations are stored in `media_observations` as generated, rebuildable
 rows; they are never evidence of absence.
@@ -166,8 +174,8 @@ through `search text`, `semantic`, and `hybrid`. Media hits reference
 
 ## Search Contract
 
-Search projections are rebuildable implementation details. Higher layers should
-not know physical backend names or projection database layouts.
+Indexes are rebuildable implementation details. Entity and Knowledge layers
+should not know physical backend names or projection database layouts.
 
 Public search commands are:
 
@@ -388,18 +396,22 @@ For now, default operation is CLI arguments plus persisted files. Any future
 Use this rule everywhere:
 
 ```text
-Lower schemas describe what was observed and generated.
-Upper schemas describe what was believed, reviewed, promoted, or used.
+Sources describe what was supplied.
+Evidence describes what was observed or generated.
+Indexes describe rebuildable retrieval projections.
+Entities describe standard reviewed or proposed meaning.
+Knowledge describes curated human context and non-standard semantics.
 ```
 
-Public engine rows describe source evidence, generated observations, and
-rebuildable projections. Private rows describe reviewed meaning and durable
-knowledge.
+Public engine rows describe Sources, Evidence, Indexes, and generic Entities.
+Private or upper rows/files describe Knowledge, custom domain semantics, and
+workflow-specific curation.
 
 ## Non-Goals
 
 - No private source paths or personal facts in public repo fixtures.
-- No public-engine dependency on private catalogs.
+- No public-engine dependency on private Knowledge repositories or private Git
+  state.
 - No generated chunks in SQLite.
 - No command logs in SQLite.
 - No direct public access to text/vector projection internals.

@@ -4,62 +4,73 @@ Reusable local evidence engine for document and generic media workflows.
 
 Evidence Engine owns the public mechanics for source inventory, document
 parsing, generated artifacts, SQLite catalog state, text search, semantic
-search, hybrid search, command result files, and provenance-rich evidence
-references. Private workspaces consume this open local data; they do not
-reimplement lower extraction or search internals.
+search, hybrid search, generic entity catalogs, command result files, and
+provenance-rich evidence references. Private workspaces consume this open local
+data; they do not reimplement standard extraction, search, or entity-catalog
+internals.
 
-The name reflects the layering: a *corpus* of mixed local files, turned into
-provenance-backed *evidence*, exposed as a lower *stack* layer that private
-knowledge workspaces build on top of. The installable package and console
-script remain `even` (see [Install Shape](#install-shape)).
+The name reflects the layering: local *sources* become provenance-backed
+*evidence*, evidence feeds rebuildable *indexes*, indexes help bind durable
+*entities*, and curated *knowledge* stays as the human-readable layer above.
+The installable package and console script remain `even` (see
+[Install Shape](#install-shape)).
 
 ## Layered Architecture
 
 The system is a five-layer stack. A *layer* is a band; it can hold several
-boxes. Each layer only describes what the layer below produced — meaning is
-added on the way up, never assumed at the bottom:
+boxes. Each layer only describes what the layer below produced or accepted.
+Meaning is added on the way up, never assumed at the bottom:
 
 ```text
-5  Curated knowledge     [ markdown notes · conventions · handoff slices ]   ▲ meaning
-4  Reviewed facts        [ entities · classifications · links · decisions ]  │
-3  Search projections    [ text (FTS) · semantic (vector) · hybrid · routing ]
-2  Evidence              [ inventory · parsed objects · OCR/captions/summaries ]
-1  Source authority      [ folders · OneDrive · archives · connectors ]      ▼ evidence
+5  Knowledge   [ markdown notes · conventions · topic handoff slices ]       ▲ meaning
+4  Entities    [ entities · aliases · classifications · links · review tasks ]│
+3  Indexes     [ text (FTS) · semantic (vector) · hybrid · routing ]
+2  Evidence    [ inventory · parsed objects · OCR/captions/summaries ]
+1  Sources     [ folders · OneDrive · archives · connectors ]                ▼ evidence
 ```
 
-`even` **produces layers 2–3** from the layer-1 sources. **Layers 4–5 are
-written by workspaces on top** (`private-documents`, `private-media`). There are
-**no access boundaries**: every layer is open data the layer above reads
-directly, plus one search API. The dependency direction is one-way — upper
-layers know lower ones, never the reverse.
+`even` **manages the standard mechanics for layers 1–4**: source inventory,
+typed evidence, rebuildable indexes, and generic entity catalog tables. Layer 5
+Knowledge stays above the engine as curated Markdown/YAML, usually in a private
+workspace. Non-standard domain semantics also stay above the engine unless they
+fit the generic entity model. There are **no access boundaries** inside the
+workspace-local data: each layer can read the layer below directly, plus one
+search API. The dependency direction is one-way — upper layers know lower ones,
+never the reverse.
 
 | # | Layer | Boxes inside | Catalog tables | Built by |
 | --- | --- | --- | --- | --- |
-| 1 | **Source authority** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots` | `sources scan` |
-| 2 | **Evidence** | Everything machine-produced and **rebuildable**: source inventory, parsed typed objects (documents, pages, tables, figures, images, blobs), and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `source_items`, `source_root_stats`, `source_extension_stats`, `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items` | `docs parse` |
-| 3 | **Search projections** | Fast rebuildable retrieval indexes: text (FTS), semantic (vector), hybrid fusion, and global routing. | `index_scopes`, `summary_nodes`, `fts_indexes`, `semantic_stores` | `index scope`, `index routing`, `search` |
-| 4 | **Reviewed facts** | Meaning a human or agent **decided**: entities, classifications, identities, relationships, promotion choices. Durable; carries judgment. | *(upper catalog)* | workspaces on top |
-| 5 | **Curated knowledge** | Human-readable Markdown: conventions, decisions, selected facts, topic handoff slices. | *(markdown)* | workspaces on top |
+| 1 | **Sources** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots`, `source_items`, `source_root_stats`, `source_extension_stats` | `sources scan` |
+| 2 | **Evidence** | Everything machine-produced and **rebuildable**: parsed typed objects (documents, pages, tables, figures, images, blobs), media metadata, and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items`, `media_assets`, `image_metadata`, `video_metadata`, `model3d_metadata`, `media_artifacts`, `media_observations`, `media_dedupe_candidates` | `docs parse`, `media inspect`, `media describe`, `media dedupe` |
+| 3 | **Indexes** | Fast rebuildable retrieval projections: text (FTS), semantic (vector), hybrid fusion, image vectors, and global routing. | `index_scopes`, `summary_nodes`, `fts_indexes`, `semantic_stores`, `image_stores` | `index scope`, `index routing`, `search` |
+| 4 | **Entities** | Standard reviewed/proposed meaning: entities, aliases, classifications, attributes, evidence links, relationships, and review tasks. Durable; carries judgment. | `entities`, `entity_aliases`, `entity_evidence_links`, `entity_classifications`, `entity_attributes`, `entity_relationships`, `review_tasks` | engine APIs, imports, or workspace scripts |
+| 5 | **Knowledge** | Human-readable Markdown/YAML: conventions, decisions, selected facts, topic handoff slices. | *(markdown / upper files)* | workspaces on top |
 
-The two middle layers carry the load, so their scope is explicit:
+The middle layers carry the load, so their scope is explicit:
 
 - **Layer 2 — Evidence** is *rebuildable from sources + config + hashes*. No
   human judgment lives here; it can always be regenerated.
-- **Layer 4 — Reviewed facts** is *decided and durable*. It is not regenerable
-  and must never be overwritten by a re-parse.
+- **Layer 3 — Indexes** are *rebuildable projections*. They are optimized for
+  retrieval and route back to evidence or entities.
+- **Layer 4 — Entities** is *durable review state*. Entity rows may be proposed
+  by agents or imports, but accepted meaning must never be overwritten by a
+  re-parse or re-index.
+- **Layer 5 — Knowledge** is *curated human context*. It explains conventions,
+  narratives, and handoff decisions instead of duplicating every structured row.
 
-The **SQLite catalog** is the current-state spine of layers 1–3. Layers stitch
+The **SQLite catalog** is the current-state spine of layers 1–4. Layers stitch
 together through plain catalog references — `corpus_cache.<table>.<row_id>`,
 the same `ref:` convention the catalog uses for its own foreign keys — so an
-upper row or a search hit points at exact evidence **without copying it**. See
-the [Reference Contract](./specifications/corpus-cache-cli/spec.md#reference-contract).
+entity row, Knowledge note, or search hit points at exact evidence **without
+copying it**. See the
+[Reference Contract](./specifications/corpus-cache-cli/spec.md#reference-contract).
 
 Search is the one surface accessed through the CLI/API rather than direct reads,
 because the physical text/vector internals stay hidden behind `text`,
 `semantic`, and `hybrid`.
 
-> The five bands are a mental model, not the precise data flow — indexing in
-> particular touches several layers. They pack the real complexity into
+> The five bands are a mental model, not the precise data flow — indexing and
+> entity review both touch several layers. They pack the real complexity into
 > something a mind can stack.
 
 ## The Evidence Layer — the Novel Core
@@ -87,7 +98,7 @@ share the same blob store and the same freshness contract.
 
 ```mermaid
 flowchart TB
-  subgraph L1["Layer 1 · Source authority (read-only)"]
+  subgraph L1["Layer 1 · Sources (read-only)"]
     SRC["folders · OneDrive · archives · connectors"]
     ITEMS["source_roots → source_items<br/>path · size · sha256 · status"]
   end
@@ -118,11 +129,12 @@ flowchart TB
   ITEMS -. "sha256 freshness" .-> ASSET
 ```
 
-## Binding Reviewed Facts to Evidence
+## Binding Entities to Evidence
 
 The payoff of a typed evidence layer is what Layer 4 can do with it. A single
-**reviewed fact** — an entity, identity, or decision — can gather *many kinds of
-evidence under one identity*. It reaches that evidence two ways:
+**entity** — a reviewed or proposed identity with classifications, aliases,
+relationships, and decisions — can gather *many kinds of evidence under one
+identity*. It reaches that evidence two ways:
 
 - **discovery** — find candidate evidence by words (FTS), by meaning (semantic /
   hybrid), or by narrowing to the right root scope first (routing);
@@ -136,9 +148,9 @@ provenance-checkable.
 
 ```mermaid
 flowchart TB
-  ENT["Layer 4 · Entity: 'Acme Corp'<br/>(decided · durable)"]
+  ENT["Layer 4 · Entity: 'Acme Corp'<br/>(reviewed · durable)"]
 
-  subgraph L3["Layer 3 · Search projections (disposable views)"]
+  subgraph L3["Layer 3 · Indexes (disposable views)"]
     FTS["text (FTS)"]
     SEM["semantic / hybrid"]
     ROUTE["routing map"]
@@ -165,8 +177,10 @@ flowchart TB
   ENT -. ref .-> PHOTO
 ```
 
-Layer 5 (curated Markdown) sits one step further out and belongs mostly to
-workspaces that consume `even`; it is intentionally kept low-profile here.
+Layer 5 Knowledge sits one step further out. It is where private workspaces keep
+Markdown/YAML conventions, source maps, topic narratives, and handoff notes.
+Evidence Engine only defines generic handoff-friendly references; it does not
+own private Knowledge layout.
 
 ## How Images Travel Two Lanes
 
@@ -378,7 +392,8 @@ EVEN_CACHE=%USERPROFILE%\.even\cache
 
 ## Workspace Storage
 
-Generated evidence data is written under `EVEN_CACHE`:
+Workspace catalog, index, result, report, and artifact state is written under
+`EVEN_CACHE`:
 
 ```text
 <EVEN_CACHE>/
@@ -500,7 +515,7 @@ The public contract is open local data plus search access:
 
 | Surface | Purpose |
 | --- | --- |
-| [catalog.yaml](./catalog.yaml) | Current-state SQLite schema. |
+| [catalog.yaml](./catalog.yaml) | Current-state SQLite schema for Sources, Evidence, Indexes, and generic Entities. |
 | `.cache/catalog/catalog.sqlite` | Readable local catalog database. |
 | [store_templates.yaml](./store_templates.yaml) | Generated text/semantic row templates. |
 | [config/exposures.yaml](./config/exposures.yaml) | Workspace storage layout. |
@@ -521,6 +536,7 @@ Public repo material:
 
 - code;
 - schemas;
+- generic entity catalog tables and helpers;
 - empty/synthetic config examples;
 - migration/reset logic during development;
 - synthetic fixtures;
@@ -534,11 +550,16 @@ Private or generated material:
 - generated descriptions and thumbnails;
 - text/vector indexes;
 - embeddings;
-- review decisions;
+- real entity rows, review decisions, aliases, classifications, relationships,
+  and task state;
+- non-standard domain schemas and workflows that do not fit the generic entity
+  catalog;
 - private knowledge Markdown.
 
 ## Related Plans
 
+- [Entity Layer Ownership](./plans/2026-06-28-entity-layer-ownership/plan.md)
 - [Knowledge Layers Merge](./plans/2026-06-07-knowledge-layers/plan.md)
+- [Repository Consolidation](./plans/2026-06-11-repo-consolidation/plan.md)
 - [Global Routing Indexes](./plans/2026-06-06-global-routing-indexes/plan.md)
 - [Corpus Cache CLI Specification](./specifications/corpus-cache-cli/spec.md)

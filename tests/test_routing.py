@@ -36,7 +36,7 @@ def test_summary_nodes_catalog_contract(
 
     tables = {table.name for table in load_catalog_tables()}
     assert "summary_nodes" in tables
-    assert CATALOG_USER_VERSION == 9
+    assert CATALOG_USER_VERSION == 10
 
     assert create_catalog()["status"] == "created"
     with sqlite3.connect(catalog_path()) as conn:
@@ -50,7 +50,7 @@ def test_summary_nodes_catalog_contract(
             for row in conn.execute("PRAGMA table_info(summary_nodes)").fetchall()
         }
 
-    assert user_version == 9
+    assert user_version == CATALOG_USER_VERSION
     assert summary_table == ("summary_nodes",)
     assert "importance" in columns
     assert "routing_meta" in columns

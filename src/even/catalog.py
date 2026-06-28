@@ -14,8 +14,8 @@ from even.db import catalog_connection
 from even.paths import catalog_path
 
 
-CATALOG_SCHEMA_VERSION = "0.9"
-CATALOG_USER_VERSION = 9
+CATALOG_SCHEMA_VERSION = "0.10"
+CATALOG_USER_VERSION = 10
 
 
 @dataclass(frozen=True)

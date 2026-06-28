@@ -1,11 +1,11 @@
-spec_version: "0.9"
+spec_version: "0.10"
 name: corpus_cache_catalog
 status: draft
 description: >
   Public SQLite catalog schema for current evidence-engine metadata. The catalog
   stores source inventory, current document parse state, Docling artifacts,
-  normalized document objects, valuable items, and pointers to lower FTS and
-  semantic index islands.
+  normalized document objects, valuable items, pointers to lower FTS and
+  semantic index islands, and generic entity-layer review state.
 
 schema_rules:
   - Catalog tables store current state only; historical migration records and
@@ -21,9 +21,9 @@ schema_rules:
 
 datasets:
   - name: corpus_cache
-    description: Current-state SQLite catalog for a regenerable evidence cache.
-    dataset_role: regenerable_cache
-    durability: current_control
+    description: Current-state SQLite catalog for Sources, Evidence, Indexes, and generic Entities.
+    dataset_role: workspace_catalog
+    durability: current_control_and_review_state
 
     tables:
       - name: source_roots
@@ -478,3 +478,161 @@ datasets:
             unique: true
           - name: idx_media_dedupe_candidates_a
             columns: [asset_id_a]
+
+      - name: entities
+        description: Generic Layer-4 entities reviewed or proposed over lower evidence.
+        exposures: [sqlite]
+        columns:
+          - {name: entity_id, type: text, description: "Stable entity ID."}
+          - {name: entity_kind, type: enum, description: "Generic entity kind.", values: [person, organization, place, event, object, document, account, concept, collection, unknown, other]}
+          - {name: canonical_name, type: text, description: "Current canonical display name or label."}
+          - {name: description, type: text, description: "Short redaction-safe entity description."}
+          - {name: entity_status, type: enum, description: "Lifecycle state.", values: [proposed, active, merged, rejected, archived]}
+          - {name: review_status, type: enum, description: "Review state for the entity.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: confidence, type: real, description: "Proposal or review confidence when available."}
+          - {name: producer, type: text, description: "Human, import, model, or workflow that created the row."}
+          - {name: created_at, type: timestamp, description: "UTC timestamp when first created."}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when last changed."}
+          - {name: attrs_json, type: json, description: "Additional generic entity metadata. Custom domain truth belongs above the engine."}
+        indexes:
+          - name: pk_entities
+            columns: [entity_id]
+            unique: true
+          - name: idx_entities_kind_status
+            columns: [entity_kind, entity_status]
+          - name: idx_entities_name
+            columns: [canonical_name]
+
+      - name: entity_aliases
+        description: Alternate names, labels, identifiers, or normalized lookup strings for entities.
+        exposures: [sqlite]
+        columns:
+          - {name: alias_id, type: text, description: "Stable alias ID."}
+          - {name: entity_id, type: text, description: "Entity owning this alias.", ref: corpus_cache.entities.entity_id}
+          - {name: alias_text, type: text, description: "Alias text as observed or assigned."}
+          - {name: normalized_alias, type: text, description: "Normalized alias for lookup and dedupe."}
+          - {name: alias_kind, type: enum, description: "Alias kind.", values: [name, label, identifier, handle, filename_hint, abbreviation, other]}
+          - {name: language, type: text, description: "Optional language code."}
+          - {name: review_status, type: enum, description: "Review state for this alias.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: evidence_ref, type: text, description: "Optional catalog coordinate supporting this alias."}
+          - {name: attrs_json, type: json, description: "Additional alias metadata."}
+        indexes:
+          - name: pk_entity_aliases
+            columns: [alias_id]
+            unique: true
+          - name: idx_entity_aliases_entity
+            columns: [entity_id]
+          - name: idx_entity_aliases_lookup
+            columns: [normalized_alias]
+
+      - name: entity_evidence_links
+        description: Reviewed or proposed links from entities to lower evidence rows.
+        exposures: [sqlite]
+        columns:
+          - {name: link_id, type: text, description: "Stable entity-evidence link ID."}
+          - {name: entity_id, type: text, description: "Linked entity.", ref: corpus_cache.entities.entity_id}
+          - {name: evidence_ref, type: text, description: "Catalog coordinate such as corpus_cache.document_objects.object_id."}
+          - {name: link_role, type: enum, description: "How the evidence relates to the entity.", values: [mention, identifier, visual_match, location, source, support, contradiction, context, other]}
+          - {name: link_status, type: enum, description: "Lifecycle state for this evidence link.", values: [proposed, accepted, rejected, deferred]}
+          - {name: confidence, type: real, description: "Proposal or review confidence when available."}
+          - {name: producer, type: text, description: "Human, import, model, or workflow that created the link."}
+          - {name: created_at, type: timestamp, description: "UTC timestamp when first created."}
+          - {name: attrs_json, type: json, description: "Additional link metadata such as locator hints or extracted spans."}
+        indexes:
+          - name: pk_entity_evidence_links
+            columns: [link_id]
+            unique: true
+          - name: idx_entity_evidence_links_entity
+            columns: [entity_id]
+          - name: idx_entity_evidence_links_ref
+            columns: [evidence_ref]
+
+      - name: entity_classifications
+        description: Generic classifications assigned to entities without committing domain-specific schemas.
+        exposures: [sqlite]
+        columns:
+          - {name: classification_id, type: text, description: "Stable classification ID."}
+          - {name: entity_id, type: text, description: "Classified entity.", ref: corpus_cache.entities.entity_id}
+          - {name: scheme, type: text, description: "Classification scheme or namespace."}
+          - {name: label, type: text, description: "Classification label within the scheme."}
+          - {name: review_status, type: enum, description: "Review state for this classification.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: confidence, type: real, description: "Proposal or review confidence when available."}
+          - {name: evidence_ref, type: text, description: "Optional catalog coordinate supporting the classification."}
+          - {name: attrs_json, type: json, description: "Additional classification metadata."}
+        indexes:
+          - name: pk_entity_classifications
+            columns: [classification_id]
+            unique: true
+          - name: idx_entity_classifications_entity
+            columns: [entity_id]
+          - name: idx_entity_classifications_scheme_label
+            columns: [scheme, label]
+
+      - name: entity_attributes
+        description: Generic key/value attributes attached to entities and optionally backed by evidence.
+        exposures: [sqlite]
+        columns:
+          - {name: attribute_id, type: text, description: "Stable entity attribute ID."}
+          - {name: entity_id, type: text, description: "Entity owning this attribute.", ref: corpus_cache.entities.entity_id}
+          - {name: attribute_name, type: text, description: "Attribute name or namespace-qualified key."}
+          - {name: value_text, type: text, description: "Attribute value serialized as text."}
+          - {name: value_kind, type: enum, description: "Value kind.", values: [text, number, date, datetime, boolean, uri, ref, json, other]}
+          - {name: review_status, type: enum, description: "Review state for this attribute.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: confidence, type: real, description: "Proposal or review confidence when available."}
+          - {name: evidence_ref, type: text, description: "Optional catalog coordinate supporting the attribute."}
+          - {name: attrs_json, type: json, description: "Additional attribute metadata."}
+        indexes:
+          - name: pk_entity_attributes
+            columns: [attribute_id]
+            unique: true
+          - name: idx_entity_attributes_entity
+            columns: [entity_id]
+          - name: idx_entity_attributes_name
+            columns: [attribute_name]
+
+      - name: entity_relationships
+        description: Generic entity-to-entity or entity-to-value relationships backed by optional evidence.
+        exposures: [sqlite]
+        columns:
+          - {name: relationship_id, type: text, description: "Stable relationship ID."}
+          - {name: subject_entity_id, type: text, description: "Subject entity.", ref: corpus_cache.entities.entity_id}
+          - {name: predicate, type: text, description: "Relationship predicate or namespace-qualified key."}
+          - {name: object_entity_id, type: text, description: "Object entity, when the relationship points to another entity.", ref: corpus_cache.entities.entity_id}
+          - {name: object_value, type: text, description: "Object value when the relationship is not entity-to-entity."}
+          - {name: review_status, type: enum, description: "Review state for this relationship.", values: [unreviewed, accepted, rejected, deferred]}
+          - {name: confidence, type: real, description: "Proposal or review confidence when available."}
+          - {name: evidence_ref, type: text, description: "Optional catalog coordinate supporting the relationship."}
+          - {name: attrs_json, type: json, description: "Additional relationship metadata."}
+        indexes:
+          - name: pk_entity_relationships
+            columns: [relationship_id]
+            unique: true
+          - name: idx_entity_relationships_subject
+            columns: [subject_entity_id]
+          - name: idx_entity_relationships_object
+            columns: [object_entity_id]
+          - name: idx_entity_relationships_predicate
+            columns: [predicate]
+
+      - name: review_tasks
+        description: Generic review queue tasks for entity decisions and evidence binding.
+        exposures: [sqlite]
+        columns:
+          - {name: task_id, type: text, description: "Stable review task ID."}
+          - {name: task_kind, type: enum, description: "Review task kind.", values: [entity_create, entity_merge, entity_link, classification, attribute, relationship, duplicate, promotion, custom]}
+          - {name: entity_id, type: text, description: "Primary entity under review, when applicable.", ref: corpus_cache.entities.entity_id}
+          - {name: evidence_ref, type: text, description: "Optional catalog coordinate under review."}
+          - {name: task_status, type: enum, description: "Current task state.", values: [open, accepted, rejected, deferred, closed]}
+          - {name: priority, type: integer, description: "Review priority; higher means more urgent."}
+          - {name: producer, type: text, description: "Human, import, model, or workflow that created the task."}
+          - {name: created_at, type: timestamp, description: "UTC timestamp when first created."}
+          - {name: updated_at, type: timestamp, description: "UTC timestamp when last changed."}
+          - {name: attrs_json, type: json, description: "Additional review metadata. Custom workflows should keep private details above the engine."}
+        indexes:
+          - name: pk_review_tasks
+            columns: [task_id]
+            unique: true
+          - name: idx_review_tasks_entity
+            columns: [entity_id]
+          - name: idx_review_tasks_status_priority
+            columns: [task_status, priority]

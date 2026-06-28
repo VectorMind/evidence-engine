@@ -5,6 +5,12 @@ Closed: 2026-06-27
 Status: Closed - planning decision settled, doc-only
 Inputs: [survey.md](./survey.md)
 
+2026-06-28 note: [Entity Layer Ownership](../2026-06-28-entity-layer-ownership/plan.md)
+supersedes RD-006 only where this packet excluded generic entity catalog
+ownership from `evidence-engine`. `even` remains private-repo-blind, and private
+Knowledge Markdown, source maps, private paths, and custom domain semantics
+remain outside this repo.
+
 ## Problem Summary
 
 Three repositories carried one system. `evidence-engine` held the reusable code
@@ -118,7 +124,8 @@ Material that should not move into `evidence-engine`:
 - a private knowledge repository location;
 - private Git operations;
 - personal taxonomies;
-- private entity schemas as runtime ownership;
+- private entity schemas as runtime ownership (superseded for generic entity
+  catalog ownership by the 2026-06-28 entity-layer packet);
 - OKF validation or private Markdown rendering;
 - domain-specific workflows such as tax, housing, vehicle, medical, media, or
   family curation.
