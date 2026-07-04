@@ -14,13 +14,16 @@ import {
   useReactTable,
   type SortingState,
 } from '@tanstack/react-table';
+import { formatBytes, formatTimestamp } from '../../lib/format';
+import PathPill from './PathPill';
 import './table.css';
 
 export interface DataTableColumn {
   key: string;
   label: string;
   sortable?: boolean;
-  kind?: 'text' | 'number' | 'timestamp';
+  kind?: 'text' | 'number' | 'timestamp' | 'bytes' | 'path';
+  hidden?: boolean;
 }
 
 export interface DataTableProps {
@@ -31,6 +34,9 @@ export interface DataTableProps {
   defaultSort: { col: string; dir: 'asc' | 'desc' };
   pageSizes: number[];
   defaultPageSize: number;
+  /** Catalog table name + row id column, present when a column has `kind: 'path'`. */
+  table?: string;
+  idColumn?: string;
 }
 
 type Row = Record<string, unknown>;
@@ -41,6 +47,12 @@ function formatCell(value: unknown, kind?: string): string {
   }
   if (kind === 'number' && typeof value === 'number') {
     return value.toLocaleString('en-US');
+  }
+  if (kind === 'bytes' && typeof value === 'number') {
+    return formatBytes(value);
+  }
+  if (kind === 'timestamp' && typeof value === 'string') {
+    return formatTimestamp(value);
   }
   return String(value);
 }
@@ -53,6 +65,8 @@ export default function DataTable({
   defaultSort,
   pageSizes,
   defaultPageSize,
+  table: tableName,
+  idColumn,
 }: DataTableProps) {
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [total, setTotal] = useState(initialTotal);
@@ -116,15 +130,27 @@ export default function DataTable({
   const helper = createColumnHelper<Row>();
   const tableColumns = useMemo(
     () =>
-      columns.map((column) =>
-        helper.accessor((row) => row[column.key], {
-          id: column.key,
-          header: column.label,
-          enableSorting: Boolean(column.sortable),
-          cell: (info) => formatCell(info.getValue(), column.kind),
-        }),
-      ),
-    [columns],
+      columns
+        .filter((column) => !column.hidden)
+        .map((column) =>
+          helper.accessor((row) => row[column.key], {
+            id: column.key,
+            header: column.label,
+            enableSorting: Boolean(column.sortable),
+            cell: (info) =>
+              column.kind === 'path' && tableName && idColumn ? (
+                <PathPill
+                  path={info.getValue() as string}
+                  itemKind={String(info.row.original.item_kind ?? '')}
+                  table={tableName}
+                  id={String(info.row.original[idColumn] ?? '')}
+                />
+              ) : (
+                formatCell(info.getValue(), column.kind)
+              ),
+          }),
+        ),
+    [columns, tableName, idColumn],
   );
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -194,7 +220,7 @@ export default function DataTable({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="data-table-empty" colSpan={columns.length}>
+                <td className="data-table-empty" colSpan={tableColumns.length}>
                   No rows.
                 </td>
               </tr>

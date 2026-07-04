@@ -113,3 +113,61 @@
   padding: var(--space-1);
   font-size: var(--text-sm);
 }
+
+.path-pill {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 1px;
+}
+
+.path-pill-main,
+.path-pill-open {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2-bg);
+  color: var(--content-color);
+  border: 1px solid var(--soft-border-color);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
+.path-pill-main {
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.path-pill:not(:has(.path-pill-open)) .path-pill-main {
+  border-radius: var(--radius-sm);
+}
+
+.path-pill-open {
+  padding: var(--space-1);
+  border-left: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.path-pill-main:hover,
+.path-pill-open:hover {
+  background: var(--menu-span-hover-color);
+}
+
+.path-pill-main:disabled,
+.path-pill-open:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.path-pill-error .path-pill-main,
+.path-pill-error .path-pill-open {
+  border-color: var(--danger-accent-color);
+}
+
+.path-pill-icon {
+  font-size: 1em;
+}
+
+.path-pill-name {
+  white-space: nowrap;
+}
