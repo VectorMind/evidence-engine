@@ -18,6 +18,26 @@ from typing import Any, TextIO
 
 from even import __version__
 from even.catalog import catalog_status_report, create_catalog, wipe_catalog
+from even.entities import (
+    ALIAS_KINDS,
+    ENTITY_KINDS,
+    ENTITY_STATUSES,
+    LINK_ROLES,
+    LINK_STATUSES,
+    REVIEW_STATUSES,
+    AddAliasOptions,
+    AddEntityOptions,
+    AddLinkOptions,
+    FindEntityEvidenceOptions,
+    ListEntitiesOptions,
+    add_alias,
+    add_entity,
+    add_link,
+    find_entity_evidence,
+    list_entities,
+    review_target,
+    show_entity,
+)
 from even.fts import IndexOptions, SearchOptions, index_scope_to_fts, search_text_indexes
 from even.hybrid import HybridSearchOptions, search_hybrid_indexes
 from even.image_index import (
@@ -546,6 +566,167 @@ def search_image(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
+def entity_add(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity add")
+    payload = _base_payload("entity add")
+    try:
+        result = add_entity(
+            args.name,
+            AddEntityOptions(kind=args.kind, description=args.description, status=args.status),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_list(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity list")
+    payload = _base_payload("entity list")
+    try:
+        result = list_entities(
+            ListEntitiesOptions(
+                kind=args.kind,
+                status=args.status,
+                review_status=args.review,
+                limit=args.limit,
+            )
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_show(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity show")
+    payload = _base_payload("entity show")
+    try:
+        result = show_entity(args.entity_id)
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_alias(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity alias")
+    payload = _base_payload("entity alias")
+    try:
+        result = add_alias(
+            args.entity_id,
+            args.alias_text,
+            AddAliasOptions(kind=args.kind, language=args.language),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_link(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity link")
+    payload = _base_payload("entity link")
+    try:
+        result = add_link(
+            args.entity_id,
+            args.evidence_ref,
+            AddLinkOptions(role=args.role, status=args.status),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_review(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity review")
+    payload = _base_payload("entity review")
+    try:
+        decision = "accept" if args.accept else "reject" if args.reject else "defer"
+        result = review_target(args.target_id, decision)
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] == "ok" else 1
+
+
+def entity_find(args: argparse.Namespace) -> int:
+    run = CommandRun.start("entity find")
+    payload = _base_payload("entity find")
+    try:
+        result = find_entity_evidence(
+            args.entity_id,
+            args.query,
+            FindEntityEvidenceOptions(
+                limit=args.limit,
+                image_paths=tuple(args.image or ()),
+                propose=args.propose,
+                role=args.role,
+            ),
+        )
+        payload.update(result)
+    except Exception as exc:  # pragma: no cover - final defensive boundary.
+        payload.update(
+            {
+                "status": "failed",
+                "error_kind": "unhandled_exception",
+                "redacted_detail": exc.__class__.__name__,
+            }
+        )
+    payload = run.finish(payload)
+    _emit(payload)
+    return 0 if payload["status"] in {"ok", "partial"} else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="even",
@@ -927,6 +1108,110 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of image hits to return. Defaults to 30.",
     )
     search_image_parser.set_defaults(handler=search_image)
+
+    entity = subparsers.add_parser("entity", help="Generic Layer-4 entity commands.")
+    entity_sub = entity.add_subparsers(dest="entity_command")
+
+    entity_add_parser = entity_sub.add_parser("add", help="Create a new entity.")
+    entity_add_parser.add_argument("name", help="Canonical display name.")
+    entity_add_parser.add_argument(
+        "--kind", required=True, choices=list(ENTITY_KINDS), help="Generic entity kind."
+    )
+    entity_add_parser.add_argument(
+        "--description", default=None, help="Short redaction-safe description."
+    )
+    entity_add_parser.add_argument(
+        "--status",
+        default="proposed",
+        choices=list(ENTITY_STATUSES),
+        help="Lifecycle state. Defaults to proposed.",
+    )
+    entity_add_parser.set_defaults(handler=entity_add)
+
+    entity_list_parser = entity_sub.add_parser("list", help="List entities.")
+    entity_list_parser.add_argument(
+        "--kind", default=None, choices=list(ENTITY_KINDS), help="Filter by entity kind."
+    )
+    entity_list_parser.add_argument(
+        "--status", default=None, choices=list(ENTITY_STATUSES), help="Filter by lifecycle state."
+    )
+    entity_list_parser.add_argument(
+        "--review", default=None, choices=list(REVIEW_STATUSES), help="Filter by review state."
+    )
+    entity_list_parser.add_argument(
+        "--limit", type=int, default=100, help="Maximum entities to return. Defaults to 100."
+    )
+    entity_list_parser.set_defaults(handler=entity_list)
+
+    entity_show_parser = entity_sub.add_parser(
+        "show", help="Show one entity hydrated with aliases, links, and tasks."
+    )
+    entity_show_parser.add_argument("entity_id", help="Entity ID to show.")
+    entity_show_parser.set_defaults(handler=entity_show)
+
+    entity_alias_parser = entity_sub.add_parser("alias", help="Add an alias to an entity.")
+    entity_alias_parser.add_argument("entity_id", help="Entity ID to alias.")
+    entity_alias_parser.add_argument("alias_text", help="Alias text.")
+    entity_alias_parser.add_argument(
+        "--kind", default="name", choices=list(ALIAS_KINDS), help="Alias kind. Defaults to name."
+    )
+    entity_alias_parser.add_argument("--language", default=None, help="Optional language code.")
+    entity_alias_parser.set_defaults(handler=entity_alias)
+
+    entity_link_parser = entity_sub.add_parser(
+        "link", help="Bind an entity to an evidence reference."
+    )
+    entity_link_parser.add_argument("entity_id", help="Entity ID to link.")
+    entity_link_parser.add_argument(
+        "evidence_ref", help="corpus_cache.<table>.<row_id> reference, e.g. from a search hit."
+    )
+    entity_link_parser.add_argument(
+        "--role", default="mention", choices=list(LINK_ROLES), help="Link role. Defaults to mention."
+    )
+    entity_link_parser.add_argument(
+        "--status",
+        default="proposed",
+        choices=list(LINK_STATUSES),
+        help="Link review state. Defaults to proposed.",
+    )
+    entity_link_parser.set_defaults(handler=entity_link)
+
+    entity_review_parser = entity_sub.add_parser(
+        "review", help="Record a review decision on an entity, alias, link, or task."
+    )
+    entity_review_parser.add_argument("target_id", help="ID of the entity/alias/link/task to review.")
+    review_group = entity_review_parser.add_mutually_exclusive_group(required=True)
+    review_group.add_argument("--accept", action="store_true", help="Mark the target accepted.")
+    review_group.add_argument("--reject", action="store_true", help="Mark the target rejected.")
+    review_group.add_argument("--defer", action="store_true", help="Mark the target deferred.")
+    entity_review_parser.set_defaults(handler=entity_review)
+
+    entity_find_parser = entity_sub.add_parser(
+        "find", help="Discover candidate evidence for an entity via public search."
+    )
+    entity_find_parser.add_argument("entity_id", help="Entity ID to find evidence for.")
+    entity_find_parser.add_argument("query", help="Text query.")
+    entity_find_parser.add_argument(
+        "--image",
+        action="append",
+        metavar="PATH",
+        help="Example image path (repeatable). Engages the SigLIP cross-modal probe.",
+    )
+    entity_find_parser.add_argument(
+        "--limit", type=int, default=30, help="Maximum hits to return. Defaults to 30."
+    )
+    entity_find_parser.add_argument(
+        "--propose",
+        action="store_true",
+        help="Write proposed links and open review tasks for ref-bearing hits.",
+    )
+    entity_find_parser.add_argument(
+        "--role",
+        default="mention",
+        choices=list(LINK_ROLES),
+        help="Link role used when --propose is set. Defaults to mention.",
+    )
+    entity_find_parser.set_defaults(handler=entity_find)
 
     return parser
 

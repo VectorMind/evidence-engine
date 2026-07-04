@@ -273,6 +273,11 @@ Implemented today:
 - text, semantic, and hybrid search/index plumbing;
 - document root summaries, media album summaries, and fixed-path global
   representative FTS routing for `search text`;
+- generic Layer-4 entity runtime (`even entity`): create/list/show entities,
+  aliases, and evidence links; a search-assisted `entity find` discovery
+  bridge with an optional `--propose` flow into `review_tasks`; and
+  `entity review` accept/reject/defer decisions that never touch the
+  Layer-2/3 rows a link or task points at;
 - JSON-first command stdout;
 - persisted result JSON, events, summaries, and optional HTML reports.
 
@@ -447,6 +452,13 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `search` | `semantic <query>` | `query` | Search current semantic indexes. |
 | `search` | `hybrid <query>` | `query` | Search text and semantic indexes with RRF fusion. |
 | `search` | `image <image-path>` | `image-path` or `--text <query>` | Visual search: image→image (or `--text` for text→image) over image embeddings. |
+| `entity` | `add <name> --kind <kind>` | `name`, `--kind` | Create a new Layer-4 entity. |
+| `entity` | `list` | none | List entities, filterable by `--kind`, `--status`, `--review`. |
+| `entity` | `show <entity-id>` | `entity-id` | Show an entity hydrated with its aliases, links, relationships, and review tasks. |
+| `entity` | `alias <entity-id> <alias-text>` | `entity-id`, `alias-text` | Add an alternate name/label/identifier to an entity. |
+| `entity` | `link <entity-id> <evidence-ref>` | `entity-id`, `evidence-ref` | Bind an entity to a `corpus_cache.<table>.<row_id>` evidence reference. |
+| `entity` | `review <target-id> --accept\|--reject\|--defer` | `target-id`, one decision flag | Record a review decision on an entity, alias, link, or task. |
+| `entity` | `find <entity-id> <query>` | `entity-id`, `query` | Discover candidate evidence via `search text` (optional `--image PATH` cross-modal probe, `--propose` to write candidate links + tasks). |
 
 Minimal examples:
 
@@ -466,6 +478,12 @@ even search hybrid "contract renewal clause"
 even index scope "C:\docs\example-folder" --image
 even search image "C:\docs\example-folder\photo.jpg"
 even search image --text "people outdoors"
+even entity add "Acme Corp" --kind organization
+even entity alias ent_... "ACME" --kind abbreviation
+even entity find ent_... "Acme Corp renewal"
+even entity link ent_... corpus_cache.document_objects.obj_...  --role mention
+even entity review link_... --accept
+even entity show ent_...
 ```
 
 `sources scan` accepts optional safeguard overrides when a caller needs to
@@ -508,6 +526,20 @@ FTS indexes when routing is unavailable or weak. Passing `--image PATH` turns
 with SigLIP, their visual route is fused with the text routes to choose scopes, and
 image hits from those scopes come back alongside the text hits — the engine-side
 tool for higher-level agentic queries that carry both words and pictures.
+
+`even entity` is the only writer for the Layer-4 catalog tables. `entity add`
+creates an entity; `entity alias` and `entity link` attach alternate names and
+evidence. A link's `evidence-ref` is exactly the `ref` field a search hit
+already carries — `entity link` refuses one that does not resolve to a current
+row. `entity find <entity-id> <query>` wraps `search text` (with the same
+optional `--image` cross-modal probe) and attaches `ref` to every hit so it can
+be bound in one follow-up call; `--propose` writes ref-bearing hits straight in
+as `proposed` links plus open `review_tasks`. `entity review` then records
+accept/reject/defer on the entity, alias, link, or task itself — it never
+touches the Layer-2/3 row a link or task points at, so re-running `docs parse`,
+`index scope`, or `index routing` never overwrites a review decision.
+`entity show` hydrates an entity's aliases, links, relationships, and tasks by
+reading the current referenced rows, never a stored copy.
 
 ## Public Data Contract
 
@@ -558,6 +590,8 @@ Private or generated material:
 
 ## Related Plans
 
+- [Entity Layer Runtime And Reference Example](./plans/2026-07-04-entity-layer-runtime/plan.md)
+- [Web UI Viewer (Placeholder)](./plans/2026-07-04-webui-viewer/plan.md)
 - [Entity Layer Ownership](./plans/2026-06-28-entity-layer-ownership/plan.md)
 - [Knowledge Layers Merge](./plans/2026-06-07-knowledge-layers/plan.md)
 - [Repository Consolidation](./plans/2026-06-11-repo-consolidation/plan.md)

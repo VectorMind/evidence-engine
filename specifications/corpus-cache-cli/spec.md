@@ -229,6 +229,44 @@ carries a `ref` field holding its canonical evidence coordinate
 layers can store the hit as a plain reference without copying lower rows. Result
 payloads use public labels: `text`, `semantic`, and `hybrid`.
 
+## Entity Contract
+
+`even entity` is the only writer for the Layer-4 catalog tables (`entities`,
+`entity_aliases`, `entity_evidence_links`, `entity_classifications`,
+`entity_attributes`, `entity_relationships`, `review_tasks`). No other command
+writes these tables.
+
+Durable rules:
+
+- Review state is durable. Once an entity, alias, link, or task carries a
+  review decision (`accepted`, `rejected`, `deferred`), re-running `docs
+  parse`, `index scope`, or `index routing` over the same source must never
+  overwrite it. Those commands only regenerate Layer 2/3 rows; Layer 4 rows
+  change only through `even entity` commands.
+- Links store references, never copies. `entity link <entity-id> <ref>`
+  accepts exactly the `corpus_cache.<table>.<row_id>` strings the Reference
+  Contract defines -- the same strings every search hit already carries as
+  `ref`. The link row stores only that string; `entity show` hydrates it by
+  reading the current referenced row, so provenance always reflects live
+  catalog state rather than a snapshot.
+- `entity link` refuses a reference that does not resolve to a current row
+  (`error_kind: evidence_ref_not_found`), so the catalog never accumulates
+  dangling links.
+- `entity find <entity-id> <query> [--image PATH]` is a discovery bridge, not
+  a second search backend: it wraps `search text` (including its optional
+  SigLIP cross-modal probe) and attaches `ref` to every hit so a hit can be
+  bound with `entity link` in one follow-up call. With `--propose`, ref-bearing
+  hits are written immediately as `proposed` links plus open `review_tasks`,
+  ready for `entity review`. The full underlying search payload (including
+  `route_trace`) passes through unchanged.
+- `entity review <target-id> --accept|--reject|--defer` sets only the review
+  column on the target's own Layer-4 row (`review_status`, `link_status`, or
+  `task_status`); it never touches the Layer-2/3 row a link or task points at.
+- Producers of entity rows are humans or the search-assisted `entity find
+  --propose` bridge in this contract. Model-driven or agentic entity
+  extraction pipelines are a separate, future producer and must still write
+  through this same runtime -- never direct SQL.
+
 ## Global Representation Contract
 
 The global representative layer is a lossy routing map, not evidence. It is built
@@ -379,6 +417,13 @@ Public commands:
 | `search` | `semantic <query>` | `query` | Search semantic projections. |
 | `search` | `hybrid <query>` | `query` | Fuse text and semantic candidates. |
 | `search` | `image <image-path>` | `image-path` | Query-by-image visual similarity over media image embeddings. |
+| `entity` | `add <name>` | `name`, `--kind` | Create a new Layer-4 entity. |
+| `entity` | `list` | none | List entities, optionally filtered by kind/status/review state. |
+| `entity` | `show <entity-id>` | `entity-id` | Show one entity hydrated with aliases, links, relationships, and tasks. |
+| `entity` | `alias <entity-id> <alias-text>` | `entity-id`, `alias-text` | Add an alternate name/label/identifier to an entity. |
+| `entity` | `link <entity-id> <evidence-ref>` | `entity-id`, `evidence-ref` | Bind an entity to an evidence reference. Refuses an unresolvable ref. |
+| `entity` | `review <target-id> --accept\|--reject\|--defer` | `target-id`, one decision flag | Record a review decision on an entity, alias, link, or task. |
+| `entity` | `find <entity-id> <query>` | `entity-id`, `query` | Discover candidate evidence via `search text`, optionally `--image PATH` (cross-modal probe) and `--propose` (write proposed links + review tasks). |
 
 There is no `manage` command group and no V1 `handoff` command group.
 
