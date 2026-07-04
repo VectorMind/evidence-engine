@@ -69,11 +69,12 @@ Use `plans/` for dated planning packets tied to active work.
 Each plan folder uses:
 
 ```text
-plans/YYYY-MM-DD-<slug>/
-  survey.md            # only when the maintainer explicitly requests one
-  plan.md
-  implementation.md    # created only after implementation work has happened
-  test.md
+plans/YYYY-MM/
+  DD-<slug>/
+    survey.md            # only when the maintainer explicitly requests one
+    plan.md
+    implementation.md    # created only after implementation work has happened
+    test.md
 ```
 
 Create `survey.md` only when the maintainer explicitly requests a survey. Do

@@ -106,7 +106,7 @@ Non-goals:
    representative store (build/manifest-watermark/write/search) and reduce the
    three FTS/semantic/siglip families to one.
 4. **`routing.py` decomposition (Finding 1).** *Handed off to its own packet:*
-   [2026-06-27-routing-decomposition](../2026-06-27-routing-decomposition/).
+   [2026-06-27-routing-decomposition](../27-routing-decomposition/).
    Splitting a 3.6k-line module is a deliberate design task, not a mechanical
    move, so it was lifted out of this cleanup packet. The access-layer migration
    of routing's sqlite sites (Phase 1) is already done independently of the

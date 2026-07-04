@@ -15,8 +15,8 @@ packet closed in plans/closed.md.
   - `evidence-memory-survey.md`
   - `evidence_memory_consolidation_handover.md`
 - Reviewed the related global routing index packet:
-  - `plans/2026-06-06-global-routing-indexes/plan.md`
-  - `plans/2026-06-06-global-routing-indexes/survey.md`
+  - `plans/2026-06/06-global-routing-indexes/plan.md`
+  - `plans/2026-06/06-global-routing-indexes/survey.md`
 - Reviewed the current repo state through README, the binding corpus-cache CLI
   spec, `catalog.yaml`, and the current CLI entrypoint.
 - Created `plan.md` for the knowledge-layer merge with:

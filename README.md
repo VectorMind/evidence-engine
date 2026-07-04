@@ -590,10 +590,10 @@ Private or generated material:
 
 ## Related Plans
 
-- [Entity Layer Runtime And Reference Example](./plans/2026-07-04-entity-layer-runtime/plan.md)
-- [Web UI Viewer (Placeholder)](./plans/2026-07-04-webui-viewer/plan.md)
-- [Entity Layer Ownership](./plans/2026-06-28-entity-layer-ownership/plan.md)
-- [Knowledge Layers Merge](./plans/2026-06-07-knowledge-layers/plan.md)
-- [Repository Consolidation](./plans/2026-06-11-repo-consolidation/plan.md)
-- [Global Routing Indexes](./plans/2026-06-06-global-routing-indexes/plan.md)
+- [Entity Layer Runtime And Reference Example](./plans/2026-07/04-entity-layer-runtime/plan.md)
+- [Web UI Viewer (Placeholder)](./plans/2026-07/04-webui-viewer/plan.md)
+- [Entity Layer Ownership](./plans/2026-06/28-entity-layer-ownership/plan.md)
+- [Knowledge Layers Merge](./plans/2026-06/07-knowledge-layers/plan.md)
+- [Repository Consolidation](./plans/2026-06/11-repo-consolidation/plan.md)
+- [Global Routing Indexes](./plans/2026-06/06-global-routing-indexes/plan.md)
 - [Corpus Cache CLI Specification](./specifications/corpus-cache-cli/spec.md)

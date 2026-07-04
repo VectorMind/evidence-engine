@@ -5,7 +5,7 @@ Status: Local inventory and critique complete.
 
 ## Inputs Reviewed
 
-- `plans/2026-06-06-global-routing-indexes/handing-in.md`
+- `plans/2026-06/06-global-routing-indexes/handing-in.md`
 - `README.md`
 - `WORKFLOW.md`
 - `specifications/corpus-cache-cli/spec.md`
@@ -117,4 +117,3 @@ redaction-safe structured search output
 
 LanceDB global representatives, query usage promotion, and collection indexes
 should remain later phases unless the open design points are accepted.
-

@@ -6,7 +6,7 @@ The summary nodes are routing hints only; final evidence still comes from the
 root-scoped indexes.
 
 Decomposed from a single ~3.6k-line ``routing.py``; see
-``plans/2026-06-27-routing-decomposition``. This package ``__init__`` owns the
+``plans/2026-06/27-routing-decomposition``. This package ``__init__`` owns the
 ``index_routing`` / ``list_representatives`` orchestrators and is the stable
 facade: it re-exports every name that callers (`cli.py`, `fts.py`) and
 ``tests/test_routing.py`` import, regardless of which submodule now owns it.
@@ -277,5 +277,4 @@ def list_representatives(path: Path | None = None) -> dict[str, Any]:
             "summary_nodes": sum(len(root["nodes"]) for root in root_list),
         },
     }
-
 

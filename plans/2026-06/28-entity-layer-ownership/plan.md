@@ -8,9 +8,9 @@ Status: Closed - implemented and proven
 
 The repository has drifted between two correct but conflicting ideas:
 
-- `plans/2026-06-07-knowledge-layers/` established the durable layer split:
+- `plans/2026-06/07-knowledge-layers/` established the durable layer split:
   observed/generated evidence is lower, reviewed semantic meaning is upper.
-- `plans/2026-06-11-repo-consolidation/` closed with `even` as
+- `plans/2026-06/11-repo-consolidation/` closed with `even` as
   private-repo-blind and put private Markdown/YAML knowledge in private Git.
   That boundary correctly kept real paths, source maps, personal labels, and
   curated notes out of the public repo.
@@ -53,7 +53,7 @@ The revised rule is:
 even manages standard entity catalogs; upper layers curate knowledge and custom semantics.
 ```
 
-This supersedes `plans/2026-06-11-repo-consolidation/plan.md` RD-006 only where
+This supersedes `plans/2026-06/11-repo-consolidation/plan.md` RD-006 only where
 it excluded generic entity runtime ownership from `evidence-engine`. RD-004
 still stands: `even` must remain blind to private repo path, Git state, OKF
 layout, and private Markdown structure.

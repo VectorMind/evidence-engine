@@ -14,15 +14,15 @@ Files reviewed:
 - `specifications/corpus-cache-cli/spec.md`
 - `catalog.yaml`
 - `src/documents_manager/cli.py`
-- `plans/2026-06-04-docling-search-index/plan.md`
-- `plans/2026-06-04-docling-search-index/implementation.md`
-- `plans/2026-06-06-parse-memory-failures/plan.md`
-- `plans/2026-06-06-parse-memory-failures/implementation.md`
-- `plans/2026-06-06-global-routing-indexes/plan.md`
-- `plans/2026-06-06-global-routing-indexes/survey.md`
-- `plans/2026-06-07-knowledge-layers/merge-plan.md`
-- `plans/2026-06-07-knowledge-layers/evidence-memory-survey.md`
-- `plans/2026-06-07-knowledge-layers/evidence_memory_consolidation_handover.md`
+- `plans/2026-06/04-docling-search-index/plan.md`
+- `plans/2026-06/04-docling-search-index/implementation.md`
+- `plans/2026-06/06-parse-memory-failures/plan.md`
+- `plans/2026-06/06-parse-memory-failures/implementation.md`
+- `plans/2026-06/06-global-routing-indexes/plan.md`
+- `plans/2026-06/06-global-routing-indexes/survey.md`
+- `plans/2026-06/07-knowledge-layers/merge-plan.md`
+- `plans/2026-06/07-knowledge-layers/evidence-memory-survey.md`
+- `plans/2026-06/07-knowledge-layers/evidence_memory_consolidation_handover.md`
 
 Expected result:
 

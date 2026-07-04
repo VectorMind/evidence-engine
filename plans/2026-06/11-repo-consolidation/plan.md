@@ -5,7 +5,7 @@ Closed: 2026-06-27
 Status: Closed - planning decision settled, doc-only
 Inputs: [survey.md](./survey.md)
 
-2026-06-28 note: [Entity Layer Ownership](../2026-06-28-entity-layer-ownership/plan.md)
+2026-06-28 note: [Entity Layer Ownership](../28-entity-layer-ownership/plan.md)
 supersedes RD-006 only where this packet excluded generic entity catalog
 ownership from `evidence-engine`. `even` remains private-repo-blind, and private
 Knowledge Markdown, source maps, private paths, and custom domain semantics

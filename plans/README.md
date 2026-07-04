@@ -5,10 +5,11 @@ Use this directory for dated planning packets.
 Each plan folder uses this shape:
 
 ```text
-plans/YYYY-MM-DD-<slug>/
-  plan.md
-  implementation.md
-  test.md
+plans/YYYY-MM/
+  DD-<slug>/
+    plan.md
+    implementation.md
+    test.md
 ```
 
 Add `survey.md` before `plan.md` when the work needs discovery or review before

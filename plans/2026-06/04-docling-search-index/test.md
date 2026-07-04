@@ -6,7 +6,7 @@ Status: Phase 4 Docling parse proof started.
 ## Proof So Far
 
 - Read the existing plan packet:
-  `plans/2026-06-04-docling-search-index/{survey.md,plan.md,implementation.md,test.md,deep-research-report.md}`.
+  `plans/2026-06/04-docling-search-index/{survey.md,plan.md,implementation.md,test.md,deep-research-report.md}`.
 - Read the upstream consumer handoff:
   `C:\dev\wassfila\documents-manager\plans\2026-06-05-personal-document-index\handoff.md`.
 - Read the upstream workflow:
@@ -25,7 +25,7 @@ Status: Phase 4 Docling parse proof started.
   `catalog.yaml`, `src/blob_manager.js`, `src/structure_db.js`, and `cli.js`
   for the thresholded blob-storage analysis.
 - Added root `catalog.yaml` for schema review.
-- Rewrote `plans/2026-06-04-docling-search-index/plan.md` with OP-001 through
+- Rewrote `plans/2026-06/04-docling-search-index/plan.md` with OP-001 through
   OP-015, concrete `agents-docs` examples, root layout scope, Docling mapping,
   blob-storage analysis, embedding candidates, and new open points.
 - Rewrote `specifications/corpus-cache-cli/spec.md` so the durable spec matches
@@ -54,7 +54,7 @@ Status: Phase 4 Docling parse proof started.
   `agents-docs`, stdlib `sqlite3`, no SQL data-access wrapper, `one_per_folder`,
   and the new open points.
 - Ran ASCII/no-tab checks with Python. `catalog.yaml`,
-  `plans/2026-06-04-docling-search-index/plan.md`, and
+  `plans/2026-06/04-docling-search-index/plan.md`, and
   `specifications/corpus-cache-cli/spec.md` are ASCII-only; `catalog.yaml` has
   no tab characters.
 - Updated catalog review split and added `config/exposures.yaml`,
@@ -74,7 +74,7 @@ Status: Phase 4 Docling parse proof started.
 - Ran ASCII/no-tab checks on `catalog.yaml`, `config/exposures.yaml`,
   `config/embeddings.yaml`, `store_templates.yaml`,
   `specifications/corpus-cache-cli/spec.md`, and
-  `plans/2026-06-04-docling-search-index/plan.md`; all are ASCII-only and have
+  `plans/2026-06/04-docling-search-index/plan.md`; all are ASCII-only and have
   no tab characters.
 - Added `config/parser.yaml` and updated the spec/plan so the cache root is
   fixed at `$HOME/.cache/agents-docs/`, no CLI command accepts a cache-root

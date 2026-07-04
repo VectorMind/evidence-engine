@@ -25,7 +25,7 @@ implemented and proven.
   `user_version=10`.
 - Added focused catalog schema tests and adjusted the routing catalog contract
   test for the new user version.
-- Added a supersession note to `plans/2026-06-11-repo-consolidation/plan.md`.
+- Added a supersession note to `plans/2026-06/11-repo-consolidation/plan.md`.
 
 ## Decisions
 

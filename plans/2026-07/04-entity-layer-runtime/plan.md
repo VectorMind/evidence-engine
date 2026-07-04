@@ -8,7 +8,7 @@ Status: Closed - implemented and proven
 
 The Indexes layer (Layer 3) — including the scope router and the
 entity/cross-modal probe — was designed and tuned for a consumer that does not
-exist yet. `plans/2026-06-28-entity-layer-ownership/` gave the engine ownership
+exist yet. `plans/2026-06/28-entity-layer-ownership/` gave the engine ownership
 of the generic Layer-4 entity catalog and added the tables to `catalog.yaml`
 (`entities`, `entity_aliases`, `entity_evidence_links`,
 `entity_classifications`, `entity_attributes`, `entity_relationships`,
@@ -30,7 +30,7 @@ probe end-to-end and records what that exercise reveals about Layer 3.
   driven by an admin role. No server, daemon, or UI-triggered tasks in this
   plan.
 - The web UI is a separate later plan
-  (`plans/2026-07-04-webui-viewer/`). It consumes the data outputs this plan
+  (`plans/2026-07/04-webui-viewer/`). It consumes the data outputs this plan
   stabilizes; nothing here may depend on it.
 - Reference-example selection is expected to need real discussion. This plan
   fixes the *criteria* and commits to **at least one** example; further

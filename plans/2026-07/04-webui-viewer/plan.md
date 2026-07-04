@@ -2,7 +2,7 @@
 
 Date: 2026-07-04
 Status: Placeholder — direction notes only, not approved for implementation.
-Blocked on: `plans/2026-07-04-entity-layer-runtime/` closing and the data
+Blocked on: `plans/2026-07/04-entity-layer-runtime/` closing and the data
 outputs (results JSON, summaries, entity tables) taking stable shape.
 
 ## Direction (agreed 2026-07-04)

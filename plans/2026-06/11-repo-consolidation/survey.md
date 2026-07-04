@@ -158,7 +158,7 @@ Only two files plus history:
 
 ## What Changed Since the Knowledge-Layers Merge Plan
 
-`plans/2026-06-07-knowledge-layers/merge-plan.md` listed "one huge monolithic
+`plans/2026-06/07-knowledge-layers/merge-plan.md` listed "one huge monolithic
 private repo" as an anti-goal and proposed thin `personal-documents` /
 `personal-media` workspace repos. Two updates:
 
@@ -191,6 +191,6 @@ Assessment: default no.
 
 - evidence-engine: README.md, AGENTS.md, WORKFLOW.md, pyproject.toml,
   catalog.yaml, docs/models.md, src/even/cli.py, plans/open.md,
-  plans/closed.md, plans/2026-06-07-knowledge-layers/merge-plan.md.
+  plans/closed.md, plans/2026-06/07-knowledge-layers/merge-plan.md.
 - private-documents: full tree (19 files), git log, git status.
 - private-media: full tree (20 files), git log, git status.

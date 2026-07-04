@@ -108,7 +108,7 @@ Required by the plan as a first-class deliverable, even if the answer were
    no new plumbing beyond `attach_hit_refs`, and `entity show` could hydrate
    both document and media evidence through the same generic `resolve_ref`
    path. The Layer-3 API shape the routing/entity plans anticipated back in
-   `plans/2026-06-28-entity-layer-ownership/` needed no redesign.
+   `plans/2026-06/28-entity-layer-ownership/` needed no redesign.
 
 ## Post-Landing Fixes (2026-07-04)
 

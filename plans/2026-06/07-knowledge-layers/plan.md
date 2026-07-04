@@ -31,7 +31,7 @@ media identity review, topic logic, and lower extraction/indexing into one
 unclear repository or one unclear CLI.
 
 The plan also has to leave room for
-`plans/2026-06-06-global-routing-indexes`: broad search should later use
+`plans/2026-06/06-global-routing-indexes`: broad search should later use
 document, folder, root, or cluster-level representative indexes for routing,
 while chunk-level FTS/vector indexes and catalog evidence remain the proof
 layer.
@@ -407,7 +407,7 @@ Exit: higher layers can combine direct SQLite reads with JSON search results.
 
 ### Phase 7: Global Routing Alignment
 
-- Reconcile this plan with `plans/2026-06-06-global-routing-indexes`.
+- Reconcile this plan with `plans/2026-06/06-global-routing-indexes`.
 - Decide summary-node schema and representative index registry behavior in that
   separate packet.
 - Keep representative global indexes at document/folder/root level, not chunk
