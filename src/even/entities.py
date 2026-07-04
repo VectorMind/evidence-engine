@@ -268,6 +268,14 @@ def add_alias(entity_id: str, alias_text: str, options: AddAliasOptions) -> dict
     if _fetch_entity(entity_id) is None:
         return {"status": "not_found", "error_kind": "entity_not_found", "entity_id": entity_id}
 
+    if options.evidence_ref is not None and resolve_ref(options.evidence_ref) is None:
+        return {
+            "status": "failed",
+            "error_kind": "evidence_ref_not_found",
+            "evidence_ref": options.evidence_ref,
+            "message": "The referenced evidence row could not be resolved.",
+        }
+
     alias_id = _new_id("alias")
     with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -394,7 +402,8 @@ def find_entity_evidence(
     `image_paths` is set) and attaches the canonical `ref` to every hit, so a
     hit can be bound with `add_link` in one follow-up call. With
     `options.propose`, ref-bearing hits are immediately written as `proposed`
-    links plus open `review_tasks`, ready for `review_target`.
+    links plus open `review_tasks`, ready for `review_target`; hits whose ref
+    the entity already links (any status) are skipped, never duplicated.
     """
 
     catalog_state = ensure_catalog()
@@ -417,10 +426,20 @@ def find_entity_evidence(
         now = _iso(_utc_now())
         with catalog_connection() as conn:
             conn.execute("PRAGMA foreign_keys = ON")
+            # Refs the entity already links (any status) are skipped so a
+            # re-run of the same query never duplicates links or tasks.
+            already_linked = {
+                row[0]
+                for row in conn.execute(
+                    'SELECT evidence_ref FROM "entity_evidence_links" WHERE entity_id = ?',
+                    (entity_id,),
+                ).fetchall()
+            }
             for hit in result.get("hits", []):
                 ref = hit.get("ref")
-                if not ref:
+                if not ref or ref in already_linked:
                     continue
+                already_linked.add(ref)
                 link_id = _new_id("link")
                 attrs = json.dumps(
                     {

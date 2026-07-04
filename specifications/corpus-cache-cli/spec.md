@@ -257,8 +257,10 @@ Durable rules:
   SigLIP cross-modal probe) and attaches `ref` to every hit so a hit can be
   bound with `entity link` in one follow-up call. With `--propose`, ref-bearing
   hits are written immediately as `proposed` links plus open `review_tasks`,
-  ready for `entity review`. The full underlying search payload (including
-  `route_trace`) passes through unchanged.
+  ready for `entity review`; hits whose ref the entity already links (any
+  status) are skipped, so re-running the same discovery never duplicates links
+  or tasks. The full underlying search payload (including `route_trace`)
+  passes through unchanged.
 - `entity review <target-id> --accept|--reject|--defer` sets only the review
   column on the target's own Layer-4 row (`review_status`, `link_status`, or
   `task_status`); it never touches the Layer-2/3 row a link or task points at.

@@ -110,6 +110,22 @@ Required by the plan as a first-class deliverable, even if the answer were
    path. The Layer-3 API shape the routing/entity plans anticipated back in
    `plans/2026-06-28-entity-layer-ownership/` needed no redesign.
 
+## Post-Landing Fixes (2026-07-04)
+
+Two minor observations from the post-landing review, fixed directly:
+
+- `add_alias` now validates `evidence_ref` the same way `add_link` does:
+  a ref that does not resolve to a current row is refused with
+  `error_kind: evidence_ref_not_found` instead of being stored blind. The CLI
+  never exposed the flag, so no CLI behavior changed -- this closes the
+  module-level path only. Covered by
+  `test_add_alias_rejects_unresolvable_evidence_ref`.
+- `entity find --propose` now skips hits whose ref the entity already links
+  (any status), so re-running the same discovery query never duplicates
+  proposed links or review tasks. Dedupe also applies within a single result
+  set. Recorded in the spec's Entity Contract section; covered by
+  `test_find_entity_evidence_propose_never_duplicates_links`.
+
 ## Follow-Up Risks
 
 - `review_target`'s prefix-based target-kind lookup (`ent_`, `alias_`,

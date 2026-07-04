@@ -70,6 +70,21 @@ def test_add_alias_normalizes_lookup_text() -> None:
     assert alias["normalized_alias"] == "n.w. salvage"
 
 
+def test_add_alias_rejects_unresolvable_evidence_ref() -> None:
+    created = add_entity("Northwind Salvage", AddEntityOptions(kind="organization"))
+    entity_id = created["entity_id"]
+
+    result = add_alias(
+        entity_id,
+        "N.W. Salvage",
+        AddAliasOptions(evidence_ref="corpus_cache.document_objects.does-not-exist"),
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_kind"] == "evidence_ref_not_found"
+    assert show_entity(entity_id)["aliases"] == []
+
+
 def test_add_link_rejects_unresolvable_ref() -> None:
     created = add_entity("Northwind Salvage", AddEntityOptions(kind="organization"))
     entity_id = created["entity_id"]
@@ -185,6 +200,33 @@ def test_find_entity_evidence_requires_existing_entity() -> None:
 
     assert result["status"] == "not_found"
     assert result["error_kind"] == "entity_not_found"
+
+
+def test_find_entity_evidence_propose_never_duplicates_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = add_entity("Northwind Salvage", AddEntityOptions(kind="organization"))
+    entity_id = created["entity_id"]
+
+    import even.fts
+
+    def fake_search(query, options):  # noqa: ANN001, ANN202
+        return {
+            "status": "ok",
+            "hits": [{"ref": "corpus_cache.document_objects.obj_fixed", "score": 0.9}],
+            "counts": {},
+        }
+
+    monkeypatch.setattr(even.fts, "search_text_indexes", fake_search)
+
+    first = find_entity_evidence(entity_id, "salvage", FindEntityEvidenceOptions(propose=True))
+    second = find_entity_evidence(entity_id, "salvage", FindEntityEvidenceOptions(propose=True))
+
+    assert len(first["proposed_links"]) == 1
+    assert second["proposed_links"] == []
+    shown = show_entity(entity_id)
+    assert len(shown["links"]) == 1
+    assert len(shown["review_tasks"]) == 1
 
 
 def test_resolve_ref_returns_none_for_malformed_or_unknown_table() -> None:
