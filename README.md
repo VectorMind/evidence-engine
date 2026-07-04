@@ -22,11 +22,11 @@ boxes. Each layer only describes what the layer below produced or accepted.
 Meaning is added on the way up, never assumed at the bottom:
 
 ```text
-5  Knowledge   [ markdown notes · conventions · topic handoff slices ]       ▲ meaning
-4  Entities    [ entities · aliases · classifications · links · review tasks ]│
-3  Indexes     [ text (FTS) · semantic (vector) · hybrid · routing ]
-2  Evidence    [ inventory · parsed objects · OCR/captions/summaries ]
-1  Sources     [ folders · OneDrive · archives · connectors ]                ▼ evidence
+5  Knowledge   [ markdown notes · conventions · topic handoff slices ]            ▲ meaning
+4  Entities    [ entities · aliases · classifications · links · review tasks ]    │
+3  Indexes     [ text (FTS) · semantic (vector) · hybrid · routing ]              |
+2  Evidence    [ inventory · parsed objects · OCR/captions/summaries ]            |
+1  Sources     [ folders · OneDrive · archives · connectors ]                     ▼ evidence
 ```
 
 `even` **manages the standard mechanics for layers 1–4**: source inventory,
@@ -40,11 +40,11 @@ never the reverse.
 
 | # | Layer | Boxes inside | Catalog tables | Built by |
 | --- | --- | --- | --- | --- |
-| 1 | **Sources** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots`, `source_items`, `source_root_stats`, `source_extension_stats` | `sources scan` |
-| 2 | **Evidence** | Everything machine-produced and **rebuildable**: parsed typed objects (documents, pages, tables, figures, images, blobs), media metadata, and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items`, `media_assets`, `image_metadata`, `video_metadata`, `model3d_metadata`, `media_artifacts`, `media_observations`, `media_dedupe_candidates` | `docs parse`, `media inspect`, `media describe`, `media dedupe` |
-| 3 | **Indexes** | Fast rebuildable retrieval projections: text (FTS), semantic (vector), hybrid fusion, image vectors, and global routing. | `index_scopes`, `summary_nodes`, `fts_indexes`, `semantic_stores`, `image_stores` | `index scope`, `index routing`, `search` |
-| 4 | **Entities** | Standard reviewed/proposed meaning: entities, aliases, classifications, attributes, evidence links, relationships, and review tasks. Durable; carries judgment. | `entities`, `entity_aliases`, `entity_evidence_links`, `entity_classifications`, `entity_attributes`, `entity_relationships`, `review_tasks` | engine APIs, imports, or workspace scripts |
 | 5 | **Knowledge** | Human-readable Markdown/YAML: conventions, decisions, selected facts, topic handoff slices. | *(markdown / upper files)* | workspaces on top |
+| 4 | **Entities** | Standard reviewed/proposed meaning: entities, aliases, classifications, attributes, evidence links, relationships, and review tasks. Durable; carries judgment. | `entities`, `entity_aliases`, `entity_evidence_links`, `entity_classifications`, `entity_attributes`, `entity_relationships`, `review_tasks` | engine APIs, imports, or workspace scripts |
+| 3 | **Indexes** | Fast rebuildable retrieval projections: text (FTS), semantic (vector), hybrid fusion, image vectors, and global routing. | `index_scopes`, `summary_nodes`, `fts_indexes`, `semantic_stores`, `image_stores` | `index scope`, `index routing`, `search` |
+| 2 | **Evidence** | Everything machine-produced and **rebuildable**: parsed typed objects (documents, pages, tables, figures, images, blobs), media metadata, and generated observations (OCR text, captions, shallow descriptions). *Never proof of absence.* | `documents`, `docling_artifacts`, `artifact_blobs`, `document_objects`, `valuable_items`, `media_assets`, `image_metadata`, `video_metadata`, `model3d_metadata`, `media_artifacts`, `media_observations`, `media_dedupe_candidates` | `docs parse`, `media inspect`, `media describe`, `media dedupe` |
+| 1 | **Sources** | Original files/connectors, read-only. Paths are private; only schemas are public. | `source_roots`, `source_items`, `source_root_stats`, `source_extension_stats` | `sources scan` |
 
 The middle layers carry the load, so their scope is explicit:
 
