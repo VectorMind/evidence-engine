@@ -1,0 +1,166 @@
+---
+// App bar: fixed viewer sections plus the two side-menu toggles.
+// Reused from astro-huge-doc src/layout/AppBar.astro with two changes:
+// the menu comes from lib/nav.ts (fixed sections, not content-derived) and
+// the right toggle supports a disabled state (plan D4: a page with no
+// sections keeps the ToC region closed and the control inert).
+import './colors.css';
+import ThemeToggle from './ThemeToggle.astro';
+import type { AppBarItem } from '../lib/nav';
+
+export interface Props {
+    menu: AppBarItem[];
+    showLeftToggle?: boolean;
+    rightToggleDisabled?: boolean;
+}
+
+const { menu, showLeftToggle = false, rightToggleDisabled = false } = Astro.props as Props;
+const left_side  = menu.filter((item)=>(!item.align || item.align !== "right"))
+const right_side = menu.filter((item)=>(item.align === "right"))
+---
+<div class="navbar">
+    <ul class="navbar-left">
+        {showLeftToggle &&
+            <li class="nav-toggle-item">
+                <button id="nav-toggle-left" type="button" class="nav-toggle"
+                    title="Toggle pages menu" aria-label="Toggle pages menu" aria-expanded="false">
+                    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+                        <rect x="1.5" y="2.5" width="13" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+                        <line x1="6" y1="2.5" x2="6" y2="13.5" stroke="currentColor" stroke-width="1.3"></line>
+                        <rect class="fill" x="2.7" y="4.2" width="2" height="7.6" rx="0.6" fill="currentColor"></rect>
+                    </svg>
+                </button>
+            </li>
+        }
+        {left_side.map((item)=>(
+        <li>
+            <a href={item.link} class={item.active_class}>
+                {item.label}
+            </a>
+        </li>
+        ))}
+    </ul>
+    <ul class="navbar-right">
+        {right_side.map((item)=>(
+            <li>
+                <a href={item.link} target={item.link.startsWith('/')?"":"_blank"}>
+                    {item.label}
+                </a>
+            </li>
+        ))}
+        <li class="theme-toggle-item">
+            <ThemeToggle />
+        </li>
+        <li class="nav-toggle-item">
+            <button id="nav-toggle-right" type="button" class="nav-toggle"
+                title={rightToggleDisabled ? "No outline on this page" : "Toggle outline"}
+                aria-label={rightToggleDisabled ? "No outline on this page" : "Toggle outline"}
+                aria-expanded="false"
+                disabled={rightToggleDisabled}>
+                <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+                    <rect x="1.5" y="2.5" width="13" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+                    <line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor" stroke-width="1.3"></line>
+                    <rect class="fill" x="11.3" y="4.2" width="2" height="7.6" rx="0.6" fill="currentColor"></rect>
+                </svg>
+            </button>
+        </li>
+    </ul>
+</div>
+
+<style>
+.navbar{
+    display:flex;
+    justify-content: space-between;
+    min-width: 400px;
+}
+.navbar-left {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+.navbar-right {
+    padding-right: 0;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+ul{
+    margin:0px;
+    padding:0px;
+}
+li{
+    list-style: none;
+}
+
+a{
+    float:left;
+    font-size: 17px;
+    padding: 14px 16px;
+    text-align:center;
+    color: var(--content-color);
+	text-decoration: none;
+
+}
+a:hover{
+    background-color: var(--header-active-color);
+}
+a.active{
+    border:0px;
+    border-bottom:  3px solid var(--content-color-faint);
+    background-color: var(--header-active-color);
+}
+
+.navbar-right > li > a{
+    float:right;
+    padding: 6px;
+}
+.theme-toggle-item{
+    display:flex;
+    align-items:center;
+}
+
+/* Side-menu toggles — the app bar is the single authority for opening and
+   closing the page tree (left) and outline (right). */
+.nav-toggle-item{
+    display:flex;
+    align-items:center;
+}
+.nav-toggle{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:transparent;
+    border:0;
+    border-radius:var(--radius-sm);
+    margin:4px 2px;
+    padding:6px;
+    color:var(--content-color-muted);
+    cursor:pointer;
+}
+.nav-toggle:hover:not(:disabled){
+    background-color:var(--header-active-color);
+    color:var(--content-color);
+}
+.nav-toggle:focus-visible{
+    outline:2px solid var(--front-blue);
+    outline-offset:2px;
+}
+/* Disabled: the page has no outline, the control is inert (plan D4). */
+.nav-toggle:disabled{
+    color:var(--content-color-faint);
+    opacity:0.45;
+    cursor:default;
+}
+/* Open state: accent the icon and light its sidebar cell so the button
+   reads as "panel is showing". */
+.nav-toggle[aria-expanded="true"]{
+    color:var(--content-color);
+}
+.nav-toggle[aria-expanded="true"] .fill{
+    fill:var(--front-blue);
+}
+.nav-toggle[aria-expanded="false"] .fill{
+    opacity:0;
+}
+</style>

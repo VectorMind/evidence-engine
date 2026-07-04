@@ -1,0 +1,43 @@
+/*
+  Non-color design tokens.
+  ------------------------------------------------------------------
+  Color lives in `colors.css`; everything *around* color — the shared
+  scales for type, space, radius and the font stack — lives here so
+  components compose on one rhythm instead of ad-hoc px values.
+
+  See `specification/ui_design.md` (Foundations) for the intent and
+  `plans/2026-06-27-ui-redesign/plan.md` for the rollout. These do not
+  vary by theme, so they sit on :root unconditionally.
+*/
+
+:root {
+  /* Font stack — declared once, inherited everywhere. On Windows this
+     resolves to Segoe UI, matching GitHub's reading surface. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* Type scale (rem, 1rem = 16px). Body sits at --text-base; headings
+     step up. Sizes track GitHub's markdown rendering, the chosen
+     reference for reading comfort. */
+  --text-sm: 0.85rem;   /* UI affordances: menus, controls, captions */
+  --text-base: 1rem;    /* body copy */
+  --text-h4: 1rem;
+  --text-h3: 1.25rem;
+  --text-h2: 1.5rem;
+  --text-h1: 2rem;
+
+  --leading-body: 1.5;     /* paragraphs / reading measure (GitHub's value) */
+  --leading-heading: 1.25; /* tighter for headings */
+
+  /* Space scale (rem). Pick the nearest step; raw px only for hairlines. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Radius — two roles only. */
+  --radius-sm: 4px; /* controls, chips, small cards */
+  --radius-md: 8px; /* larger panels */
+}

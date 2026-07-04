@@ -1,0 +1,38 @@
+---
+// Source items (Milestone 1): the first server-driven paginated table.
+// Page 1 is SSR'd here (no first-paint fetch); every later page/sort/filter
+// change goes through /api/table/source_items.json (plan D5).
+import Layout from '../../layout/Layout.astro';
+import DataTable from '../../components/table/DataTable';
+import { catalog } from '../../lib/catalog';
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZES,
+  TABLES,
+  parsePageQuery,
+  queryPage,
+} from '../../lib/tables';
+
+const spec = TABLES.source_items;
+const db = catalog();
+const initial = db
+  ? queryPage(spec, parsePageQuery(spec, new URLSearchParams()))
+  : null;
+---
+<Layout title="Source Items">
+  <h1 class="heading" id="source-items">Source Items</h1>
+  {!db || !initial ? (
+    <p>No catalog found. Build one with the <code>even</code> CLI, then reload.</p>
+  ) : (
+    <DataTable
+      client:load
+      endpoint="/api/table/source_items.json"
+      columns={spec.columns}
+      initialRows={initial.rows}
+      initialTotal={initial.total}
+      defaultSort={spec.defaultSort}
+      pageSizes={[...PAGE_SIZES]}
+      defaultPageSize={DEFAULT_PAGE_SIZE}
+    />
+  )}
+</Layout>

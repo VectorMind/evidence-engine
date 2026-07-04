@@ -1,0 +1,206 @@
+---
+// Collapsible side menu shell shared by the pages tree (left) and outline
+// ToC (right). Reused from astro-huge-doc src/layout/SideMenu.astro with the
+// content-hash state key replaced by a fixed viewer-scoped key (menus here
+// are fixed by lib/nav.ts, not derived from a content tree).
+import './colors.css';
+import SubMenu from "./SubMenu.astro";
+import type { MenuItem } from '../lib/nav';
+
+export interface Props {
+  items: MenuItem[];
+  category: string;
+  initialOpen?: boolean;
+}
+
+let { items, category, initialOpen = true } = Astro.props;
+
+const open_class = (items.length > 0 && initialOpen)?"open":"closed"
+const data_width = (items.length > 0)?"20vw":"0vw"
+
+function getMaxDepth(entries: MenuItem[], level = 1): number {
+  let max = level;
+  for (const entry of entries ?? []) {
+    if (Array.isArray(entry.items) && entry.items.length > 0) {
+      max = Math.max(max, getMaxDepth(entry.items, level + 1));
+    }
+  }
+  return max;
+}
+
+function collectActiveLinks(entry: MenuItem, accumulator: string[] = []): boolean {
+  let isActiveBranch = Boolean(entry.active);
+  for (const child of entry.items ?? []) {
+    if (collectActiveLinks(child, accumulator)) {
+      isActiveBranch = true;
+    }
+  }
+  if (isActiveBranch && entry.link) {
+    accumulator.push(entry.link);
+  }
+  return isActiveBranch;
+}
+
+const max_level = getMaxDepth(items);
+const default_level = 1;
+const link_class = category === "toc_menu" ? "toc_href" : "";
+const auto_title = category === "toc_menu" ? "Auto - follow scroll" : "Auto - fit height";
+const initial_mode = category === "toc_menu" ? "auto" : "manual";
+const initial_depth = default_level;
+const show_initial_depth = category !== "toc_menu" || initial_mode === "manual";
+const initial_title = initial_mode === "auto"
+  ? auto_title
+  : `Manual - click for ${auto_title.toLowerCase()}`;
+const activePathEntries: string[] = [];
+for (const entry of items) {
+  collectActiveLinks(entry, activePathEntries);
+}
+const activePath = new Set(activePathEntries);
+const state_key = `even-viewer:${category}`;
+---
+<nav class={`${open_class} ${category}`} data-width={data_width} data-max-level={max_level} data-default-level={default_level} data-state-key={state_key}>
+    {(items.length > 0 && max_level > 1) &&
+      <div class="depth-controls" data-category={category} role="group" aria-label="Expand controls">
+        <button type="button" class="depth-btn" data-action="min" title="Collapse all" aria-label="Collapse all">&#9198;</button>
+        <button type="button" class="depth-btn" data-action="down" title="Collapse one level" aria-label="Collapse one level">&#9664;</button>
+        <button type="button" class={`depth-btn auto${initial_mode === "manual" ? " manual" : ""}`} data-action="auto" data-mode={initial_mode} title={initial_title} aria-label={initial_title}>
+          <span class={`mode-icon mode-icon-auto${initial_mode === "manual" ? " is-hidden" : ""}`} aria-hidden={initial_mode === "manual" ? "true" : "false"} data-mode-icon="auto">
+            <svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
+              <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"></circle>
+              <circle cx="8" cy="8" r="1.8" fill="currentColor"></circle>
+            </svg>
+          </span>
+          <span class={`mode-icon mode-icon-manual${initial_mode === "auto" ? " is-hidden" : ""}`} aria-hidden={initial_mode === "auto" ? "true" : "false"} data-mode-icon="manual">
+            <svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
+              <path d="M3 4.5h10M3 8h10M3 11.5h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+            </svg>
+          </span>
+          <span class={`mode-level${show_initial_depth ? "" : " is-hidden"}`} aria-hidden={show_initial_depth ? "false" : "true"} data-depth-label>{initial_depth}</span>
+        </button>
+        <button type="button" class="depth-btn" data-action="up" title="Expand one level" aria-label="Expand one level">&#9654;</button>
+        <button type="button" class="depth-btn" data-action="max" title="Expand all" aria-label="Expand all">&#9197;</button>
+      </div>
+    }
+    <SubMenu items={items} level={1} visibleLevel={default_level} activePath={activePath} forceVisible={false} linkClass={link_class} />
+</nav>
+
+<style define:vars={{ data_width }}>
+nav{
+    background: var(--nav-bg-color);
+    width:var(--data_width);
+    height:100%;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+nav.closed{
+    width:0px;
+}
+nav.open{
+    width:var(--data_width);
+}
+nav::-webkit-scrollbar {
+  width: 1rem;
+}
+nav::-webkit-scrollbar-track {
+  background: var(--nav-bg-color);
+}
+nav::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb-color);
+}
+nav::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover-color);
+}
+nav::-webkit-scrollbar-corner {
+  background: var(--nav-bg-color);
+}
+
+@media only screen and (max-width: 700px) {
+  nav{
+      width:100%;
+  }
+}
+
+/* Control strip: a distinct chrome band so it reads as a toolbar, with the
+   page tree / outline clearly beginning below the divider. Sticks to the top
+   while the menu scrolls. */
+.depth-controls{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction: row;
+  gap:0.15rem;
+  padding:0.35rem 0.15rem;
+  color:var(--content-color);
+  background: var(--nav-bg-color);
+  border-top: 1px solid var(--soft-border-color);
+  border-bottom: 1px solid var(--soft-border-color);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--header-bg-color) 35%, transparent);
+}
+nav.toc_menu .depth-controls{
+  justify-content:center;
+}
+.depth-btn{
+  width: 2rem;
+  height: 1.75rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--content-color);
+  padding: 2px;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.depth-btn.auto{
+  width: auto;
+  min-width: 2.75rem;
+  gap: 0.2rem;
+  padding-inline: 0.35rem;
+}
+.depth-btn:hover{
+  background: var(--menu-span-hover-color);
+}
+.depth-btn.active{
+  background: var(--menu-active-color);
+  border-color: var(--front-blue);
+  color: var(--content-color);
+}
+.depth-btn.auto.manual{
+  color: var(--content-color-muted);
+}
+.mode-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.mode-level{
+  min-width: 0.65rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--content-color-muted);
+}
+.mode-level.is-hidden{
+  display: none;
+}
+.depth-btn.active .mode-level,
+.depth-btn.auto.manual .mode-level{
+  color: var(--content-color);
+}
+.depth-btn.auto[data-mode="auto"] .mode-icon-manual,
+.depth-btn.auto[data-mode="manual"] .mode-icon-auto,
+.mode-icon.is-hidden{
+  display:none;
+}
+nav.measuring ul.nested{
+  transition-duration: 0s;
+}
+
+</style>

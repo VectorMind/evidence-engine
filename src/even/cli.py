@@ -727,6 +727,12 @@ def entity_find(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"ok", "partial"} else 1
 
 
+def serve(args: argparse.Namespace) -> int:
+    from even.serve import ServeOptions, run_serve
+
+    return run_serve(ServeOptions(host=args.host, port=args.port, dev=args.dev))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="even",
@@ -1212,6 +1218,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Link role used when --propose is set. Defaults to mention.",
     )
     entity_find_parser.set_defaults(handler=entity_find)
+
+    serve_parser = subparsers.add_parser(
+        "serve", help="Serve the local web viewer over the evidence cache."
+    )
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="Bind address. Defaults to 127.0.0.1 (local only)."
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=4321, help="Port. Defaults to 4321."
+    )
+    serve_parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Run the Astro dev server instead of the built server.",
+    )
+    serve_parser.set_defaults(handler=serve)
 
     return parser
 

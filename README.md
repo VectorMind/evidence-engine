@@ -279,7 +279,10 @@ Implemented today:
   `entity review` accept/reject/defer decisions that never touch the
   Layer-2/3 rows a link or task points at;
 - JSON-first command stdout;
-- persisted result JSON, events, summaries, and optional HTML reports.
+- persisted result JSON, events, summaries, and optional HTML reports;
+- a local SSR web viewer (`even serve`, Astro + React under `src/web`)
+  rendering the catalog read-only: overview counts and server-paginated
+  source tables, with search and entity pages planned.
 
 ## Install Shape
 
@@ -459,6 +462,7 @@ Commands return JSON on stdout. Commands that perform larger work also write
 | `entity` | `link <entity-id> <evidence-ref>` | `entity-id`, `evidence-ref` | Bind an entity to a `corpus_cache.<table>.<row_id>` evidence reference. |
 | `entity` | `review <target-id> --accept\|--reject\|--defer` | `target-id`, one decision flag | Record a review decision on an entity, alias, link, or task. |
 | `entity` | `find <entity-id> <query>` | `entity-id`, `query` | Discover candidate evidence via `search text` (optional `--image PATH` cross-modal probe, `--propose` to write candidate links + tasks). |
+| `serve` | none | none | Serve the local SSR web viewer (`src/web`) over the evidence cache, read-only. `--host`, `--port`, `--dev`. |
 
 Minimal examples:
 

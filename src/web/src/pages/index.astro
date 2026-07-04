@@ -1,0 +1,273 @@
+---
+// Overview (Milestone 0): live headline counts straight from the read-only
+// catalog — proves the direct better-sqlite3 read path end-to-end. Every
+// query runs at request time; reloading after a CLI run shows fresh data
+// with no rebuild (plan D5 data-independence).
+import Layout from '../layout/Layout.astro';
+import { catalog, catalogPath, workspaceRoot, tableCount, catalogTableNames } from '../lib/catalog';
+
+const db = catalog();
+
+interface RootRow {
+  root_label: string;
+  source_kind: string;
+  file_count: number | null;
+  folder_count: number | null;
+  total_size_bytes: number | null;
+  computed_at: string | null;
+}
+
+interface ScopeRow {
+  scope_id: string;
+  scope_kind: string;
+  relative_path: string;
+  status: string;
+}
+
+// null means this catalog file predates the table (older schema version) —
+// rendered as "n/a", not a crash. The catalog's contract is wipe-and-rebuild,
+// not migrate (see README "Current Status"), so an old cache genuinely can be
+// missing tables a newer viewer expects.
+let counts: Record<string, number | null> = {};
+let missingTables: string[] = [];
+let roots: RootRow[] = [];
+let scopes: ScopeRow[] = [];
+
+if (db) {
+  const tables = [
+    'source_roots',
+    'source_items',
+    'documents',
+    'document_objects',
+    'valuable_items',
+    'media_assets',
+    'media_observations',
+    'index_scopes',
+    'fts_indexes',
+    'semantic_stores',
+    'image_stores',
+    'summary_nodes',
+    'entities',
+    'entity_aliases',
+    'entity_evidence_links',
+    'review_tasks',
+  ];
+  const known = catalogTableNames(db);
+  for (const table of tables) {
+    counts[table] = tableCount(db, table, known);
+    if (counts[table] === null) {
+      missingTables.push(table);
+    }
+  }
+  if (known.has('source_roots') && known.has('source_root_stats')) {
+    roots = db
+      .prepare(
+        `SELECT r.root_label, r.source_kind, s.file_count, s.folder_count,
+                s.total_size_bytes, s.computed_at
+         FROM source_roots r
+         LEFT JOIN source_root_stats s ON s.root_id = r.root_id
+         ORDER BY r.root_label`,
+      )
+      .all() as RootRow[];
+  }
+  if (known.has('index_scopes')) {
+    scopes = db
+      .prepare(
+        `SELECT scope_id, scope_kind, relative_path, status
+         FROM index_scopes ORDER BY relative_path`,
+      )
+      .all() as ScopeRow[];
+  }
+}
+
+function statValue(value: number | null): string {
+  return value === null ? 'n/a' : value.toLocaleString('en-US');
+}
+
+function formatBytes(value: number | null): string {
+  if (value === null || value === undefined) {
+    return 'n/a';
+  }
+  let size = value;
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let unit = units[0];
+  for (const candidate of units) {
+    unit = candidate;
+    if (Math.abs(size) < 1024 || candidate === units[units.length - 1]) {
+      break;
+    }
+    size /= 1024;
+  }
+  return unit === 'B' ? `${Math.round(size)} ${unit}` : `${size.toFixed(1)} ${unit}`;
+}
+
+const sections = db
+  ? [
+      { id: 'sources', label: 'Sources' },
+      { id: 'evidence', label: 'Evidence' },
+      { id: 'indexes', label: 'Indexes' },
+      { id: 'entities', label: 'Entities' },
+    ]
+  : [];
+---
+<Layout title="Overview" sections={sections}>
+  <h1 class="heading" id="overview">Overview</h1>
+  {!db ? (
+    <>
+      <p>
+        No catalog found at <code>{catalogPath()}</code>.
+      </p>
+      <p>
+        Point <code>EVEN_CACHE</code> at an evidence cache, or build one with
+        <code>even catalog create</code> and <code>even sources scan</code>,
+        then reload — no restart needed.
+      </p>
+    </>
+  ) : (
+    <>
+      <p class="workspace-line">
+        Workspace <code>{workspaceRoot()}</code> — catalog opened read-only.
+      </p>
+
+      {missingTables.length > 0 && (
+        <div class="schema-warning">
+          <p>
+            This catalog predates {missingTables.length} table{missingTables.length === 1 ? '' : 's'} the
+            viewer expects ({missingTables.join(', ')}) — shown as <code>n/a</code> below.
+            The catalog contract is wipe-and-rebuild, not migrate: run
+            <code>even catalog wipe</code> then <code>even catalog create</code> to pick up the
+            current schema, then re-run your pipeline commands.
+          </p>
+        </div>
+      )}
+
+      <h2 class="heading" id="sources">Sources</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><span class="stat-value">{statValue(counts.source_roots)}</span><span class="stat-label">roots</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.source_items)}</span><span class="stat-label">source items</span></div>
+      </div>
+      {roots.length > 0 && (
+        <table class="overview-table">
+          <thead>
+            <tr><th>Root</th><th>Kind</th><th>Files</th><th>Folders</th><th>Total Size</th><th>Scanned</th></tr>
+          </thead>
+          <tbody>
+            {roots.map((root) => (
+              <tr>
+                <td>{root.root_label}</td>
+                <td>{root.source_kind}</td>
+                <td>{root.file_count ?? 'n/a'}</td>
+                <td>{root.folder_count ?? 'n/a'}</td>
+                <td>{formatBytes(root.total_size_bytes)}</td>
+                <td>{root.computed_at ?? 'n/a'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <h2 class="heading" id="evidence">Evidence</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><span class="stat-value">{statValue(counts.documents)}</span><span class="stat-label">documents</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.document_objects)}</span><span class="stat-label">document objects</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.valuable_items)}</span><span class="stat-label">valuable items</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.media_assets)}</span><span class="stat-label">media assets</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.media_observations)}</span><span class="stat-label">media observations</span></div>
+      </div>
+
+      <h2 class="heading" id="indexes">Indexes</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><span class="stat-value">{statValue(counts.index_scopes)}</span><span class="stat-label">scopes</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.fts_indexes)}</span><span class="stat-label">FTS islands</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.semantic_stores)}</span><span class="stat-label">semantic stores</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.image_stores)}</span><span class="stat-label">image stores</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.summary_nodes)}</span><span class="stat-label">summary nodes</span></div>
+      </div>
+      {scopes.length > 0 && (
+        <table class="overview-table">
+          <thead>
+            <tr><th>Scope</th><th>Kind</th><th>Path</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {scopes.map((scope) => (
+              <tr>
+                <td><code>{scope.scope_id}</code></td>
+                <td>{scope.scope_kind}</td>
+                <td>{scope.relative_path || '.'}</td>
+                <td>{scope.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <h2 class="heading" id="entities">Entities</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><span class="stat-value">{statValue(counts.entities)}</span><span class="stat-label">entities</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.entity_aliases)}</span><span class="stat-label">aliases</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.entity_evidence_links)}</span><span class="stat-label">evidence links</span></div>
+        <div class="stat-card"><span class="stat-value">{statValue(counts.review_tasks)}</span><span class="stat-label">review tasks</span></div>
+      </div>
+    </>
+  )}
+</Layout>
+
+<style>
+  .workspace-line {
+    color: var(--content-color-muted);
+    font-size: var(--text-sm);
+  }
+  .schema-warning {
+    background: var(--caution-bg-color);
+    color: var(--caution-accent-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin-block: 0 var(--space-4);
+    font-size: var(--text-sm);
+  }
+  .schema-warning code {
+    background: var(--surface-2-bg);
+    color: var(--content-color);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-sm);
+  }
+  .stat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-block: 0 var(--space-4);
+  }
+  .stat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 8rem;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-raised-bg);
+    border: 1px solid var(--soft-border-color);
+    border-radius: var(--radius-md);
+  }
+  .stat-value {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    color: var(--content-color-muted);
+    font-size: var(--text-sm);
+  }
+  .overview-table {
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    margin-block: 0 var(--space-4);
+  }
+  .overview-table th,
+  .overview-table td {
+    border-bottom: 1px solid var(--table-border-color);
+    padding: var(--space-1) var(--space-2);
+    text-align: left;
+  }
+  .overview-table th {
+    background: var(--surface-raised-bg);
+  }
+</style>

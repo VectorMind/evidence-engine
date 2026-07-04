@@ -1,0 +1,38 @@
+---
+// Source roots: small table sharing the same server-driven machinery as
+// items — and giving the Sources section a second page so the left
+// pages-tree menu has something to show (plan D4).
+import Layout from '../../layout/Layout.astro';
+import DataTable from '../../components/table/DataTable';
+import { catalog } from '../../lib/catalog';
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZES,
+  TABLES,
+  parsePageQuery,
+  queryPage,
+} from '../../lib/tables';
+
+const spec = TABLES.source_roots;
+const db = catalog();
+const initial = db
+  ? queryPage(spec, parsePageQuery(spec, new URLSearchParams()))
+  : null;
+---
+<Layout title="Source Roots">
+  <h1 class="heading" id="source-roots">Source Roots</h1>
+  {!db || !initial ? (
+    <p>No catalog found. Build one with the <code>even</code> CLI, then reload.</p>
+  ) : (
+    <DataTable
+      client:load
+      endpoint="/api/table/source_roots.json"
+      columns={spec.columns}
+      initialRows={initial.rows}
+      initialTotal={initial.total}
+      defaultSort={spec.defaultSort}
+      pageSizes={[...PAGE_SIZES]}
+      defaultPageSize={DEFAULT_PAGE_SIZE}
+    />
+  )}
+</Layout>

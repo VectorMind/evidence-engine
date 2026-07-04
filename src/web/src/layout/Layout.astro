@@ -1,0 +1,248 @@
+---
+// Viewer page shell: app bar on top, pages tree on the left, outline ToC on
+// the right. Reused from astro-huge-doc src/layout/Layout.astro with the
+// content-derived navigation replaced by the fixed model in lib/nav.ts and
+// the plan-D4 absent-content behavior:
+//  - no subpages in the current section -> the left region is omitted
+//    entirely (no reserved space);
+//  - no sections on the page -> the right ToC region stays (consistent
+//    chrome) but renders closed with a disabled app-bar toggle.
+import './colors.css';
+import './tokens.css';
+import AppBar from './AppBar.astro';
+import SideMenu from './SideMenu.astro';
+import { buildAppBarMenu, sectionPagesMenu, tocFromSections } from '../lib/nav';
+import type { TocSection } from '../lib/nav';
+
+export interface Props {
+	title: string;
+	sections?: TocSection[];
+}
+
+const { title, sections = [] } = Astro.props;
+const pathname = Astro.url.pathname;
+const appbar_menu = buildAppBarMenu(pathname);
+const pages_menu_items = sectionPagesMenu(pathname);
+const toc_menu_items = tocFromSections(sections);
+const hasLeft = pages_menu_items.length > 0;
+---
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title} - even</title>
+		<link rel="icon" type="image/x-icon" href={`/favicon.ico`}>
+		<script is:inline>
+			// Resolve and apply the theme before first paint to avoid a
+			// flash of the wrong palette (bright flash on dark, dark flash on light).
+			(function () {
+				try {
+					var pref = localStorage.getItem('theme-pref') || 'auto';
+					if (pref !== 'light' && pref !== 'dark' && pref !== 'auto') {
+						pref = 'auto';
+					}
+					var resolved = pref;
+					if (pref === 'auto') {
+						resolved = window.matchMedia('(prefers-color-scheme: light)').matches
+							? 'light'
+							: 'dark';
+					}
+					var root = document.documentElement;
+					root.setAttribute('data-theme', resolved);
+					root.setAttribute('data-theme-pref', pref);
+				} catch (e) {
+					document.documentElement.setAttribute('data-theme', 'dark');
+					document.documentElement.setAttribute('data-theme-pref', 'auto');
+				}
+			})();
+		</script>
+	</head>
+	<body >
+		<div class="appbar-nav_content-footer">
+			<header>
+				<AppBar menu={appbar_menu} showLeftToggle={hasLeft} rightToggleDisabled={!toc_menu_items.visible} />
+			</header>
+			<main>
+				{hasLeft &&
+					<div id="wide-nav" class="scroll">
+						<SideMenu items={pages_menu_items} category="pages_menu" initialOpen={true}/>
+					</div>
+					<div id="resize-left" class="nav-resize active"/>
+				}
+				<article class="content scroll">
+					{hasLeft &&
+						<div id="mobile-nav">
+							<SideMenu items={pages_menu_items} category="pages_menu"/>
+						</div>
+					}
+					<div class="article-slot">
+						<slot/>
+					</div>
+				</article>
+				<div id="resize-right" class:list={["nav-resize", {active: toc_menu_items.visible}]}/>
+				<div id="toc-nav-div">
+					<SideMenu items={toc_menu_items.items} category="toc_menu" initialOpen={false}/>
+				</div>
+			</main>
+		</div>
+	</body>
+</html>
+
+
+<style>
+body{
+	margin:0;
+	font-family: var(--font-sans);
+	font-size: var(--text-base);
+	line-height: var(--leading-body);
+	display:flex;
+	flex-direction: row;
+	background-color: var(--content-bg-color);
+	color: var(--content-color);
+}
+/* Body => .appbar-nav_content-footer (full width; the app bar owns nav toggles) */
+.appbar-nav_content-footer{
+	flex-grow:1;
+	display:flex;
+	flex-direction: column;
+	height:100vh;
+}
+/* appbar-nav_content-footer => header, main */
+header{
+    flex-grow:0;
+	background-color: var(--header-bg-color);
+    width:100%;
+    user-select: none;
+}
+main{
+	flex-grow:1;
+	display:flex;
+	flex-direction: row;
+	height:80vh;
+	max-width: 100vw;
+}
+/* main => #wide-nav, resize-left, article.content, #resize-right, #toc-nav-div */
+
+#wide-nav{
+	background: var(--nav-bg-color);
+}
+#mobile-nav{
+	display: none;
+}
+.content{
+	color:var(--content-color);
+	background-color: var(--content-bg-color);
+	width:100%;
+	flex-grow: 0;
+	overflow:auto;
+	padding:10px;
+    scroll-behavior: smooth;
+    scroll-padding-top: 10px;
+}
+#toc-nav-div{
+	background: var(--nav-bg-color);
+	flex-grow: 0;
+	flex-shrink: 0;
+}
+
+
+.nav-resize{
+	width:0.5rem;
+	background-color: var(--content-bg-color);
+}
+.active.nav-resize{
+	cursor:col-resize;
+}
+.active.nav-resize:hover{
+	background-color: var(--front-blue);
+	transition: background-color 0.5s;
+}
+.scroll::-webkit-scrollbar {
+	width: 1rem;
+}
+.scroll::-webkit-scrollbar-track {
+	background: var(--content-bg-color);
+}
+.scroll::-webkit-scrollbar-thumb {
+	background: var(--scroll-thumb-color);
+}
+.scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover-color);
+}
+.scroll::-webkit-scrollbar-corner {
+	background: var(--content-bg-color);
+}
+
+@media only screen and (max-width: 700px) {
+	#resize-right, #resize-left, #toc-nav-div {
+		display:none;
+	}
+	.content{
+		display:flex;
+		flex-direction: column;
+	}
+	#wide-nav{
+		display:none;
+	}
+	#mobile-nav{
+		display: block;
+	}
+}
+
+/* --- Article reading surface -------------------------------------------
+   Typography for the rendered pages. Mirrors GitHub's markdown rhythm
+   (16px / 1.6 line-height, 1rem block spacing, stepped headings) so the
+   reading experience matches a familiar, well-tuned reference. Tokens
+   from tokens.css; no literal sizes here. */
+
+.article-slot{
+	font-size: var(--text-base);
+	line-height: var(--leading-body);
+}
+
+.article-slot :global(a){
+	color:var(--article-anchor-color);
+}
+
+.article-slot :global(p){
+	max-width: 80ch;
+	margin-block: 0 var(--space-4);
+	line-height: var(--leading-body);
+}
+
+/* Headings: stepped scale, tighter leading, generous space above. */
+.article-slot :global(.heading){
+	line-height: var(--leading-heading);
+	font-weight: 600;
+	margin-block: var(--space-5) var(--space-4);
+}
+.article-slot :global(h1.heading){ font-size: var(--text-h1); }
+.article-slot :global(h2.heading){ font-size: var(--text-h2); }
+.article-slot :global(h3.heading){ font-size: var(--text-h3); }
+.article-slot :global(h4.heading),
+.article-slot :global(h5.heading),
+.article-slot :global(h6.heading){ font-size: var(--text-h4); }
+
+.article-slot :global(ul),
+.article-slot :global(ol){
+	max-width: 80ch;
+	margin-block: 0 var(--space-4);
+	padding-left: var(--space-6);
+	line-height: var(--leading-body);
+}
+.article-slot :global(li + li){
+	margin-top: var(--space-1);
+}
+
+/* Inline code: subtle tinted chip, like GitHub. */
+.article-slot :global(:not(pre) > code){
+	padding: 0.15em 0.4em;
+	font-size: 0.9em;
+	background-color: var(--surface-2-bg);
+	border-radius: var(--radius-sm);
+}
+
+</style>
+
+<script src="./menu_interactions_activation.js" />

@@ -1,0 +1,197 @@
+/*
+  Theme tokens.
+  ------------------------------------------------------------------
+  The resolved theme is applied through `data-theme` on <html> ("dark"
+  or "light"), set before first paint by the inline script in Layout.astro.
+  The *preference* (light | dark | auto) lives in `data-theme-pref`.
+
+  Default (no attribute / JS disabled) falls back to the dark palette,
+  matching the site's historical look.
+
+  Naming is semantic so components never hardcode a hex value:
+  surfaces, text, accents and the small set of "always light" surfaces
+  (diagrams, 3d viewer, image lightbox) that need a bright backdrop but
+  are toned down in dark mode to avoid glare.
+*/
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Chrome / shell surfaces */
+  --header-bg-color: #3C3C3C;
+  --header-active-color: #454646;
+  --nav-bg-color: #252526;
+
+  /* Content surface + text */
+  --content-bg-color: #1E1E1E;
+  --content-color: #CCCCCC;
+  --content-color-muted: #BBBBBB;
+  --content-color-faint: #8A8A8A;
+
+  /* Accent */
+  --front-blue: #007ACC;
+  --article-anchor-color: #3794FF;
+  --link-inline-color: #4D9CE6;
+
+  /* Scrollbars */
+  --scroll-thumb-color: #464647;
+  --scroll-thumb-hover-color: #515151;
+
+  /* Side menu */
+  --menu-span-hover-color: #606060;
+  --menu-active-color: #37373D;
+  --menu-icon-hover-color: #4d99cc;
+  --menu-border-left-color: #888888;
+  --menu-arrow-color: #D0D0D0;
+  --menu-text-color: #BBBBBB;
+  --slider-accent-color: #CCCCCC;
+
+  /* Generic raised panels / cards / borders */
+  --surface-raised-bg: #222222;
+  --surface-sunken-bg: #1A1A1A;
+  --surface-2-bg: #2D2D2D;
+  --panel-border-color: #666666;
+  --soft-border-color: #3A3A3A;
+  --card-shadow-color: rgba(0, 0, 0, 0.55);
+  --table-border-color: #555555;
+  --tag-bg-color: #444444;
+  --tag-text-color: #AAAAAA;
+  --check-bg-color: #555555;
+
+  /* Code block chrome */
+  --code-border-color: #666666;
+  --code-btn-border-color: #BBBBBB;
+  --code-btn-fill-color: #BBBBBB;
+  --tooltip-bg-color: #000000;
+  --tooltip-text-color: #FFFFFF;
+
+  /* Buttons (directive call-to-action) */
+  --button-accent-color: #729EF7;
+  --button-shadow-color: rgba(0, 0, 0, 0.5);
+
+  /* Headings affordance icons */
+  --heading-icon-color: rgb(101, 96, 96);
+
+  /* Admonition / callout blocks */
+  --note-bg-color: #444551;
+  --note-accent-color: #C5C5E8;
+  --tip-bg-color: #465144;
+  --tip-accent-color: #B6EAAF;
+  --caution-bg-color: #515144;
+  --caution-accent-color: #E8D7A9;
+  --danger-bg-color: #514844;
+  --danger-accent-color: #E8C1AE;
+  --chart-error-bg-color: #2B1F1F;
+  --chart-error-text-color: #FFDEDE;
+  --chart-error-accent-color: #F66;
+
+  /* "Always light" content surfaces.
+     Diagrams (kroki) and 3d posters are authored with dark ink on a
+     light backdrop, so they must stay light. In dark mode we dim them
+     to a soft grey instead of pure white to avoid a blinding flash. */
+  --diagram-surface-bg: #EDEDED;
+  --model-viewer-bg: #2A2A30;
+  --lightbox-overlay-color: rgba(0, 0, 0, 0.6);
+  --lightbox-surface-bg: #F4F4F4;
+  --lightbox-border-color: #888888;
+  --lightbox-close-color: #AAAAAA;
+  --lightbox-close-hover-color: #FFFFFF;
+  --lightbox-header-hover-bg: #5A5A5A;
+
+  /* Data / server tables page */
+  --data-table-bg: #0B1021;
+  --data-table-panel-bg: #0F172A;
+  --data-table-card-bg: #111827;
+  --data-table-border-color: #1F2937;
+  --data-table-text-color: #E5E7EB;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Chrome / shell surfaces */
+  --header-bg-color: #E4E4E4;
+  --header-active-color: #D2D2D2;
+  --nav-bg-color: #F3F3F3;
+
+  /* Content surface + text */
+  --content-bg-color: #FFFFFF;
+  --content-color: #24292F;
+  --content-color-muted: #4A4A4A;
+  --content-color-faint: #6E6E6E;
+
+  /* Accent */
+  --front-blue: #0067B8;
+  --article-anchor-color: #0067B8;
+  --link-inline-color: #1264A3;
+
+  /* Scrollbars */
+  --scroll-thumb-color: #C2C2C2;
+  --scroll-thumb-hover-color: #A6A6A6;
+
+  /* Side menu */
+  --menu-span-hover-color: #DADADA;
+  --menu-active-color: #D6E4F2;
+  --menu-icon-hover-color: #2B7BB9;
+  --menu-border-left-color: #C4C4C4;
+  --menu-arrow-color: #6B6B6B;
+  --menu-text-color: #3A3A3A;
+  --slider-accent-color: #0067B8;
+
+  /* Generic raised panels / cards / borders */
+  --surface-raised-bg: #F6F6F6;
+  --surface-sunken-bg: #F0F0F0;
+  --surface-2-bg: #ECECEC;
+  --panel-border-color: #C9C9C9;
+  --soft-border-color: #DDDDDD;
+  --card-shadow-color: rgba(60, 64, 67, 0.20);
+  --table-border-color: #C3C3C3;
+  --tag-bg-color: #E2E6EA;
+  --tag-text-color: #41464B;
+  --check-bg-color: #9AA0A6;
+
+  /* Code block chrome */
+  --code-border-color: #D0D0D0;
+  --code-btn-border-color: #9A9A9A;
+  --code-btn-fill-color: #5A5A5A;
+  --tooltip-bg-color: #24292F;
+  --tooltip-text-color: #FFFFFF;
+
+  /* Buttons (directive call-to-action) */
+  --button-accent-color: #1B5FC9;
+  --button-shadow-color: rgba(60, 64, 67, 0.25);
+
+  /* Headings affordance icons */
+  --heading-icon-color: #9AA0A6;
+
+  /* Admonition / callout blocks */
+  --note-bg-color: #E8E8F6;
+  --note-accent-color: #4B4BA6;
+  --tip-bg-color: #E3F2E0;
+  --tip-accent-color: #2E7D32;
+  --caution-bg-color: #FBF3DA;
+  --caution-accent-color: #8A6D1A;
+  --danger-bg-color: #FBE3DC;
+  --danger-accent-color: #B23A1E;
+  --chart-error-bg-color: #FCEBEB;
+  --chart-error-text-color: #8A1F1F;
+  --chart-error-accent-color: #D14343;
+
+  /* "Always light" content surfaces stay genuinely white in light mode. */
+  --diagram-surface-bg: #FFFFFF;
+  --model-viewer-bg: #EEF0FA;
+  --lightbox-overlay-color: rgba(0, 0, 0, 0.45);
+  --lightbox-surface-bg: #FEFEFE;
+  --lightbox-border-color: #BBBBBB;
+  --lightbox-close-color: #888888;
+  --lightbox-close-hover-color: #000000;
+  --lightbox-header-hover-bg: #DDDDDD;
+
+  /* Data / server tables page */
+  --data-table-bg: #FFFFFF;
+  --data-table-panel-bg: #F5F7FA;
+  --data-table-card-bg: #FBFBFD;
+  --data-table-border-color: #D7DCE3;
+  --data-table-text-color: #1F2933;
+}

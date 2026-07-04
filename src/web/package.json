@@ -1,0 +1,35 @@
+{
+  "name": "even-web",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evidence Engine web viewer: SSR pages over the public data contract (catalog.sqlite read-only, results/, reports/, even CLI JSON).",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/node": "^9.5.1",
+    "@astrojs/react": "^4.4.2",
+    "@tanstack/react-table": "^8.13.0",
+    "astro": "^5.16.0",
+    "better-sqlite3": "^12.4.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

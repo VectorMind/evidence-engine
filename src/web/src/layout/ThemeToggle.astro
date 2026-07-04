@@ -1,0 +1,106 @@
+---
+// Three-state theme switch: light -> dark -> auto (follow system).
+// The resolved theme + preference are applied to <html> by the inline
+// script in Layout.astro (data-theme / data-theme-pref). This button
+// cycles the preference, persists it, and keeps "auto" in sync with the
+// OS when the system scheme changes.
+// Reused from astro-huge-doc src/layout/ThemeToggle.astro.
+---
+<button
+	type="button"
+	class="theme-toggle"
+	aria-label="Toggle color theme"
+	title="Toggle color theme (light / dark / auto)"
+>
+	<span class="ico ico-light" aria-hidden="true">
+		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<circle cx="12" cy="12" r="4" />
+			<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+		</svg>
+	</span>
+	<span class="ico ico-dark" aria-hidden="true">
+		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+		</svg>
+	</span>
+	<span class="ico ico-auto" aria-hidden="true">
+		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<rect x="2" y="4" width="20" height="13" rx="2" />
+			<path d="M8 21h8M12 17v4" />
+		</svg>
+	</span>
+</button>
+
+<style>
+.theme-toggle{
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	background:transparent;
+	border:1px solid transparent;
+	border-radius:5px;
+	padding:6px;
+	margin:6px;
+	cursor:pointer;
+	color:var(--content-color);
+	line-height:0;
+}
+.theme-toggle:hover{
+	background-color:var(--header-active-color);
+}
+.theme-toggle .ico{
+	display:none;
+	align-items:center;
+	justify-content:center;
+}
+/* Show only the icon matching the active preference. */
+:root[data-theme-pref="light"] .ico-light,
+:root[data-theme-pref="dark"] .ico-dark,
+:root[data-theme-pref="auto"] .ico-auto{
+	display:inline-flex;
+}
+/* Fallback before the inline script runs: show the auto icon. */
+:root:not([data-theme-pref]) .ico-auto{
+	display:inline-flex;
+}
+</style>
+
+<script>
+	const ORDER = ['light', 'dark', 'auto'] as const;
+	type Pref = (typeof ORDER)[number];
+
+	function currentPref(): Pref {
+		const value = document.documentElement.getAttribute('data-theme-pref');
+		return (ORDER as readonly string[]).includes(value ?? '') ? (value as Pref) : 'auto';
+	}
+
+	function systemTheme(): 'light' | 'dark' {
+		return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+	}
+
+	function applyPref(pref: Pref) {
+		const resolved = pref === 'auto' ? systemTheme() : pref;
+		const root = document.documentElement;
+		root.setAttribute('data-theme', resolved);
+		root.setAttribute('data-theme-pref', pref);
+		try {
+			localStorage.setItem('theme-pref', pref);
+		} catch (e) {
+			/* storage unavailable (private mode) — theme still applies for the session */
+		}
+	}
+
+	// Keep "auto" in sync with OS changes without a reload.
+	window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+		if (currentPref() === 'auto') {
+			applyPref('auto');
+		}
+	});
+
+	document.querySelectorAll('button.theme-toggle').forEach((button) => {
+		button.addEventListener('click', () => {
+			const next = ORDER[(ORDER.indexOf(currentPref()) + 1) % ORDER.length];
+			applyPref(next);
+		});
+	});
+</script>
