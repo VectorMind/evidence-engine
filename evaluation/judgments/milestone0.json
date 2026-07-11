@@ -1,0 +1,6 @@
+{
+  "q1_northwind_drifter_recovery": ["salvage_log.txt", "harbor_authority.txt"],
+  "q2_permit_renewal": ["permit_notes.txt"],
+  "q3_harbor_authority_signoff": ["harbor_authority.txt"],
+  "q4_reef_point_breach": ["incident_report.txt", "permit_notes.txt"]
+}

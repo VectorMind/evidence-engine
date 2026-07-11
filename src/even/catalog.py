@@ -39,11 +39,21 @@ class Table:
     indexes: tuple[Index, ...]
 
 
-def load_catalog_tables() -> list[Table]:
-    """Load table definitions from catalog.yaml."""
+def load_catalog_tables(dataset: str) -> list[Table]:
+    """Load table definitions for one named dataset from catalog.yaml.
+
+    ``dataset`` must be an explicit dataset name (``corpus_cache`` or
+    ``corpus_state``); a table's physical store is never inferred from its
+    name, and no table definition is duplicated across datasets.
+    """
 
     data = yaml.safe_load(read_contract_text("catalog.yaml"))
-    tables_data = data["datasets"][0]["tables"]
+    datasets = {d["name"]: d for d in data["datasets"]}
+    if dataset not in datasets:
+        raise ValueError(
+            f"Unknown catalog dataset {dataset!r}; expected one of {sorted(datasets)}"
+        )
+    tables_data = datasets[dataset]["tables"]
     tables: list[Table] = []
     for table_data in tables_data:
         columns = tuple(
@@ -64,6 +74,19 @@ def load_catalog_tables() -> list[Table]:
         )
         tables.append(Table(name=table_data["name"], columns=columns, indexes=indexes))
     return tables
+
+
+def load_all_catalog_tables() -> list[Table]:
+    """Load table definitions for every dataset, applied to the one physical file.
+
+    The ``corpus_cache``/``corpus_state`` split in ``catalog.yaml`` is a schema
+    contract only until the plan packet's Milestone 1 lands the physical
+    ``state/state.sqlite`` store and connection split; until then both
+    datasets are created in and reported from the single existing
+    ``catalog.sqlite`` file, so current behavior is unchanged.
+    """
+
+    return load_catalog_tables("corpus_cache") + load_catalog_tables("corpus_state")
 
 
 def create_catalog() -> dict[str, Any]:
@@ -89,7 +112,7 @@ def create_catalog() -> dict[str, Any]:
             "message": "Run catalog wipe before recreating a stale beta catalog.",
         }
     path.parent.mkdir(parents=True, exist_ok=True)
-    tables = load_catalog_tables()
+    tables = load_all_catalog_tables()
 
     with catalog_connection() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -132,7 +155,7 @@ def catalog_status_report() -> dict[str, Any]:
     """Return structured status for the fixed catalog."""
 
     path = catalog_path()
-    tables = load_catalog_tables()
+    tables = load_all_catalog_tables()
     expected_table_names = [table.name for table in tables]
     if not path.exists():
         return {

@@ -21,9 +21,9 @@ schema_rules:
 
 datasets:
   - name: corpus_cache
-    description: Current-state SQLite catalog for Sources, Evidence, Indexes, and generic Entities.
+    description: Current, rebuildable SQLite catalog for Sources, Evidence, and Indexes.
     dataset_role: workspace_catalog
-    durability: current_control_and_review_state
+    durability: current_rebuildable_state
 
     tables:
       - name: source_roots
@@ -479,6 +479,16 @@ datasets:
           - name: idx_media_dedupe_candidates_a
             columns: [asset_id_a]
 
+  - name: corpus_state
+    description: >
+      Durable SQLite store for the immutable evidence ledger and generic
+      Layer-4 entities. Survives ordinary catalog wipe; see the Retention And
+      Collectibility and Catalog Contract sections of
+      specifications/corpus-cache-cli/spec.md.
+    dataset_role: durable_state
+    durability: durable_reviewed_meaning
+
+    tables:
       - name: entities
         description: Generic Layer-4 entities reviewed or proposed over lower evidence.
         exposures: [sqlite]
@@ -508,7 +518,7 @@ datasets:
         exposures: [sqlite]
         columns:
           - {name: alias_id, type: text, description: "Stable alias ID."}
-          - {name: entity_id, type: text, description: "Entity owning this alias.", ref: corpus_cache.entities.entity_id}
+          - {name: entity_id, type: text, description: "Entity owning this alias.", ref: corpus_state.entities.entity_id}
           - {name: alias_text, type: text, description: "Alias text as observed or assigned."}
           - {name: normalized_alias, type: text, description: "Normalized alias for lookup and dedupe."}
           - {name: alias_kind, type: enum, description: "Alias kind.", values: [name, label, identifier, handle, filename_hint, abbreviation, other]}
@@ -530,7 +540,7 @@ datasets:
         exposures: [sqlite]
         columns:
           - {name: link_id, type: text, description: "Stable entity-evidence link ID."}
-          - {name: entity_id, type: text, description: "Linked entity.", ref: corpus_cache.entities.entity_id}
+          - {name: entity_id, type: text, description: "Linked entity.", ref: corpus_state.entities.entity_id}
           - {name: evidence_ref, type: text, description: "Catalog coordinate such as corpus_cache.document_objects.object_id."}
           - {name: link_role, type: enum, description: "How the evidence relates to the entity.", values: [mention, identifier, visual_match, location, source, support, contradiction, context, other]}
           - {name: link_status, type: enum, description: "Lifecycle state for this evidence link.", values: [proposed, accepted, rejected, deferred]}
@@ -552,7 +562,7 @@ datasets:
         exposures: [sqlite]
         columns:
           - {name: classification_id, type: text, description: "Stable classification ID."}
-          - {name: entity_id, type: text, description: "Classified entity.", ref: corpus_cache.entities.entity_id}
+          - {name: entity_id, type: text, description: "Classified entity.", ref: corpus_state.entities.entity_id}
           - {name: scheme, type: text, description: "Classification scheme or namespace."}
           - {name: label, type: text, description: "Classification label within the scheme."}
           - {name: review_status, type: enum, description: "Review state for this classification.", values: [unreviewed, accepted, rejected, deferred]}
@@ -573,7 +583,7 @@ datasets:
         exposures: [sqlite]
         columns:
           - {name: attribute_id, type: text, description: "Stable entity attribute ID."}
-          - {name: entity_id, type: text, description: "Entity owning this attribute.", ref: corpus_cache.entities.entity_id}
+          - {name: entity_id, type: text, description: "Entity owning this attribute.", ref: corpus_state.entities.entity_id}
           - {name: attribute_name, type: text, description: "Attribute name or namespace-qualified key."}
           - {name: value_text, type: text, description: "Attribute value serialized as text."}
           - {name: value_kind, type: enum, description: "Value kind.", values: [text, number, date, datetime, boolean, uri, ref, json, other]}
@@ -595,9 +605,9 @@ datasets:
         exposures: [sqlite]
         columns:
           - {name: relationship_id, type: text, description: "Stable relationship ID."}
-          - {name: subject_entity_id, type: text, description: "Subject entity.", ref: corpus_cache.entities.entity_id}
+          - {name: subject_entity_id, type: text, description: "Subject entity.", ref: corpus_state.entities.entity_id}
           - {name: predicate, type: text, description: "Relationship predicate or namespace-qualified key."}
-          - {name: object_entity_id, type: text, description: "Object entity, when the relationship points to another entity.", ref: corpus_cache.entities.entity_id}
+          - {name: object_entity_id, type: text, description: "Object entity, when the relationship points to another entity.", ref: corpus_state.entities.entity_id}
           - {name: object_value, type: text, description: "Object value when the relationship is not entity-to-entity."}
           - {name: review_status, type: enum, description: "Review state for this relationship.", values: [unreviewed, accepted, rejected, deferred]}
           - {name: confidence, type: real, description: "Proposal or review confidence when available."}
@@ -620,7 +630,7 @@ datasets:
         columns:
           - {name: task_id, type: text, description: "Stable review task ID."}
           - {name: task_kind, type: enum, description: "Review task kind.", values: [entity_create, entity_merge, entity_link, classification, attribute, relationship, duplicate, promotion, custom]}
-          - {name: entity_id, type: text, description: "Primary entity under review, when applicable.", ref: corpus_cache.entities.entity_id}
+          - {name: entity_id, type: text, description: "Primary entity under review, when applicable.", ref: corpus_state.entities.entity_id}
           - {name: evidence_ref, type: text, description: "Optional catalog coordinate under review."}
           - {name: task_status, type: enum, description: "Current task state.", values: [open, accepted, rejected, deferred, closed]}
           - {name: priority, type: integer, description: "Review priority; higher means more urgent."}

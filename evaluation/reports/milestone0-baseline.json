@@ -1,0 +1,368 @@
+{
+  "dataset": "milestone0",
+  "index_build": {
+    "fts": [
+      {
+        "root": "root-a",
+        "status": "ok"
+      },
+      {
+        "root": "root-b",
+        "status": "ok"
+      }
+    ],
+    "routing": [
+      {
+        "root": "root-a",
+        "status": "ok"
+      },
+      {
+        "root": "root-b",
+        "status": "ok"
+      }
+    ],
+    "semantic": [
+      {
+        "auto_scan_status": "ok",
+        "chunk_profile": "docling_hybrid_v1",
+        "counts": {
+          "chunks_indexed": 2,
+          "chunks_planned": 2,
+          "chunks_unchanged": 0,
+          "documents_indexed": 2
+        },
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_profile": "fastembed_bge_small_en_v1_5",
+        "index_backend": "semantic",
+        "index_status": "rebuilt",
+        "root": "root-a",
+        "root_id": "root_3aa2d8cc6167bf51d70fd81b260f1a14",
+        "root_label": "root-a",
+        "scope_id": "scope_a929d48bad4e1be6e4f8ddfa8c31a302",
+        "semantic_store_id": "sem_9646a449384248f2dd380fca05cc0a46",
+        "source_high_watermark": "49315f6bd686020f8af5027b8e92690bf3beb4a94ba0dfa0d5566834b4e26c1e",
+        "status": "ok",
+        "store_uri": "semantic/fastembed_bge_small_en_v1_5/scope_a929d48bad4e1be6e4f8ddfa8c31a302.lancedb",
+        "table_name": "chunks",
+        "template_name": "semantic_chunk_row",
+        "vector_dimension": 18
+      },
+      {
+        "auto_scan_status": "ok",
+        "chunk_profile": "docling_hybrid_v1",
+        "counts": {
+          "chunks_indexed": 2,
+          "chunks_planned": 2,
+          "chunks_unchanged": 0,
+          "documents_indexed": 2
+        },
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_profile": "fastembed_bge_small_en_v1_5",
+        "index_backend": "semantic",
+        "index_status": "rebuilt",
+        "root": "root-b",
+        "root_id": "root_085a4adc1509fec9132bd76ed8a27778",
+        "root_label": "root-b",
+        "scope_id": "scope_495232288a145a7411927f4f82870a37",
+        "semantic_store_id": "sem_d21a9caa9c614a611cb29b048d7849bb",
+        "source_high_watermark": "ef77af99dbd4a9f6c6a5f7bfe562d4179db8bbfc73c332ede2073872d91e83cb",
+        "status": "ok",
+        "store_uri": "semantic/fastembed_bge_small_en_v1_5/scope_495232288a145a7411927f4f82870a37.lancedb",
+        "table_name": "chunks",
+        "template_name": "semantic_chunk_row",
+        "vector_dimension": 18
+      }
+    ],
+    "semantic_available": true
+  },
+  "queries": [
+    {
+      "exhaustive": {
+        "hits": [
+          "harbor_authority.txt",
+          "salvage_log.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "hybrid": {
+        "hits": [
+          "harbor_authority.txt",
+          "salvage_log.txt",
+          "incident_report.txt",
+          "permit_notes.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "query_id": "q1_northwind_drifter_recovery",
+      "relevant": [
+        "harbor_authority.txt",
+        "salvage_log.txt"
+      ],
+      "routed": {
+        "high": {
+          "hits": [
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "low": {
+          "hits": [
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "mid": {
+          "hits": [
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        }
+      },
+      "scopes_expected": [
+        "root-a",
+        "root-b"
+      ],
+      "text": "Northwind Drifter recovery"
+    },
+    {
+      "exhaustive": {
+        "hits": [
+          "permit_notes.txt",
+          "incident_report.txt",
+          "harbor_authority.txt",
+          "salvage_log.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "hybrid": {
+        "hits": [
+          "permit_notes.txt",
+          "incident_report.txt",
+          "harbor_authority.txt",
+          "salvage_log.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "query_id": "q2_permit_renewal",
+      "relevant": [
+        "permit_notes.txt"
+      ],
+      "routed": {
+        "high": {
+          "hits": [
+            "permit_notes.txt",
+            "incident_report.txt",
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "used"
+        },
+        "low": {
+          "hits": [
+            "permit_notes.txt",
+            "incident_report.txt",
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "mid": {
+          "hits": [
+            "permit_notes.txt",
+            "incident_report.txt",
+            "harbor_authority.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "used"
+        }
+      },
+      "scopes_expected": [
+        "root-a"
+      ],
+      "text": "permit SL-2210 renewal"
+    },
+    {
+      "exhaustive": {
+        "hits": [
+          "harbor_authority.txt",
+          "permit_notes.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "hybrid": {
+        "hits": [
+          "harbor_authority.txt",
+          "permit_notes.txt",
+          "salvage_log.txt",
+          "incident_report.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "query_id": "q3_harbor_authority_signoff",
+      "relevant": [
+        "harbor_authority.txt"
+      ],
+      "routed": {
+        "high": {
+          "hits": [
+            "harbor_authority.txt",
+            "permit_notes.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "low": {
+          "hits": [
+            "harbor_authority.txt",
+            "permit_notes.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "mid": {
+          "hits": [
+            "harbor_authority.txt",
+            "permit_notes.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        }
+      },
+      "scopes_expected": [
+        "root-b"
+      ],
+      "text": "harbor authority sign-off"
+    },
+    {
+      "exhaustive": {
+        "hits": [
+          "incident_report.txt",
+          "permit_notes.txt",
+          "salvage_log.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "hybrid": {
+        "hits": [
+          "incident_report.txt",
+          "permit_notes.txt",
+          "salvage_log.txt",
+          "harbor_authority.txt"
+        ],
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "recall_at_5": 1.0
+      },
+      "query_id": "q4_reef_point_breach",
+      "relevant": [
+        "incident_report.txt",
+        "permit_notes.txt"
+      ],
+      "routed": {
+        "high": {
+          "hits": [
+            "incident_report.txt",
+            "permit_notes.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "low": {
+          "hits": [
+            "incident_report.txt",
+            "permit_notes.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        },
+        "mid": {
+          "hits": [
+            "incident_report.txt",
+            "permit_notes.txt",
+            "salvage_log.txt"
+          ],
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "recall_at_20": 1.0,
+          "recall_at_5": 1.0,
+          "route_status": "fallback_all_scopes"
+        }
+      },
+      "scopes_expected": [
+        "root-a",
+        "root-b"
+      ],
+      "text": "Reef Point containment breach"
+    }
+  ],
+  "roots": [
+    "root-a",
+    "root-b"
+  ]
+}

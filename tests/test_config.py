@@ -6,7 +6,7 @@ hard base dependency, so the loaders must parse the real YAML on every install.
 
 from __future__ import annotations
 
-from even.catalog import load_catalog_tables
+from even.catalog import load_all_catalog_tables
 from even.config import (
     embedding_profile,
     load_embedding_config,
@@ -38,7 +38,7 @@ def test_routing_defaults_present() -> None:
 
 
 def test_catalog_tables_load_with_columns() -> None:
-    tables = load_catalog_tables()
+    tables = load_all_catalog_tables()
     assert tables
     assert all(table.name for table in tables)
     assert any(table.columns for table in tables)

@@ -54,7 +54,7 @@ def resolve_ref(ref: str) -> dict[str, Any] | None:
     dataset, table, row_id = parsed
     if dataset != DATASET:
         return None
-    tables = {t.name: t for t in load_catalog_tables()}
+    tables = {t.name: t for t in load_catalog_tables("corpus_cache")}
     target = tables.get(table)
     if target is None:
         return None

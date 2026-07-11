@@ -1,0 +1,26 @@
+[
+  {
+    "query_id": "q1_northwind_drifter_recovery",
+    "text": "Northwind Drifter recovery",
+    "note": "Multi-scope: primary evidence is in root-a, but root-b's harbor authority record also references the same recovery. A single-best-scope (low budget) route structurally cannot return both.",
+    "scopes_expected": ["root-a", "root-b"]
+  },
+  {
+    "query_id": "q2_permit_renewal",
+    "text": "permit SL-2210 renewal",
+    "note": "Root-specific: the renewal requirement is stated only in root-a's permit notes.",
+    "scopes_expected": ["root-a"]
+  },
+  {
+    "query_id": "q3_harbor_authority_signoff",
+    "text": "harbor authority sign-off",
+    "note": "Root-specific: the sign-off record lives only in root-b.",
+    "scopes_expected": ["root-b"]
+  },
+  {
+    "query_id": "q4_reef_point_breach",
+    "text": "Reef Point containment breach",
+    "note": "Multi-scope: the incident is reported in root-b but references the permit and manifest recorded in root-a.",
+    "scopes_expected": ["root-a", "root-b"]
+  }
+]

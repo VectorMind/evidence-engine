@@ -29,12 +29,15 @@ in this repo.
 
 ## Workspace Storage Contract
 
-Generated evidence state lives under `EVEN_CACHE`:
+Generated evidence state lives under `EVEN_CACHE`, split across two physical
+SQLite stores plus rebuildable projection files:
 
 ```text
 <EVEN_CACHE>/
   catalog/
-    catalog.sqlite
+    catalog.sqlite      # corpus_cache dataset: current, rebuildable
+  state/
+    state.sqlite         # corpus_state dataset: durable, protected
   blobs/
     <yyyy>/<mm>/<sha256_prefix>/<sha256>
   docling/
@@ -56,33 +59,58 @@ generated output.
 Shared model downloads are not evidence state. They live under
 `EVEN_HOME/models`; `EVEN_HOME` defaults to `~/.even`.
 
-The old beta home-cache layout is not a compatibility target. During this
-phase, catalog and index wipe/rebuild is acceptable.
+The old beta home-cache layout is not a compatibility target. Ordinary
+`catalog`/`blobs`/`fts`/`semantic` wipe/rebuild remains acceptable — that is
+the current, rebuildable side of the store. `state/state.sqlite` is not: it
+holds the durable evidence ledger and Layer-4 review state and survives
+ordinary wipe (see Catalog Contract and Retention And Collectibility below).
+Both SQLite files use and verify `journal_mode=WAL` independently (see Journal
+Mode And Cross-Store Write Contract).
+
+This two-store layout is the target contract for the
+`2026-07/10-engine-improvements` plan packet. Physical separation of the two
+files, the migration from the current single-file catalog, and the runtime
+that writes `state/state.sqlite` land in that packet's Milestones 1-4; this
+document states the contract ahead of that implementation, per the packet's
+own "spec before runtime code" rule.
 
 ## Catalog Contract
 
-`catalog.yaml` defines the public SQLite schema contract for current state.
+`catalog.yaml` defines the public SQLite schema contract as two named
+datasets. The schema loader selects a dataset explicitly; no table's physical
+store is inferred from its name, and no table definition is duplicated across
+datasets.
 
-The catalog stores:
+### `corpus_cache` — current, rebuildable (`catalog/catalog.sqlite`)
 
 - source roots and source items;
 - current source root and extension statistics;
 - current documents;
 - Docling artifact records;
 - artifact blob records;
-- normalized document object records;
-- valuable item records;
+- normalized document object records (current logical mapping; gains a
+  required `occurrence_id` once Milestone 2 lands);
+- valuable item records (machine candidates only — human review status moves
+  to `corpus_state` in Milestone 4);
 - index scopes;
 - lossy summary nodes used only for routing;
 - text index registry rows;
 - semantic store registry rows;
-- media assets and typed image/video/3D metadata;
+- media assets and typed image/video/3D metadata (current logical mapping;
+  gains a required `occurrence_id` once Milestone 2 lands);
 - media artifacts, generated observations, and duplicate candidates;
-- image-embedding store registry rows;
-- generic entities, aliases, evidence links, classifications, attributes,
-  relationships, and review tasks.
+- image-embedding store registry rows.
 
-The catalog does not store:
+### `corpus_state` — durable, protected (`state/state.sqlite`)
+
+- generic entities, aliases, evidence links, classifications, attributes,
+  relationships, and review tasks (the existing seven Layer-4 tables, migrated
+  here from the current single-file catalog by Milestone 1);
+- `source_revisions`, `provenance_activities`, `evidence_occurrences`, and
+  `activity_occurrences` — the immutable evidence ledger (Milestone 2);
+- `review_decisions` — append-only review history (Milestone 4).
+
+Neither dataset stores:
 
 - command logs;
 - generated chunk tables;
@@ -91,41 +119,70 @@ The catalog does not store:
 - global representative FTS or semantic registry rows;
 - private source maps and selected local/private paths;
 - non-standard domain schemas that do not fit the generic entity catalog;
-- private Knowledge Markdown.
+- private Knowledge Markdown;
+- original historical source bytes (the durable ledger retains normalized
+  occurrence content, locators, hashes, and provenance, never a copy of the
+  source file itself).
 
-Private repositories may open `catalog.sqlite` read-only. They reference catalog
+Private repositories may open either store read-only. They reference catalog
 rows through the Reference Contract below rather than copying lower rows. If
 they need custom facts that do not fit the generic entity tables, those custom
 rows stay above the engine.
 
+Ordinary `catalog wipe` removes/recreates only `corpus_cache` tables and
+rebuildable projection files; it cannot touch `corpus_state`. A separately
+named `catalog wipe --include-state --force` operation is required to reset
+durable state, and it reports the accepted-row counts it is about to destroy
+in its warning/result.
+
 ## Reference Contract
 
-Any reference to an evidence row is a catalog coordinate. It reuses the same
-`dataset.table.column` convention `catalog.yaml` already uses for foreign keys
-(for example `ref: corpus_cache.document_objects.object_id`). The public
-dataset is `corpus_cache`, so a reference to one row is:
-
-```text
-corpus_cache.<table>.<row_id>
-```
+Any reference to an evidence row is a catalog coordinate: `<dataset>.<table>.
+<row_id>`. The dataset segment selects the physical store — `corpus_cache`
+routes to `catalog/catalog.sqlite`, `corpus_state` routes to
+`state/state.sqlite`. `resolve_ref` supports both and identifies its result as
+`exact` (a `corpus_state.evidence_occurrences.*` row) or `current` (any other
+resolvable ref). Existing `document_objects`/`media_assets` refs remain
+readable and are treated as current logical refs; nothing in this milestone
+breaks an existing `corpus_cache.document_objects.<object_id>` reference.
 
 Rules:
 
 - A reference is just the target row id plus the `dataset.table.column` it
   points at. There is no separate `evidence_ref` object or nested payload.
 - Upper catalogs reference lower rows by adding a column with
-  `ref: corpus_cache.<table>.<column>`, identical to how the lower catalog
-  declares its own foreign keys. The reference mechanism is the column `ref:`
-  convention; nothing more is needed.
+  `ref: corpus_cache.<table>.<column>` or `ref: corpus_state.<table>.<column>`,
+  identical to how the lower catalog declares its own foreign keys. The
+  reference mechanism is the column `ref:` convention; nothing more is needed.
 - "Kind", locator (page, bbox, time range, byte range), and provenance
   (producer, profile, source hash) are **columns on the referenced row**. They
   are resolved by reading the row, never copied into the reference.
 - Cross-catalog references are expected and supported through the `dataset`
-  prefix. An upper catalog is its own dataset and points at `corpus_cache.*`;
-  the dependency direction stays one-way.
-- References are not versioned. The catalog is current-state and migrates as a
-  single monolith, so a reference always resolves to the current row. Referencing
-  rows must not snapshot or copy lower-row data.
+  prefix. An upper catalog is its own dataset and points at `corpus_cache.*` or
+  `corpus_state.*`; the dependency direction stays one-way.
+- **Exact versus current identity.** Search and hydration expose two refs: the
+  exact immutable `ref` (`corpus_state.evidence_occurrences.evo_...`, once
+  Milestone 2 lands) and the current logical `logical_ref`
+  (`corpus_cache.document_objects.obj_...` /
+  `corpus_cache.media_assets.<asset_id>`). Layer-4 evidence bindings always
+  store the exact occurrence ref; passing a current logical ref to `entity
+  link` is allowed only as pin-at-write input — the runtime resolves and pins
+  its current occurrence in the same operation and returns both refs. An
+  accepted binding never stores a follow-current policy; resolving the logical
+  ref to see current content later is always a separate, explicit read.
+- **Occurrence ID derivation.** An `evidence_occurrences.occurrence_id` is
+  derived from exactly: source revision ID, producer, producer version,
+  profile, config hash, producer object key, object type, and content hash —
+  it excludes the activity instance ID and timestamps. Canonical encoding is a
+  UTF-8 JSON array in that field order, compact separators, no ASCII escaping;
+  the public ID is `evo_` plus the lowercase SHA-256 hex digest of those
+  bytes. Null and empty string are distinct JSON values. Identical output
+  therefore deduplicates across runs; on dedupe the existing row keeps its
+  original generating activity (first writer wins) while the later activity
+  records only an output edge, never rewriting the occurrence.
+- Image embeddings, text embeddings, FTS chunks, summaries, and medoids are
+  Layer-3 projections and are never valid Layer-4 evidence refs, regardless of
+  dataset prefix.
 
 ## Media Contract
 
@@ -243,12 +300,18 @@ Durable rules:
   parse`, `index scope`, or `index routing` over the same source must never
   overwrite it. Those commands only regenerate Layer 2/3 rows; Layer 4 rows
   change only through `even entity` commands.
-- Links store references, never copies. `entity link <entity-id> <ref>`
-  accepts exactly the `corpus_cache.<table>.<row_id>` strings the Reference
-  Contract defines -- the same strings every search hit already carries as
-  `ref`. The link row stores only that string; `entity show` hydrates it by
-  reading the current referenced row, so provenance always reflects live
-  catalog state rather than a snapshot.
+- **Pin-at-write, never follow-current.** `entity link <entity-id> <ref>`
+  accepts either an exact occurrence ref or a current logical ref (the same
+  strings every search hit carries as `ref`/`logical_ref`). If given a logical
+  ref, the runtime resolves its current occurrence inside the same write and
+  persists the exact occurrence ref, retaining the input as `logical_ref` for
+  navigation. An accepted link's exact ref never changes when the source is
+  reparsed, reindexed, or the catalog is rebuilt — see Reference Contract.
+  Until Milestone 2 lands the occurrence ledger, `entity link` continues to
+  store the current logical ref only, and links remain vulnerable to the
+  content drift this rule exists to close (see the
+  `2026-07/10-engine-improvements` plan packet, Milestone 0's regression
+  proof).
 - `entity link` refuses a reference that does not resolve to a current row
   (`error_kind: evidence_ref_not_found`), so the catalog never accumulates
   dangling links.
@@ -261,13 +324,97 @@ Durable rules:
   status) are skipped, so re-running the same discovery never duplicates links
   or tasks. The full underlying search payload (including `route_trace`)
   passes through unchanged.
-- `entity review <target-id> --accept|--reject|--defer` sets only the review
-  column on the target's own Layer-4 row (`review_status`, `link_status`, or
-  `task_status`); it never touches the Layer-2/3 row a link or task points at.
+- **Transactional, auditable review.** `entity review <target-id>
+  --accept|--reject|--defer` runs as one `corpus_state` transaction: it
+  validates the pinned occurrence, appends an insert-only `review_decisions`
+  row (target kind/ID, previous/new state, reviewer, rationale, producer,
+  timestamp), updates the target's own status column, and closes/updates every
+  governing open task. Any step failing rolls back the whole review; task and
+  target can never diverge, and current status must reconstruct from decision
+  history. It never touches the Layer-2/3 row a link or task points at. Until
+  Milestone 4 lands, `entity review` continues to update only the target's
+  status column with no decision history and no atomic task sync.
 - Producers of entity rows are humans or the search-assisted `entity find
   --propose` bridge in this contract. Model-driven or agentic entity
   extraction pipelines are a separate, future producer and must still write
   through this same runtime -- never direct SQL.
+
+## Retention And Collectibility
+
+Every inserted `evidence_occurrences` row is retained, reviewed or not, until
+it satisfies the collectibility predicate: **an occurrence is collectible only
+when no Layer-4 row references it and no current logical object maps to it.**
+`catalog status` reports total, referenced, current, collectible, and
+orphan-source occurrence counts and bytes so retention growth is visible from
+the first migration onward. No automatic or manual deletion ships until a
+separately reviewed garbage-collection design proves dependency traversal,
+backup, dry-run, and rollback behavior; this contract fixes the predicate now
+so nothing collectible today can be deleted incorrectly later.
+
+State size grows with source, parser, profile, and config churn, not only with
+reviewed meaning — it is not described as "small." Content-addressing
+(the occurrence-ID derivation in the Reference Contract) deduplicates
+byte-identical outputs across runs, but every distinct output is retained.
+
+## Journal Mode And Cross-Store Write Contract
+
+- Both `catalog/catalog.sqlite` and `state/state.sqlite` explicitly set and
+  verify `journal_mode=WAL`; changing that mode requires a spec and migration
+  update, not a silent runtime change.
+- No operation relies on SQLite atomicity across attached database files. WAL
+  makes a commit atomic per file, never across files.
+- Dual-store producers commit the durable revision/activity/occurrence first,
+  then idempotently update the current logical mapping. Failure after the
+  durable commit leaves a diagnosable incomplete current mapping that the same
+  operation can safely retry.
+- Review/link/task/decision writes are state-only and remain one ordinary
+  single-database transaction.
+- `ATTACH` may be used for reads or performance, never as the sole consistency
+  mechanism for a write.
+
+## Migration Trust Contract
+
+The current single-file catalog (schema `0.10`, `PRAGMA user_version = 10`)
+migrates to the split-store contract through an idempotent, resumable
+procedure: create the state schema, copy entity/review rows, resolve each
+v10 logical ref and pin its current-at-migration occurrence, verify row counts
+and content hashes, record the migration, then migrate the current catalog
+schema.
+
+Because v10 never stored occurrences, a migrated pin necessarily reflects
+content *at migration time*, not necessarily what a reviewer originally saw.
+This is stated honestly, not implied away:
+
+- every migration-time pin carries `pinned_at_migration: true`,
+  `pin_trust: unverified_migration`, the migration timestamp, the current
+  source hash, and any recoverable review-time hash;
+- a recoverable hash mismatch sets `requires_re_review: true` and opens a
+  migration-revalidation task; missing historical hashes stay explicitly
+  unknown, never guessed;
+- an unresolvable **accepted** link aborts migration entirely; an unresolvable
+  proposed or rejected link is reported and quarantined, never silently
+  rewritten or dropped;
+- migration establishes the trust baseline going forward — it is not proof of
+  what was visible at original review time.
+
+## Orphaned Logical Reference Contract
+
+Typed normalization (Milestone 3 of the linked plan packet) replaces the
+single synthetic whole-document preview object with real typed objects, which
+can orphan links pinned against the preview-grained object. `entity show`
+reports `logical_ref_status` as `current`, `orphaned`, or `missing`:
+
+- `current` — the logical ref still resolves to a live current row;
+- `orphaned` — the pinned occurrence hydrates fully, but its logical
+  counterpart no longer exists as a current object; the response returns the
+  pinned evidence, `current_evidence: null`, and the integrity reason;
+- `missing` — the pinned occurrence itself cannot be read; the runtime never
+  substitutes current content for a missing pinned occurrence.
+
+Accepted links orphaned by typed normalization are flagged
+`requires_re_review` and receive an explicit re-pin/re-review task without
+changing the historical pinned occurrence. The same applies to migrated v10
+links, which are document-preview-grained by construction.
 
 ## Global Representation Contract
 

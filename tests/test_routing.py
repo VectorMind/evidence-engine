@@ -34,7 +34,7 @@ def test_summary_nodes_catalog_contract(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    tables = {table.name for table in load_catalog_tables()}
+    tables = {table.name for table in load_catalog_tables("corpus_cache")}
     assert "summary_nodes" in tables
     assert CATALOG_USER_VERSION == 10
 

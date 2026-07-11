@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from even.catalog import CATALOG_SCHEMA_VERSION, CATALOG_USER_VERSION, create_catalog
-from even.catalog import load_catalog_tables
+from even.catalog import load_all_catalog_tables, load_catalog_tables
 from even.paths import catalog_path
 
 
@@ -19,7 +21,7 @@ ENTITY_TABLES = {
 
 
 def test_catalog_contract_declares_entity_layer_tables() -> None:
-    tables = {table.name: table for table in load_catalog_tables()}
+    tables = {table.name: table for table in load_all_catalog_tables()}
 
     assert CATALOG_SCHEMA_VERSION == "0.10"
     assert ENTITY_TABLES <= set(tables)
@@ -37,6 +39,20 @@ def test_catalog_contract_declares_entity_layer_tables() -> None:
         "link_role",
         "link_status",
     }
+
+
+def test_entity_layer_tables_live_only_in_corpus_state_dataset() -> None:
+    cache_tables = {table.name for table in load_catalog_tables("corpus_cache")}
+    state_tables = {table.name for table in load_catalog_tables("corpus_state")}
+
+    assert ENTITY_TABLES <= state_tables
+    assert cache_tables.isdisjoint(ENTITY_TABLES)
+    assert state_tables.isdisjoint(cache_tables)
+
+
+def test_load_catalog_tables_rejects_unknown_dataset() -> None:
+    with pytest.raises(ValueError):
+        load_catalog_tables("not_a_real_dataset")
 
 
 def test_created_catalog_contains_entity_layer_tables() -> None:
